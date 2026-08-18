@@ -278,6 +278,64 @@ def editar_conta_serie(conta_id, nome=None, valor=None):
     conexao.close()
 
 
+def editar_categoria(categoria_id, nome=None, icone=None):
+    """Atualiza nome e/ou ícone de uma categoria existente."""
+    conexao = conectar()
+    cursor = conexao.cursor()
+    if nome is not None:
+        cursor.execute("UPDATE categorias SET nome = ? WHERE id = ?", (nome, categoria_id))
+    if icone is not None:
+        cursor.execute("UPDATE categorias SET icone = ? WHERE id = ?", (icone, categoria_id))
+    conexao.commit()
+    conexao.close()
+
+
+def excluir_categoria(categoria_id):
+    """
+    Exclui uma categoria. Contas associadas NÃO são excluídas (RF14 / seção 5):
+    elas passam a ficar sem categoria (categoria_id = NULL).
+    """
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("UPDATE contas SET categoria_id = NULL WHERE categoria_id = ?", (categoria_id,))
+    cursor.execute("DELETE FROM categorias WHERE id = ?", (categoria_id,))
+    conexao.commit()
+    conexao.close()
+
+
+def excluir_conta(conta_id):
+    """Exclui somente esta ocorrência da conta (RF08)."""
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
+    conexao.commit()
+    conexao.close()
+
+
+def excluir_conta_serie(conta_id):
+    """
+    Exclui esta ocorrência e todas as futuras da mesma série (mesmo critério
+    de 'data_vencimento >= referência' usado em editar_conta_serie).
+    Ocorrências passadas da série são preservadas.
+    """
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+    linha = cursor.fetchone()
+    if linha is None:
+        conexao.close()
+        return
+    serie_id, data_referencia = linha
+    if serie_id is None:
+        cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
+    else:
+        cursor.execute(
+            "DELETE FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
+            (serie_id, data_referencia),
+        )
+    conexao.commit()
+    conexao.close()
+
 if __name__ == "__main__":
     criar_tabelas()
     print("Tabelas criadas (ou já existiam): usuarios, categorias, contas.")
