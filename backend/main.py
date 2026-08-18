@@ -3,8 +3,13 @@ main.py — App do Sino em Flet, conectado ao banco SQLite.
 Tela de login/cadastro + tela de Categorias (CRUD).
 """
 
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "database"))
+
 import flet as ft
-import database
+import db as database
 
 
 def main(page: ft.Page):
