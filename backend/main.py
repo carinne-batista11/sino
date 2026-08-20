@@ -16,6 +16,7 @@ def main(page: ft.Page):
     database.criar_tabelas()
 
     page.title = "Sino"
+    page.theme_mode = ft.ThemeMode.LIGHT
     page.bgcolor = "#F4F4F1"
     page.window.width = 380
     page.window.height = 760
@@ -41,13 +42,14 @@ def main(page: ft.Page):
             alignment=ft.Alignment.CENTER,
         )
 
-        titulo = ft.Text("Bem-vindo de volta", size=20, weight=ft.FontWeight.BOLD)
+        titulo = ft.Text("Bem-vindo de volta", size=20, weight=ft.FontWeight.BOLD, color="#0B1410")
         subtitulo = ft.Text("Suas contas, sob controle.", size=13, color="#888780")
 
-        campo_nome = ft.TextField(label="Nome completo", hint_text="Seu nome", width=330, visible=False)
-        campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330)
+        campo_nome = ft.TextField(label="Nome completo", hint_text="Seu nome", width=330, visible=False,
+                                   color="#0B1410")
+        campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330, color="#0B1410")
         campo_senha = ft.TextField(label="Senha", hint_text="********", password=True,
-                                    can_reveal_password=True, width=330)
+                                    can_reveal_password=True, width=330, color="#0B1410")
         mensagem = ft.Text(value="", color="#1D9E75")
 
         def ao_clicar_botao_principal(e):
@@ -64,11 +66,8 @@ def main(page: ft.Page):
                     mensagem.value = texto
                     mensagem.color = "#1D9E75" if sucesso else "#A32D2D"
                     if sucesso:
-                        campo_nome.value = ""
-                        campo_email.value = ""
-                        campo_senha.value = ""
                         alternar_modo(None)
-                        mensagem.value = "Conta criada! Faça login abaixo."
+                        mensagem.value = "Conta criada com sucesso! Faça login para continuar."
                         mensagem.color = "#1D9E75"
                         page.update()
             else:
@@ -98,6 +97,9 @@ def main(page: ft.Page):
 
         def alternar_modo(e):
             modo_cadastro[0] = not modo_cadastro[0]
+            campo_nome.value = ""
+            campo_email.value = ""
+            campo_senha.value = ""
             if modo_cadastro[0]:
                 titulo.value = "Crie sua conta"
                 subtitulo.value = "Leva menos de um minuto"
