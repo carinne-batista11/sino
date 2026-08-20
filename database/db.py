@@ -5,7 +5,7 @@ database.py — Camada de banco de dados do Sino (v2)
 import sqlite3
 import hashlib
 import os
-from datetime import date
+from datetime import date, timedelta
 from calendar import monthrange
 
 NOME_DO_BANCO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sino.db")
@@ -229,6 +229,34 @@ def listar_contas(usuario_id, ano_mes=None):
             "status": status, "categoria_id": l[5], "conta_fixa": l[6],
         })
     return contas
+
+
+def listar_contas_proximas(usuario_id, dias=7):
+    """Contas pendentes com vencimento entre hoje e os próximos `dias` dias (RF17)."""
+    conexao = conectar()
+    cursor = conexao.cursor()
+
+    hoje = date.today()
+    limite = hoje + timedelta(days=dias)
+
+    cursor.execute(
+        """
+        SELECT id, nome, valor, data_vencimento, status, categoria_id, conta_fixa
+        FROM contas
+        WHERE usuario_id = ? AND status = 'pendente'
+              AND data_vencimento BETWEEN ? AND ?
+        ORDER BY data_vencimento
+        """,
+        (usuario_id, hoje.isoformat(), limite.isoformat()),
+    )
+    linhas = cursor.fetchall()
+    conexao.close()
+
+    return [
+        {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
+         "status": l[4], "categoria_id": l[5], "conta_fixa": l[6]}
+        for l in linhas
+    ]
 
 
 def marcar_conta_como_paga(conta_id):
