@@ -4,10 +4,11 @@ database.py — Camada de banco de dados do Sino (v2)
 
 import sqlite3
 import hashlib
+import os
 from datetime import date
 from calendar import monthrange
 
-NOME_DO_BANCO = "sino.db"
+NOME_DO_BANCO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sino.db")
 
 
 def conectar():
