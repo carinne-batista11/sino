@@ -4,6 +4,7 @@ Tela de login/cadastro + tela de Categorias (CRUD).
 """
 
 import os
+import re
 import sys
 from datetime import date
 
@@ -402,6 +403,7 @@ def main(page: ft.Page):
             alignment=ft.Alignment.CENTER,
             right=20,
             bottom=16,
+            on_click=lambda e: mostrar_tela_nova_conta(),
         )
 
         conteudo = ft.Column(
@@ -581,6 +583,185 @@ def main(page: ft.Page):
             )
         )
         atualizar_lista()
+
+    # ======================================================
+    #  TELA DE NOVA CONTA
+    # ======================================================
+    def mostrar_tela_nova_conta():
+        page.controls.clear()
+        page.overlay.clear()
+        page.padding = 0
+
+        data_selecionada = {"valor": None}
+
+        campo_nome = ft.TextField(
+            label="Nome da conta", hint_text="Ex: Aluguel, Internet...", color="#0B1410",
+        )
+        campo_valor = ft.TextField(
+            label="Valor", hint_text="R$ 0,00", keyboard_type=ft.KeyboardType.NUMBER, color="#0B1410",
+        )
+        campo_data = ft.TextField(
+            label="Data de vencimento", hint_text="dd/mm/aaaa", read_only=True, expand=True, color="#0B1410",
+        )
+
+        def ao_escolher_data(e):
+            if e.control.value:
+                data_selecionada["valor"] = e.control.value.date()
+                campo_data.value = data_selecionada["valor"].strftime("%d/%m/%Y")
+                page.update()
+
+        seletor_data = ft.DatePicker(
+            first_date=date(2000, 1, 1),
+            last_date=date(2100, 12, 31),
+            on_change=ao_escolher_data,
+        )
+        page.overlay.append(seletor_data)
+
+        def abrir_seletor_data(e):
+            page.show_dialog(seletor_data)
+
+        categorias = database.listar_categorias(usuario_atual["id"])
+        opcoes_categoria = [ft.dropdown.Option(key="", text="Sem categoria")] + [
+            ft.dropdown.Option(key=str(c["id"]), text=f"{c['icone'] + ' ' if c['icone'] else ''}{c['nome']}")
+            for c in categorias
+        ]
+        campo_categoria = ft.Dropdown(
+            label="Categoria", value="", options=opcoes_categoria, color="#0B1410",
+        )
+
+        campo_repetir_ate = ft.TextField(
+            label="Repetir até (mês/ano)", hint_text="mm/aaaa", color="#0B1410", visible=False,
+        )
+
+        def ao_mudar_conta_fixa(e):
+            campo_repetir_ate.visible = campo_fixa.value
+            page.update()
+
+        campo_fixa = ft.Switch(value=False, active_color="#1D9E75", on_change=ao_mudar_conta_fixa)
+
+        erro = ft.Text(value="", color="#A32D2D", size=12)
+
+        def parse_valor(texto):
+            texto = (texto or "").strip().replace("R$", "").strip()
+            if not texto:
+                return None
+            if "," in texto:
+                # vírgula é o separador decimal; pontos restantes são de milhar
+                texto = texto.replace(".", "").replace(",", ".")
+            elif "." in texto and len(texto.rsplit(".", 1)[-1]) == 3:
+                # sem vírgula: ponto seguido de 3 dígitos é separador de milhar
+                # (ex.: "1.234" -> 1234); com 1 ou 2 dígitos, é decimal (ex.: "150.50")
+                texto = texto.replace(".", "")
+            try:
+                valor = float(texto)
+            except ValueError:
+                return None
+            return valor if valor > 0 else None
+
+        def salvar(e):
+            nome = campo_nome.value.strip() if campo_nome.value else ""
+            valor = parse_valor(campo_valor.value)
+            categoria_id = int(campo_categoria.value) if campo_categoria.value else None
+            conta_fixa = 1 if campo_fixa.value else 0
+            repetir_ate = None
+
+            if not nome:
+                erro.value = "Digite um nome para a conta."
+            elif valor is None:
+                erro.value = "Informe um valor válido."
+            elif data_selecionada["valor"] is None:
+                erro.value = "Escolha a data de vencimento."
+            elif conta_fixa:
+                texto_repetir = campo_repetir_ate.value.strip() if campo_repetir_ate.value else ""
+                if not re.fullmatch(r"(0[1-9]|1[0-2])/\d{4}", texto_repetir):
+                    erro.value = "Informe o mês final da recorrência no formato mm/aaaa."
+                else:
+                    mes_repetir, ano_repetir = (int(p) for p in texto_repetir.split("/"))
+                    data_venc = data_selecionada["valor"]
+                    if (ano_repetir, mes_repetir) < (data_venc.year, data_venc.month):
+                        erro.value = "O mês final da recorrência não pode ser anterior ao mês de vencimento."
+                    else:
+                        repetir_ate = f"{ano_repetir:04d}-{mes_repetir:02d}"
+                        erro.value = ""
+            else:
+                erro.value = ""
+
+            if erro.value:
+                page.update()
+                return
+
+            database.criar_conta(
+                usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
+                categoria_id=categoria_id, conta_fixa=conta_fixa, repetir_ate=repetir_ate,
+            )
+            mostrar_tela_principal()
+
+        cabecalho = ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            controls=[
+                ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                              on_click=lambda e: mostrar_tela_principal()),
+                ft.Text("Nova conta", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                ft.Container(width=40),
+            ],
+        )
+
+        cartao_fixa = ft.Container(
+            bgcolor="white",
+            border_radius=12,
+            padding=14,
+            content=ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text("Conta fixa (recorrente)", size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                            ft.Text("Repete todo mês até uma data limite", size=12, color="#888780"),
+                        ],
+                        spacing=2,
+                    ),
+                    campo_fixa,
+                ],
+            ),
+        )
+
+        conteudo = ft.Column(
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+            controls=[
+                ft.Container(
+                    padding=ft.Padding(20, 40, 20, 24),
+                    content=ft.Column(
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                        controls=[
+                            cabecalho,
+                            ft.Container(height=20),
+                            campo_nome,
+                            campo_valor,
+                            ft.Row(controls=[
+                                campo_data,
+                                ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color="#1D9E75",
+                                              on_click=abrir_seletor_data),
+                            ]),
+                            campo_categoria,
+                            ft.Container(height=8),
+                            cartao_fixa,
+                            campo_repetir_ate,
+                            ft.Container(height=8),
+                            erro,
+                            ft.Button(
+                                content="Salvar conta",
+                                bgcolor="#1D9E75",
+                                color="white",
+                                on_click=salvar,
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        )
+
+        page.add(conteudo)
 
     mostrar_tela_login()
 
