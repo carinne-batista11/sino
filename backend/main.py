@@ -260,13 +260,40 @@ def main(page: ft.Page):
         valor_pago = ft.Text("pago R$ 0,00", size=12, color="#39D67C")
         valor_pendente = ft.Text("pendente R$ 0,00", size=12, color="#E0A030")
 
+        filtro_total = {"valor": "todas"}
+        OPCOES_FILTRO_TOTAL = (("todas", "Todas"), ("pendentes", "Pendentes"), ("pagas", "Pagas"))
+
+        def selecionar_filtro_total(valor):
+            filtro_total["valor"] = valor
+            atualizar_dados()
+
+        def chip_filtro_total(valor, rotulo):
+            ativo = filtro_total["valor"] == valor
+            return ft.Container(
+                content=ft.Text(rotulo, size=10, weight=ft.FontWeight.BOLD,
+                                 color="#0B1410" if ativo else "#888780"),
+                bgcolor="#39D67C" if ativo else "transparent",
+                border=None if ativo else ft.Border.all(1, "#3A413B"),
+                border_radius=12,
+                padding=ft.Padding(8, 4, 8, 4),
+                on_click=lambda e: selecionar_filtro_total(valor),
+            )
+
+        linha_filtro_total = ft.Row(spacing=4, controls=[])
+
         card_total = ft.Container(
             bgcolor="#0B1410",
             border_radius=16,
             padding=16,
             content=ft.Column(
                 controls=[
-                    ft.Text("Total do mês", size=12, color="#888780"),
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        controls=[
+                            ft.Text("Total do mês", size=12, color="#888780"),
+                            linha_filtro_total,
+                        ],
+                    ),
                     valor_total,
                     ft.Container(height=8),
                     ft.Row(
@@ -281,6 +308,9 @@ def main(page: ft.Page):
         )
 
         banner_semana = ft.Container(visible=False)
+
+        cabecalho_atrasadas = ft.Text("Contas atrasadas", size=15, weight=ft.FontWeight.BOLD, color="#0B1410")
+        lista_atrasadas = ft.Column(controls=[], spacing=8)
 
         cabecalho_contas = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -306,7 +336,13 @@ def main(page: ft.Page):
                 cor, rotulo_status = "#888780", "Pendente"
                 frase = f"vence em {dias_delta} dia(s)"
 
-            subtitulo = f"{nome_categoria} · {frase}" if nome_categoria else frase
+            partes_subtitulo = [p for p in (nome_categoria, frase) if p]
+            if conta.get("conta_fixa") == 1 and conta.get("serie_id") is not None:
+                parcela = database.obter_parcela(conta["serie_id"], conta["id"])
+                if parcela:
+                    posicao, total_ocorrencias = parcela
+                    partes_subtitulo.append(f"Parcela {posicao} de {total_ocorrencias}")
+            subtitulo = " · ".join(partes_subtitulo)
 
             return ft.Container(
                 bgcolor="white",
@@ -343,13 +379,23 @@ def main(page: ft.Page):
             contas_mes = database.listar_contas(usuario_atual["id"], ano_mes)
             categorias = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
 
-            total = sum(c["valor"] for c in contas_mes)
             pago = sum(c["valor"] for c in contas_mes if c["status"] == "pago")
-            pendente = total - pago
+            pendente = sum(c["valor"] for c in contas_mes if c["status"] in ("pendente", "atrasado"))
 
-            valor_total.value = formatar_moeda(total)
+            if filtro_total["valor"] == "pendentes":
+                total_exibido = pendente
+            elif filtro_total["valor"] == "pagas":
+                total_exibido = pago
+            else:
+                total_exibido = pago + pendente
+
+            valor_total.value = formatar_moeda(total_exibido)
             valor_pago.value = f"pago {formatar_moeda(pago)}"
             valor_pendente.value = f"pendente {formatar_moeda(pendente)}"
+
+            linha_filtro_total.controls.clear()
+            for valor, rotulo in OPCOES_FILTRO_TOTAL:
+                linha_filtro_total.controls.append(chip_filtro_total(valor, rotulo))
 
             proximas = database.listar_contas_proximas(usuario_atual["id"], dias=7)
             if proximas:
@@ -374,6 +420,20 @@ def main(page: ft.Page):
                 banner_semana.visible = True
             else:
                 banner_semana.visible = False
+
+            atrasadas = database.listar_contas_atrasadas(usuario_atual["id"])
+            lista_atrasadas.controls.clear()
+            if not atrasadas:
+                lista_atrasadas.controls.append(
+                    ft.Container(
+                        content=ft.Text("Todas as suas contas estão em dia!", color="#1D9E75", size=13,
+                                         weight=ft.FontWeight.BOLD),
+                        padding=16,
+                    )
+                )
+            else:
+                for c in atrasadas:
+                    lista_atrasadas.controls.append(linha_conta(c, categorias.get(c["categoria_id"], "")))
 
             contas_ordenadas = sorted(
                 contas_mes,
@@ -421,6 +481,10 @@ def main(page: ft.Page):
                             card_total,
                             ft.Container(height=12),
                             banner_semana,
+                            ft.Container(height=16),
+                            cabecalho_atrasadas,
+                            ft.Container(height=8),
+                            lista_atrasadas,
                             ft.Container(height=16),
                             cabecalho_contas,
                             ft.Container(height=8),
