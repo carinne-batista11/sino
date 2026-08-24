@@ -439,6 +439,18 @@ def main(page: ft.Page):
                 page.update()
 
             def confirmar_exclusao_conta():
+                total_ocorrencias = 1
+                if conta.get("conta_fixa") == 1 and conta.get("serie_id") is not None:
+                    parcela = database.obter_parcela(conta["serie_id"], conta["id"])
+                    if parcela:
+                        total_ocorrencias = parcela[1]
+
+                if total_ocorrencias > 1:
+                    mostrar_dialogo_exclusao_serie()
+                else:
+                    mostrar_dialogo_exclusao_simples()
+
+            def mostrar_dialogo_exclusao_simples():
                 def excluir(e):
                     database.excluir_conta(conta["id"])
                     page.pop_dialog()
@@ -452,6 +464,44 @@ def main(page: ft.Page):
                         ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
                         ft.Button(content="Excluir", bgcolor="#A32D2D", color="white", on_click=excluir),
                     ],
+                )
+                page.show_dialog(dialogo)
+
+            def mostrar_dialogo_exclusao_serie():
+                # A âncora da série é a ocorrência cujo próprio id é o serie_id
+                # compartilhado pelas demais. Excluí-la sozinha ("somente este mês")
+                # deixaria as ocorrências futuras com uma referência quebrada, então
+                # essa opção nem é oferecida quando a conta clicada é a âncora.
+                eh_ancora = conta.get("serie_id") == conta.get("id")
+
+                def excluir_apenas_esta(e):
+                    database.excluir_conta(conta["id"])
+                    page.pop_dialog()
+                    mostrar_tela_principal()
+
+                def excluir_definitivamente(e):
+                    database.excluir_conta_serie(conta["id"])
+                    page.pop_dialog()
+                    mostrar_tela_principal()
+
+                acoes = [ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog())]
+                if not eh_ancora:
+                    acoes.append(
+                        ft.TextButton(content="Excluir somente este mês", on_click=excluir_apenas_esta)
+                    )
+                acoes.append(
+                    ft.Button(content="Excluir definitivamente", bgcolor="#A32D2D", color="white",
+                              on_click=excluir_definitivamente)
+                )
+
+                dialogo = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Excluir conta recorrente"),
+                    content=ft.Text(
+                        f"'{conta['nome']}' faz parte de uma série de contas fixas. "
+                        "O que você deseja excluir?"
+                    ),
+                    actions=acoes,
                 )
                 page.show_dialog(dialogo)
 
