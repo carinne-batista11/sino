@@ -139,13 +139,18 @@ def listar_categorias(usuario_id):
     return [{"id": l[0], "nome": l[1], "icone": l[2]} for l in linhas]
 
 
+def _ajustar_dia(ano, mes, dia):
+    """Reduz `dia` ao último dia válido de `ano/mes`, se necessário (ex.: 31 -> 28/29 em fevereiro)."""
+    ultimo_dia_do_mes = monthrange(ano, mes)[1]
+    return min(dia, ultimo_dia_do_mes)
+
+
 def _somar_mes(ano, mes, dia):
     mes += 1
     if mes > 12:
         mes = 1
         ano += 1
-    ultimo_dia_do_mes = monthrange(ano, mes)[1]
-    dia_ajustado = min(dia, ultimo_dia_do_mes)
+    dia_ajustado = _ajustar_dia(ano, mes, dia)
     return date(ano, mes, dia_ajustado).isoformat()
 
 
@@ -313,8 +318,32 @@ def marcar_conta_como_paga(conta_id):
 
 
 def editar_conta_ocorrencia(conta_id, nome=None, valor=None, data_vencimento=None):
+    """
+    Atualiza nome/valor/data_vencimento de uma única ocorrência.
+
+    Para contas fixas (conta_fixa = 1), a ocorrência representa um mês/ano
+    específico da série: a data só pode mudar de dia, nunca de mês/ano. Se
+    isso for tentado, a chamada inteira é rejeitada (nada é alterado) e a
+    função retorna False. Contas não fixas continuam podendo mudar de
+    mês/ano livremente. Retorna True quando a alteração é aplicada.
+    """
     conexao = conectar()
     cursor = conexao.cursor()
+
+    if data_vencimento is not None:
+        cursor.execute("SELECT conta_fixa, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+        linha = cursor.fetchone()
+        if linha is None:
+            conexao.close()
+            return False
+        conta_fixa, data_atual = linha
+        if conta_fixa == 1:
+            ano_novo, mes_novo, _ = map(int, data_vencimento.split("-"))
+            ano_atual, mes_atual, _ = map(int, data_atual.split("-"))
+            if (ano_novo, mes_novo) != (ano_atual, mes_atual):
+                conexao.close()
+                return False
+
     if nome is not None:
         cursor.execute("UPDATE contas SET nome = ? WHERE id = ?", (nome, conta_id))
     if valor is not None:
@@ -323,21 +352,42 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, data_vencimento=Non
         cursor.execute("UPDATE contas SET data_vencimento = ? WHERE id = ?", (data_vencimento, conta_id))
     conexao.commit()
     conexao.close()
+    return True
 
 
-def editar_conta_serie(conta_id, nome=None, valor=None):
+def editar_conta_serie(conta_id, nome=None, valor=None, data_vencimento=None):
+    """
+    Aplica nome/valor/data à ocorrência informada e às futuras da mesma série
+    (data_vencimento >= referência, capturada antes de qualquer alteração).
+
+    nome e valor são copiados literalmente para todas as ocorrências afetadas.
+    data_vencimento segue uma regra diferente: cada ocorrência futura permanece
+    no seu próprio mês/ano, apenas o dia é recalculado a partir do dia da nova
+    data informada (com o mesmo ajuste de fim de mês usado na geração da série);
+    a ocorrência editada recebe exatamente a data informada — mas só se essa
+    data mantiver o mesmo mês/ano que a ocorrência já tinha. Caso contrário,
+    a chamada inteira é rejeitada (nada é alterado) e a função retorna False.
+    Retorna True quando a alteração é aplicada.
+    """
     conexao = conectar()
     cursor = conexao.cursor()
     cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
     linha = cursor.fetchone()
     if linha is None:
         conexao.close()
-        return
+        return False
     serie_id, data_referencia = linha
     if serie_id is None:
         conexao.close()
-        editar_conta_ocorrencia(conta_id, nome=nome, valor=valor)
-        return
+        return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor, data_vencimento=data_vencimento)
+
+    if data_vencimento is not None:
+        ano_novo, mes_novo, _ = map(int, data_vencimento.split("-"))
+        ano_ref, mes_ref, _ = map(int, data_referencia.split("-"))
+        if (ano_novo, mes_novo) != (ano_ref, mes_ref):
+            conexao.close()
+            return False
+
     campos, valores = [], []
     if nome is not None:
         campos.append("nome = ?")
@@ -348,8 +398,30 @@ def editar_conta_serie(conta_id, nome=None, valor=None):
     if campos:
         sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND data_vencimento >= ?"
         cursor.execute(sql, (*valores, serie_id, data_referencia))
+
+    if data_vencimento is not None:
+        cursor.execute(
+            "SELECT id, data_vencimento FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
+            (serie_id, data_referencia),
+        )
+        ocorrencias_futuras = cursor.fetchall()
+        dia_novo = date.fromisoformat(data_vencimento).day
+
+        for ocorrencia_id, data_atual in ocorrencias_futuras:
+            if ocorrencia_id == conta_id:
+                nova_data = data_vencimento
+            else:
+                ano_linha, mes_linha, _ = map(int, data_atual.split("-"))
+                dia_ajustado = _ajustar_dia(ano_linha, mes_linha, dia_novo)
+                nova_data = date(ano_linha, mes_linha, dia_ajustado).isoformat()
+            cursor.execute(
+                "UPDATE contas SET data_vencimento = ? WHERE id = ?",
+                (nova_data, ocorrencia_id),
+            )
+
     conexao.commit()
     conexao.close()
+    return True
 
 
 def editar_categoria(categoria_id, nome=None, icone=None):
