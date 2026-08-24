@@ -450,12 +450,36 @@ def excluir_categoria(categoria_id):
 
 
 def excluir_conta(conta_id):
-    """Exclui somente esta ocorrência da conta (RF08)."""
+    """
+    Exclui somente esta ocorrência da conta (RF08).
+
+    Se a ocorrência for a âncora de uma série (serie_id == id, a mais antiga)
+    e ainda existirem outras ocorrências da mesma série apontando para ela,
+    excluí-la sozinha quebraria a referência dessas ocorrências (FOREIGN
+    KEY): nesse caso a chamada é recusada (nada é alterado) e a função
+    retorna False. Use excluir_conta_serie() para remover a série inteira
+    a partir da âncora. Retorna True quando a exclusão é aplicada.
+    """
     conexao = conectar()
-    cursor = conexao.cursor()
-    cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
-    conexao.commit()
-    conexao.close()
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,))
+        linha = cursor.fetchone()
+        if linha is None:
+            return False
+        serie_id = linha[0]
+        if serie_id == conta_id:
+            cursor.execute(
+                "SELECT COUNT(*) FROM contas WHERE serie_id = ? AND id != ?",
+                (serie_id, conta_id),
+            )
+            if cursor.fetchone()[0] > 0:
+                return False
+        cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
+        conexao.commit()
+        return True
+    finally:
+        conexao.close()
 
 
 def excluir_conta_serie(conta_id):
@@ -465,22 +489,23 @@ def excluir_conta_serie(conta_id):
     Ocorrências passadas da série são preservadas.
     """
     conexao = conectar()
-    cursor = conexao.cursor()
-    cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
-    linha = cursor.fetchone()
-    if linha is None:
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+        linha = cursor.fetchone()
+        if linha is None:
+            return
+        serie_id, data_referencia = linha
+        if serie_id is None:
+            cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
+        else:
+            cursor.execute(
+                "DELETE FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
+                (serie_id, data_referencia),
+            )
+        conexao.commit()
+    finally:
         conexao.close()
-        return
-    serie_id, data_referencia = linha
-    if serie_id is None:
-        cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
-    else:
-        cursor.execute(
-            "DELETE FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
-            (serie_id, data_referencia),
-        )
-    conexao.commit()
-    conexao.close()
 
 if __name__ == "__main__":
     criar_tabelas()

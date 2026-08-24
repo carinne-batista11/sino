@@ -450,11 +450,32 @@ def main(page: ft.Page):
                 else:
                     mostrar_dialogo_exclusao_simples()
 
+            def mostrar_erro_exclusao_bloqueada():
+                dialogo_erro = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Não foi possível excluir"),
+                    content=ft.Text(
+                        f"'{conta['nome']}' é a primeira ocorrência de uma série que ainda tem "
+                        "outras ocorrências. Use 'Excluir definitivamente' para remover a série."
+                    ),
+                    actions=[
+                        ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                                  on_click=lambda e: page.pop_dialog()),
+                    ],
+                )
+                page.show_dialog(dialogo_erro)
+
             def mostrar_dialogo_exclusao_simples():
                 def excluir(e):
-                    database.excluir_conta(conta["id"])
+                    sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
-                    mostrar_tela_principal()
+                    if sucesso:
+                        mostrar_tela_principal()
+                    else:
+                        # Defesa extra: a camada de dados também recusa excluir uma
+                        # âncora de série com ocorrências ainda existentes, mesmo que
+                        # algo além desta tela chame a função sem passar por aqui.
+                        mostrar_erro_exclusao_bloqueada()
 
                 dialogo = ft.AlertDialog(
                     modal=True,
@@ -475,9 +496,12 @@ def main(page: ft.Page):
                 eh_ancora = conta.get("serie_id") == conta.get("id")
 
                 def excluir_apenas_esta(e):
-                    database.excluir_conta(conta["id"])
+                    sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
-                    mostrar_tela_principal()
+                    if sucesso:
+                        mostrar_tela_principal()
+                    else:
+                        mostrar_erro_exclusao_bloqueada()
 
                 def excluir_definitivamente(e):
                     database.excluir_conta_serie(conta["id"])
