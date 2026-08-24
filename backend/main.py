@@ -23,6 +23,24 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def parse_valor(texto):
+    texto = (texto or "").strip().replace("R$", "").strip()
+    if not texto:
+        return None
+    if "," in texto:
+        # vírgula é o separador decimal; pontos restantes são de milhar
+        texto = texto.replace(".", "").replace(",", ".")
+    elif "." in texto and len(texto.rsplit(".", 1)[-1]) == 3:
+        # sem vírgula: ponto seguido de 3 dígitos é separador de milhar
+        # (ex.: "1.234" -> 1234); com 1 ou 2 dígitos, é decimal (ex.: "150.50")
+        texto = texto.replace(".", "")
+    try:
+        valor = float(texto)
+    except ValueError:
+        return None
+    return valor if valor > 0 else None
+
+
 def main(page: ft.Page):
     database.criar_tabelas()
 
@@ -322,6 +340,232 @@ def main(page: ft.Page):
 
         lista_contas = ft.Column(controls=[], spacing=8)
 
+        def abrir_detalhe_conta(conta):
+            page.controls.clear()
+            page.overlay.clear()
+            page.padding = 0
+
+            categorias_atuais = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
+            nome_categoria = categorias_atuais.get(conta.get("categoria_id")) or "Sem categoria"
+
+            area_corpo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
+
+            def mostrar_visualizacao():
+                data_venc = date.fromisoformat(conta["data_vencimento"])
+                dias_delta = (data_venc - date.today()).days
+
+                if conta["status"] == "pago":
+                    cor_status, rotulo_status = "#1D9E75", "Pago"
+                elif conta["status"] == "atrasado":
+                    cor_status, rotulo_status = "#A32D2D", "Atrasado"
+                elif dias_delta == 0:
+                    cor_status, rotulo_status = "#C9820A", "A vencer"
+                else:
+                    cor_status, rotulo_status = "#888780", "Pendente"
+
+                recorrencia = "Sim" if conta.get("conta_fixa") == 1 else "Não"
+
+                parcela_texto = None
+                if conta.get("conta_fixa") == 1 and conta.get("serie_id") is not None:
+                    parcela = database.obter_parcela(conta["serie_id"], conta["id"])
+                    if parcela:
+                        posicao, total_ocorrencias = parcela
+                        parcela_texto = f"Parcela {posicao} de {total_ocorrencias}"
+
+                def linha_detalhe(rotulo, valor, cor_valor="#0B1410"):
+                    return ft.Column(
+                        controls=[
+                            ft.Text(rotulo, size=12, color="#888780"),
+                            ft.Text(valor, size=16, weight=ft.FontWeight.BOLD, color=cor_valor),
+                        ],
+                        spacing=2,
+                    )
+
+                linhas_cartao = [
+                    linha_detalhe("Nome", conta["nome"]),
+                    linha_detalhe("Valor", formatar_moeda(conta["valor"])),
+                    linha_detalhe("Vencimento", data_venc.strftime("%d/%m/%Y")),
+                    linha_detalhe("Categoria", nome_categoria),
+                    linha_detalhe("Status", rotulo_status, cor_valor=cor_status),
+                    linha_detalhe("Recorrência", recorrencia),
+                ]
+                if parcela_texto:
+                    linhas_cartao.append(linha_detalhe("Parcela", parcela_texto))
+
+                cartao_detalhes = ft.Container(
+                    bgcolor="white",
+                    border_radius=12,
+                    padding=16,
+                    content=ft.Column(spacing=16, controls=linhas_cartao),
+                )
+
+                cabecalho = ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    controls=[
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                                      on_click=lambda e: mostrar_tela_principal()),
+                        ft.Text("Detalhes da conta", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                        ft.Container(width=40),
+                    ],
+                )
+
+                area_corpo.controls = [
+                    ft.Container(
+                        padding=ft.Padding(20, 40, 20, 24),
+                        content=ft.Column(
+                            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                            controls=[
+                                cabecalho,
+                                ft.Container(height=20),
+                                cartao_detalhes,
+                                ft.Container(height=16),
+                                ft.Button(
+                                    content="Editar",
+                                    bgcolor="#1D9E75",
+                                    color="white",
+                                    on_click=lambda e: mostrar_formulario_edicao(),
+                                ),
+                                ft.Container(height=8),
+                                ft.Button(
+                                    content="Excluir",
+                                    bgcolor="#A32D2D",
+                                    color="white",
+                                    on_click=lambda e: confirmar_exclusao_conta(),
+                                ),
+                            ],
+                        ),
+                    ),
+                ]
+                page.update()
+
+            def confirmar_exclusao_conta():
+                def excluir(e):
+                    database.excluir_conta(conta["id"])
+                    page.pop_dialog()
+                    mostrar_tela_principal()
+
+                dialogo = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Excluir conta"),
+                    content=ft.Text(f"Deseja realmente excluir a conta '{conta['nome']}'?"),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
+                        ft.Button(content="Excluir", bgcolor="#A32D2D", color="white", on_click=excluir),
+                    ],
+                )
+                page.show_dialog(dialogo)
+
+            def mostrar_formulario_edicao():
+                # Evita empilhar um DatePicker novo no overlay a cada vez que o
+                # formulário é reaberto (visualização -> Editar -> voltar -> Editar...).
+                page.overlay.clear()
+
+                data_venc_atual = date.fromisoformat(conta["data_vencimento"])
+                data_selecionada = {"valor": data_venc_atual}
+
+                campo_nome_edit = ft.TextField(
+                    label="Nome da conta", value=conta["nome"], color="#0B1410",
+                )
+                campo_valor_edit = ft.TextField(
+                    label="Valor",
+                    value=f"{conta['valor']:.2f}".replace(".", ","),
+                    keyboard_type=ft.KeyboardType.NUMBER,
+                    color="#0B1410",
+                )
+                campo_data_edit = ft.TextField(
+                    label="Data de vencimento",
+                    value=data_venc_atual.strftime("%d/%m/%Y"),
+                    read_only=True, expand=True, color="#0B1410",
+                )
+                campo_categoria_edit = ft.TextField(
+                    label="Categoria", value=nome_categoria,
+                    read_only=True, disabled=True, color="#0B1410",
+                )
+
+                def ao_escolher_data(e):
+                    if e.control.value:
+                        data_selecionada["valor"] = e.control.value.date()
+                        campo_data_edit.value = data_selecionada["valor"].strftime("%d/%m/%Y")
+                        page.update()
+
+                seletor_data = ft.DatePicker(
+                    first_date=date(2000, 1, 1),
+                    last_date=date(2100, 12, 31),
+                    on_change=ao_escolher_data,
+                )
+                page.overlay.append(seletor_data)
+
+                def abrir_seletor_data(e):
+                    page.show_dialog(seletor_data)
+
+                erro_edit = ft.Text(value="", color="#A32D2D", size=12)
+
+                def salvar_edicao(e):
+                    nome = campo_nome_edit.value.strip() if campo_nome_edit.value else ""
+                    valor = parse_valor(campo_valor_edit.value)
+
+                    if not nome:
+                        erro_edit.value = "Digite um nome para a conta."
+                    elif valor is None:
+                        erro_edit.value = "Informe um valor válido."
+                    elif data_selecionada["valor"] is None:
+                        erro_edit.value = "Escolha a data de vencimento."
+                    else:
+                        erro_edit.value = ""
+
+                    if erro_edit.value:
+                        page.update()
+                        return
+
+                    database.editar_conta_ocorrencia(
+                        conta["id"], nome=nome, valor=valor,
+                        data_vencimento=data_selecionada["valor"].isoformat(),
+                    )
+                    mostrar_tela_principal()
+
+                cabecalho_edicao = ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    controls=[
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                                      on_click=lambda e: mostrar_visualizacao()),
+                        ft.Text("Editar conta", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                        ft.Container(width=40),
+                    ],
+                )
+
+                area_corpo.controls = [
+                    ft.Container(
+                        padding=ft.Padding(20, 40, 20, 24),
+                        content=ft.Column(
+                            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                            controls=[
+                                cabecalho_edicao,
+                                ft.Container(height=20),
+                                campo_nome_edit,
+                                campo_valor_edit,
+                                ft.Row(controls=[
+                                    campo_data_edit,
+                                    ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color="#1D9E75",
+                                                  on_click=abrir_seletor_data),
+                                ]),
+                                campo_categoria_edit,
+                                ft.Container(height=8),
+                                erro_edit,
+                                ft.Button(
+                                    content="Salvar alterações",
+                                    bgcolor="#1D9E75",
+                                    color="white",
+                                    on_click=salvar_edicao,
+                                ),
+                            ],
+                        ),
+                    ),
+                ]
+                page.update()
+
+            page.add(area_corpo)
+            mostrar_visualizacao()
+
         def linha_conta(conta, nome_categoria):
             data_venc = date.fromisoformat(conta["data_vencimento"])
             dias_delta = (data_venc - date.today()).days
@@ -349,6 +593,7 @@ def main(page: ft.Page):
                 border_radius=10,
                 padding=12,
                 border=ft.Border(left=ft.BorderSide(4, cor)),
+                on_click=lambda e, c=conta: abrir_detalhe_conta(c),
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
@@ -704,23 +949,6 @@ def main(page: ft.Page):
         campo_fixa = ft.Switch(value=False, active_color="#1D9E75", on_change=ao_mudar_conta_fixa)
 
         erro = ft.Text(value="", color="#A32D2D", size=12)
-
-        def parse_valor(texto):
-            texto = (texto or "").strip().replace("R$", "").strip()
-            if not texto:
-                return None
-            if "," in texto:
-                # vírgula é o separador decimal; pontos restantes são de milhar
-                texto = texto.replace(".", "").replace(",", ".")
-            elif "." in texto and len(texto.rsplit(".", 1)[-1]) == 3:
-                # sem vírgula: ponto seguido de 3 dígitos é separador de milhar
-                # (ex.: "1.234" -> 1234); com 1 ou 2 dígitos, é decimal (ex.: "150.50")
-                texto = texto.replace(".", "")
-            try:
-                valor = float(texto)
-            except ValueError:
-                return None
-            return valor if valor > 0 else None
 
         def salvar(e):
             nome = campo_nome.value.strip() if campo_nome.value else ""
