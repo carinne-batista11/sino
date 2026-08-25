@@ -973,6 +973,12 @@ def main(page: ft.Page):
                         ),
                         ft.Row(
                             controls=[
+                                ft.IconButton(
+                                    icon=ft.Icons.ADD, icon_size=18, icon_color="#1D9E75",
+                                    tooltip="Nova conta nesta categoria",
+                                    on_click=lambda e, c=cat: mostrar_tela_nova_conta(
+                                        categoria_pre_selecionada=c["id"]),
+                                ),
                                 ft.IconButton(icon=ft.Icons.EDIT, icon_size=18,
                                               on_click=lambda e, c=cat: abrir_dialogo_categoria(c)),
                                 ft.IconButton(icon=ft.Icons.DELETE, icon_size=18, icon_color="#A32D2D",
@@ -1060,7 +1066,7 @@ def main(page: ft.Page):
     # ======================================================
     #  TELA DE NOVA CONTA
     # ======================================================
-    def mostrar_tela_nova_conta():
+    def mostrar_tela_nova_conta(categoria_pre_selecionada=None):
         page.controls.clear()
         page.overlay.clear()
         page.padding = 0
@@ -1099,7 +1105,9 @@ def main(page: ft.Page):
             for c in categorias
         ]
         campo_categoria = ft.Dropdown(
-            label="Categoria", value="", options=opcoes_categoria, color="#0B1410",
+            label="Categoria",
+            value=str(categoria_pre_selecionada) if categoria_pre_selecionada else "",
+            options=opcoes_categoria, color="#0B1410",
         )
 
         campo_repetir_ate = ft.TextField(
