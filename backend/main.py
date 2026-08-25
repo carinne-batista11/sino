@@ -330,11 +330,18 @@ def main(page: ft.Page):
         cabecalho_atrasadas = ft.Text("Contas atrasadas", size=15, weight=ft.FontWeight.BOLD, color="#0B1410")
         lista_atrasadas = ft.Column(controls=[], spacing=8)
 
+        def ao_clicar_ver_todas(e):
+            ano_mes_atual = f"{mes_atual[0]:04d}-{mes_atual[1]:02d}"
+            mostrar_tela_todas_contas(ano_mes_atual)
+
         cabecalho_contas = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
                 ft.Text("Suas contas", size=15, weight=ft.FontWeight.BOLD, color="#0B1410"),
-                ft.Text("Ver todas", size=13, color="#1D9E75"),
+                ft.Container(
+                    content=ft.Text("Ver todas", size=13, color="#1D9E75"),
+                    on_click=ao_clicar_ver_todas,
+                ),
             ],
         )
 
@@ -864,6 +871,58 @@ def main(page: ft.Page):
                 for c in contas_ordenadas:
                     lista_contas.controls.append(linha_conta(c, categorias.get(c["categoria_id"], "")))
 
+            page.update()
+
+        def mostrar_tela_todas_contas(ano_mes):
+            # RF05: mesma consulta e mesma ordenação de atualizar_dados(), só sem o
+            # corte [:5]. Reaproveita linha_conta()/abrir_detalhe_conta() por estar
+            # aninhada no mesmo escopo de mostrar_tela_principal().
+            page.controls.clear()
+            page.padding = 0
+
+            ano, mes = (int(p) for p in ano_mes.split("-"))
+            categorias_atuais = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
+
+            contas_do_mes = database.listar_contas(usuario_atual["id"], ano_mes)
+            contas_do_mes_ordenadas = sorted(
+                contas_do_mes,
+                key=lambda c: (0 if c["status"] == "atrasado" else 1, c["data_vencimento"]),
+            )
+
+            lista_completa = ft.ListView(expand=True, spacing=8, padding=ft.Padding(20, 0, 20, 24))
+            if not contas_do_mes_ordenadas:
+                lista_completa.controls.append(
+                    ft.Container(
+                        content=ft.Text("Nenhuma conta cadastrada ainda.", color="#888780", size=13),
+                        padding=16,
+                    )
+                )
+            else:
+                for c in contas_do_mes_ordenadas:
+                    lista_completa.controls.append(
+                        linha_conta(c, categorias_atuais.get(c["categoria_id"], ""))
+                    )
+
+            cabecalho_todas_contas = ft.Container(
+                padding=ft.Padding(20, 40, 20, 0),
+                content=ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    controls=[
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                                      on_click=lambda e: mostrar_tela_principal()),
+                        ft.Text(f"{MESES_PT[mes - 1]} {ano}", size=18, weight=ft.FontWeight.BOLD,
+                                color="#0B1410"),
+                        ft.Container(width=40),
+                    ],
+                ),
+            )
+
+            page.add(
+                ft.Column(
+                    expand=True,
+                    controls=[cabecalho_todas_contas, lista_completa],
+                )
+            )
             page.update()
 
         fab = ft.Container(
