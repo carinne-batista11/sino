@@ -734,7 +734,10 @@ def main(page: ft.Page):
             data_venc = date.fromisoformat(conta["data_vencimento"])
             dias_delta = (data_venc - date.today()).days
 
-            if conta["status"] == "atrasado":
+            if conta["status"] == "pago":
+                cor, rotulo_status = "#1D9E75", "Pago"
+                frase = None
+            elif conta["status"] == "atrasado":
                 cor, rotulo_status = "#A32D2D", "Atrasado"
                 frase = f"venceu há {abs(dias_delta)} dia(s)"
             elif dias_delta == 0:
