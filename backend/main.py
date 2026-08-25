@@ -363,6 +363,23 @@ def main(page: ft.Page):
                 else:
                     cor_status, rotulo_status = "#888780", "Pendente"
 
+                def alternar_status_pagamento(e):
+                    # RF06/RF24: alterna somente esta ocorrência. O escopo de série
+                    # (RF20, seção 5.2 do ERS) só se aplica a nome/valor/data — status
+                    # não tem variante "este mês em diante".
+                    if conta["status"] == "pago":
+                        database.marcar_conta_como_pendente(conta["id"])
+                        conta["status"] = "atrasado" if dias_delta < 0 else "pendente"
+                    else:
+                        database.marcar_conta_como_paga(conta["id"])
+                        conta["status"] = "pago"
+                    mostrar_visualizacao()
+
+                if conta["status"] == "pago":
+                    texto_botao_status, cor_botao_status = "Marcar como pendente", "#E0A030"
+                else:
+                    texto_botao_status, cor_botao_status = "Marcar como paga", "#39D67C"
+
                 recorrencia = "Sim" if conta.get("conta_fixa") == 1 else "Não"
 
                 parcela_texto = None
@@ -419,6 +436,13 @@ def main(page: ft.Page):
                                 ft.Container(height=20),
                                 cartao_detalhes,
                                 ft.Container(height=16),
+                                ft.Button(
+                                    content=texto_botao_status,
+                                    bgcolor=cor_botao_status,
+                                    color="white",
+                                    on_click=alternar_status_pagamento,
+                                ),
+                                ft.Container(height=8),
                                 ft.Button(
                                     content="Editar",
                                     bgcolor="#1D9E75",

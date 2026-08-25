@@ -317,6 +317,14 @@ def marcar_conta_como_paga(conta_id):
     conexao.close()
 
 
+def marcar_conta_como_pendente(conta_id):
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("UPDATE contas SET status = 'pendente' WHERE id = ?", (conta_id,))
+    conexao.commit()
+    conexao.close()
+
+
 def editar_conta_ocorrencia(conta_id, nome=None, valor=None, data_vencimento=None):
     """
     Atualiza nome/valor/data_vencimento de uma única ocorrência.
