@@ -828,7 +828,7 @@ def main(page: ft.Page):
                         ft.Container(width=8),
                         ft.Column(
                             controls=[
-                                ft.Text(f"{len(proximas)} conta(s) vencem esta semana", size=13,
+                                ft.Text(f"{len(proximas)} conta(s) vencem nos próximos 7 dias", size=13,
                                          weight=ft.FontWeight.BOLD, color="#7A5B00"),
                                 ft.Text(f"Total de {formatar_moeda(total_proximas)}", size=12, color="#7A5B00"),
                             ],
@@ -877,6 +877,9 @@ def main(page: ft.Page):
             # RF05: mesma consulta e mesma ordenação de atualizar_dados(), só sem o
             # corte [:5]. Reaproveita linha_conta()/abrir_detalhe_conta() por estar
             # aninhada no mesmo escopo de mostrar_tela_principal().
+            # RF09: filtro de status, com estado local a esta chamada (recriado a
+            # cada abertura da tela, portanto nunca persistido) e independente do
+            # filtro_total do RF12.
             page.controls.clear()
             page.padding = 0
 
@@ -889,19 +892,84 @@ def main(page: ft.Page):
                 key=lambda c: (0 if c["status"] == "atrasado" else 1, c["data_vencimento"]),
             )
 
+            filtro_ver_todas = {"status": "todas"}
+            OPCOES_FILTRO_STATUS_VER_TODAS = (
+                ("todas", "Todas"), ("pendentes", "Pendentes"),
+                ("pagas", "Pagas"), ("atrasadas", "Atrasadas"),
+            )
+
+            def contas_filtradas():
+                status_sel = filtro_ver_todas["status"]
+                resultado = contas_do_mes_ordenadas
+                if status_sel == "pendentes":
+                    resultado = [c for c in resultado if c["status"] == "pendente"]
+                elif status_sel == "pagas":
+                    resultado = [c for c in resultado if c["status"] == "pago"]
+                elif status_sel == "atrasadas":
+                    resultado = [c for c in resultado if c["status"] == "atrasado"]
+
+                return resultado
+
             lista_completa = ft.ListView(expand=True, spacing=8, padding=ft.Padding(20, 0, 20, 24))
-            if not contas_do_mes_ordenadas:
-                lista_completa.controls.append(
-                    ft.Container(
-                        content=ft.Text("Nenhuma conta cadastrada ainda.", color="#888780", size=13),
-                        padding=16,
-                    )
-                )
-            else:
-                for c in contas_do_mes_ordenadas:
+
+            def recompor_lista_completa():
+                lista_completa.controls.clear()
+                if not contas_do_mes_ordenadas:
                     lista_completa.controls.append(
-                        linha_conta(c, categorias_atuais.get(c["categoria_id"], ""))
+                        ft.Container(
+                            content=ft.Text("Nenhuma conta cadastrada neste mês.", color="#888780", size=13),
+                            padding=16,
+                        )
                     )
+                    return
+
+                filtradas = contas_filtradas()
+                if not filtradas:
+                    lista_completa.controls.append(
+                        ft.Container(
+                            content=ft.Text("Nenhuma conta encontrada com os filtros selecionados.",
+                                             color="#888780", size=13),
+                            padding=16,
+                        )
+                    )
+                else:
+                    for c in filtradas:
+                        lista_completa.controls.append(
+                            linha_conta(c, categorias_atuais.get(c["categoria_id"], ""))
+                        )
+
+            def atualizar_lista_ver_todas():
+                recompor_lista_completa()
+                page.update()
+
+            linha_filtro_status_ver_todas = ft.Row(spacing=4, controls=[])
+
+            def montar_chips_status_ver_todas():
+                linha_filtro_status_ver_todas.controls.clear()
+                for valor, rotulo in OPCOES_FILTRO_STATUS_VER_TODAS:
+                    linha_filtro_status_ver_todas.controls.append(
+                        chip_filtro_status_ver_todas(valor, rotulo)
+                    )
+
+            def selecionar_filtro_status_ver_todas(valor):
+                filtro_ver_todas["status"] = valor
+                montar_chips_status_ver_todas()
+                atualizar_lista_ver_todas()
+
+            def chip_filtro_status_ver_todas(valor, rotulo):
+                ativo = filtro_ver_todas["status"] == valor
+                return ft.Container(
+                    content=ft.Text(rotulo, size=10, weight=ft.FontWeight.BOLD,
+                                     color="#0B1410" if ativo else "#888780"),
+                    bgcolor="#39D67C" if ativo else "transparent",
+                    border=None if ativo else ft.Border.all(1, "#3A413B"),
+                    border_radius=12,
+                    padding=ft.Padding(8, 4, 8, 4),
+                    on_click=lambda e, v=valor: selecionar_filtro_status_ver_todas(v),
+                )
+
+            montar_chips_status_ver_todas()
+            recompor_lista_completa()
 
             cabecalho_todas_contas = ft.Container(
                 padding=ft.Padding(20, 40, 20, 0),
@@ -917,10 +985,18 @@ def main(page: ft.Page):
                 ),
             )
 
+            filtros_ver_todas = ft.Container(
+                padding=ft.Padding(20, 12, 20, 4),
+                content=ft.Column(
+                    spacing=8,
+                    controls=[linha_filtro_status_ver_todas],
+                ),
+            )
+
             page.add(
                 ft.Column(
                     expand=True,
-                    controls=[cabecalho_todas_contas, lista_completa],
+                    controls=[cabecalho_todas_contas, filtros_ver_todas, lista_completa],
                 )
             )
             page.update()
