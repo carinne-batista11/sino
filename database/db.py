@@ -460,47 +460,136 @@ def _somar_ano(ano, mes_ancora, dia_ancora):
     return date(proximo_ano, mes_ancora, dia_ajustado).isoformat()
 
 
-def criar_conta(usuario_id, nome, valor, data_vencimento, categoria_id=None,
-                 conta_fixa=0, repetir_ate=None):
+def criar_conta_unica(usuario_id, nome, valor, data_vencimento, categoria_id=None):
+    """
+    Cria uma conta avulsa (RF04/RF10 — tipo Única): uma única linha em
+    `contas`, sem série. `serie_id` fica `NULL` e nenhum registro é criado
+    em `series_recorrencia`.
+    """
     conexao = conectar()
     cursor = conexao.cursor()
-
     cursor.execute(
         """
-        INSERT INTO contas
-            (usuario_id, categoria_id, nome, valor, data_vencimento,
-             status, conta_fixa, repetir_ate)
-        VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?)
+        INSERT INTO contas (usuario_id, categoria_id, nome, valor, data_vencimento, status)
+        VALUES (?, ?, ?, ?, ?, 'pendente')
         """,
-        (usuario_id, categoria_id, nome, valor, data_vencimento, conta_fixa, repetir_ate),
+        (usuario_id, categoria_id, nome, valor, data_vencimento),
     )
-    primeiro_id = cursor.lastrowid
+    novo_id = cursor.lastrowid
+    conexao.commit()
+    conexao.close()
+    return novo_id
 
-    if conta_fixa == 1:
-        cursor.execute("UPDATE contas SET serie_id = ? WHERE id = ?", (primeiro_id, primeiro_id))
 
-        ano, mes, dia = map(int, data_vencimento.split("-"))
-        limite_ano, limite_mes = map(int, repetir_ate.split("-"))
-        proxima_data = _somar_mes(ano, mes, dia)
+def _gerar_datas_ocorrencias(frequencia, data_inicio, data_termino):
+    """
+    Lista de datas (ISO, em ordem) da ocorrência-âncora (`data_inicio`) até
+    onde a geração inicial da série deve chegar, sem arrasto (5.2).
 
-        while True:
-            ano_atual, mes_atual, _ = map(int, proxima_data.split("-"))
-            if (ano_atual, mes_atual) > (limite_ano, limite_mes):
-                break
+    Com `data_termino` ("AAAA-MM"): gera até esse mês, inclusive, sem
+    limite de 12 meses (5.3/CT34) — mesmo critério (comparação de ano/mês)
+    já usado pelo modelo anterior para "conta fixa".
+
+    Sem `data_termino`: gera até o horizonte inicial de "os 12 meses
+    seguintes à ocorrência-âncora" (5.3/9.4/CT07). Isso é uma janela de
+    calendário — 12 meses corridos a partir da âncora, ou seja, até
+    ano_ancora+1/mes_ancora inclusive — e não uma contagem fixa de
+    ocorrências: numa série mensal essa janela produz 12 ocorrências além
+    da âncora (uma por mês); numa série anual, a próxima ocorrência já cai
+    exatamente na borda dessa janela (12 meses = 1 ano depois), então
+    produz só mais 1. É só o horizonte inicial, não o fim da recorrência
+    (a série continua aberta; a extensão contínua fica a cargo da geração
+    sob demanda, seção 5.20, fora do escopo deste commit).
+    """
+    ano_ancora, mes_ancora, dia_ancora = map(int, data_inicio.split("-"))
+    avancar = (
+        (lambda ano, mes: _somar_mes(ano, mes, dia_ancora))
+        if frequencia == "mensal"
+        else (lambda ano, mes: _somar_ano(ano, mes_ancora, dia_ancora))
+    )
+
+    if data_termino is not None:
+        limite_ano, limite_mes = map(int, data_termino.split("-"))
+    else:
+        limite_ano, limite_mes = ano_ancora + 1, mes_ancora
+
+    datas = [data_inicio]
+    while True:
+        ano_atual, mes_atual, _ = map(int, datas[-1].split("-"))
+        proxima = avancar(ano_atual, mes_atual)
+        ano_proxima, mes_proxima, _ = map(int, proxima.split("-"))
+        if (ano_proxima, mes_proxima) > (limite_ano, limite_mes):
+            break
+        datas.append(proxima)
+
+    return datas
+
+
+def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
+                            data_termino=None, categoria_id=None):
+    """
+    Cria uma série recorrente (RF10 — Mensal/Anual): insere `series_recorrencia`
+    e gera as ocorrências correspondentes em `contas`, cada uma apontando
+    para a série via `serie_id`. `data_vencimento` é a ocorrência-âncora —
+    define `data_inicio`/`dia_ancora`/`mes_ancora` (5.2).
+
+    Sem `data_termino`: gera o horizonte inicial de 12 meses (5.3/CT07); a
+    série fica aberta (`ativa=1`, `data_termino=NULL`).
+    Com `data_termino` ("AAAA-MM"): gera integralmente até esse mês,
+    inclusive, sem cap de 12 meses (5.3/CT34).
+
+    Operação atômica: qualquer falha reverte tudo (ROLLBACK) — nunca deixa
+    a série sem suas ocorrências, nem ocorrências órfãs. Retorna
+    (serie_id, [ids das ocorrências criadas, em ordem]).
+    """
+    if frequencia not in ("mensal", "anual"):
+        raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
+
+    ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
+    mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
+
+    datas = _gerar_datas_ocorrencias(frequencia, data_vencimento, data_termino)
+    horizonte_gerado_ate = datas[-1]
+
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+    try:
+        cursor.execute("BEGIN;")
+
+        cursor.execute(
+            """
+            INSERT INTO series_recorrencia
+                (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+                 mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """,
+            (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+             mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate),
+        )
+        serie_id = cursor.lastrowid
+
+        ids_ocorrencias = []
+        for data_ocorrencia in datas:
             cursor.execute(
                 """
                 INSERT INTO contas
-                    (usuario_id, categoria_id, serie_id, nome, valor,
-                     data_vencimento, status, conta_fixa, repetir_ate)
-                VALUES (?, ?, ?, ?, ?, ?, 'pendente', 1, ?)
+                    (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pendente')
                 """,
-                (usuario_id, categoria_id, primeiro_id, nome, valor, proxima_data, repetir_ate),
+                (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia),
             )
-            proxima_data = _somar_mes(ano_atual, mes_atual, dia)
+            ids_ocorrencias.append(cursor.lastrowid)
 
-    conexao.commit()
-    conexao.close()
-    return primeiro_id
+        cursor.execute("COMMIT;")
+    except Exception:
+        cursor.execute("ROLLBACK;")
+        raise
+    finally:
+        conexao.close()
+
+    return serie_id, ids_ocorrencias
 
 
 def listar_contas(usuario_id, ano_mes=None):
