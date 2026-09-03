@@ -447,6 +447,19 @@ def _somar_mes(ano, mes, dia):
     return date(ano, mes, dia_ajustado).isoformat()
 
 
+def _somar_ano(ano, mes_ancora, dia_ancora):
+    """
+    Próxima ocorrência anual a partir de `ano`, sem arrasto (ERS 5.2.2):
+    sempre recalcula a partir de `mes_ancora`/`dia_ancora` fixos (nunca do
+    dia já ajustado de uma ocorrência anterior), então 29/02 é ajustado
+    para 28/02 em ano não bissexto, mas volta a 29/02 assim que o próximo
+    ano bissexto chega — a data-âncora em si nunca muda.
+    """
+    proximo_ano = ano + 1
+    dia_ajustado = _ajustar_dia(proximo_ano, mes_ancora, dia_ancora)
+    return date(proximo_ano, mes_ancora, dia_ajustado).isoformat()
+
+
 def criar_conta(usuario_id, nome, valor, data_vencimento, categoria_id=None,
                  conta_fixa=0, repetir_ate=None):
     conexao = conectar()
