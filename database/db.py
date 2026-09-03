@@ -510,7 +510,8 @@ def listar_contas(usuario_id, ano_mes=None):
     if ano_mes:
         cursor.execute(
             """
-            SELECT id, nome, valor, data_vencimento, status, categoria_id, conta_fixa, serie_id
+            SELECT id, nome, valor, data_vencimento, status, categoria_id,
+                   serie_id, data_pagamento, editado_individualmente
             FROM contas WHERE usuario_id = ? AND data_vencimento LIKE ?
             ORDER BY data_vencimento
             """,
@@ -519,7 +520,8 @@ def listar_contas(usuario_id, ano_mes=None):
     else:
         cursor.execute(
             """
-            SELECT id, nome, valor, data_vencimento, status, categoria_id, conta_fixa, serie_id
+            SELECT id, nome, valor, data_vencimento, status, categoria_id,
+                   serie_id, data_pagamento, editado_individualmente
             FROM contas WHERE usuario_id = ?
             ORDER BY data_vencimento
             """,
@@ -537,7 +539,8 @@ def listar_contas(usuario_id, ano_mes=None):
             status = "atrasado"
         contas.append({
             "id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
-            "status": status, "categoria_id": l[5], "conta_fixa": l[6], "serie_id": l[7],
+            "status": status, "categoria_id": l[5], "serie_id": l[6],
+            "data_pagamento": l[7], "editado_individualmente": l[8],
         })
     return contas
 
@@ -552,7 +555,7 @@ def listar_contas_proximas(usuario_id, dias=7):
 
     cursor.execute(
         """
-        SELECT id, nome, valor, data_vencimento, status, categoria_id, conta_fixa
+        SELECT id, nome, valor, data_vencimento, status, categoria_id, serie_id
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente'
               AND data_vencimento BETWEEN ? AND ?
@@ -565,7 +568,7 @@ def listar_contas_proximas(usuario_id, dias=7):
 
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
-         "status": l[4], "categoria_id": l[5], "conta_fixa": l[6]}
+         "status": l[4], "categoria_id": l[5], "serie_id": l[6]}
         for l in linhas
     ]
 
@@ -579,7 +582,7 @@ def listar_contas_atrasadas(usuario_id):
 
     cursor.execute(
         """
-        SELECT id, nome, valor, data_vencimento, categoria_id, conta_fixa, serie_id
+        SELECT id, nome, valor, data_vencimento, categoria_id, serie_id
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente' AND data_vencimento < ?
         ORDER BY data_vencimento
@@ -591,13 +594,22 @@ def listar_contas_atrasadas(usuario_id):
 
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
-         "status": "atrasado", "categoria_id": l[4], "conta_fixa": l[5], "serie_id": l[6]}
+         "status": "atrasado", "categoria_id": l[4], "serie_id": l[5]}
         for l in linhas
     ]
 
 
 def obter_parcela(serie_id, conta_id):
-    """Posição (X) e total (Y) de uma ocorrência dentro da série de uma conta fixa (RF26)."""
+    """
+    Posição (X) e total (Y) de uma ocorrência dentro da série (RF26/5.19).
+
+    Série com data de término definida: retorna (posição, total).
+    Série sem data de término: retorna (posição, None) -- a ERS proíbe
+    exibir um "total" nesse caso, por não haver um número definitivo de
+    ocorrências (mostrar "quantas já foram geradas até agora" seria
+    enganoso). Quem exibe o texto decide o formato a partir do segundo
+    elemento ser ou não None.
+    """
     if serie_id is None:
         return None
 
@@ -608,11 +620,22 @@ def obter_parcela(serie_id, conta_id):
         (serie_id,),
     )
     ids_ordenados = [linha[0] for linha in cursor.fetchall()]
-    conexao.close()
 
     if conta_id not in ids_ordenados:
+        conexao.close()
         return None
-    return ids_ordenados.index(conta_id) + 1, len(ids_ordenados)
+
+    cursor.execute(
+        "SELECT data_termino FROM series_recorrencia WHERE id = ?",
+        (serie_id,),
+    )
+    linha_serie = cursor.fetchone()
+    conexao.close()
+
+    tem_termino = linha_serie is not None and linha_serie[0] is not None
+    posicao = ids_ordenados.index(conta_id) + 1
+    total = len(ids_ordenados) if tem_termino else None
+    return posicao, total
 
 
 def marcar_conta_como_paga(conta_id):
