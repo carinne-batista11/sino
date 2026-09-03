@@ -481,6 +481,29 @@ def criar_conta_unica(usuario_id, nome, valor, data_vencimento, categoria_id=Non
     return novo_id
 
 
+def _avancar_ate_limite(avancar, data_referencia, limite_ano, limite_mes):
+    """
+    Datas seguintes a (mas sem incluir) `data_referencia`, avançando via
+    `avancar(ano, mes) -> proxima_data_iso`, até `limite_ano`/`limite_mes`
+    inclusive. Lista vazia se `data_referencia` já está no limite ou além
+    dele. Cada chamada de `avancar` recalcula a partir do ano/mês atuais —
+    quem fecha `avancar` (mensal: `_somar_mes`; anual: `_somar_ano`) é
+    responsável por manter o dia/mês-âncora fixos, garantindo "sem
+    arrasto" (5.2).
+    """
+    datas = []
+    ultima = data_referencia
+    while True:
+        ano_atual, mes_atual, _ = map(int, ultima.split("-"))
+        proxima = avancar(ano_atual, mes_atual)
+        ano_proxima, mes_proxima, _ = map(int, proxima.split("-"))
+        if (ano_proxima, mes_proxima) > (limite_ano, limite_mes):
+            break
+        datas.append(proxima)
+        ultima = proxima
+    return datas
+
+
 def _gerar_datas_ocorrencias(frequencia, data_inicio, data_termino):
     """
     Lista de datas (ISO, em ordem) da ocorrência-âncora (`data_inicio`) até
@@ -497,9 +520,9 @@ def _gerar_datas_ocorrencias(frequencia, data_inicio, data_termino):
     ocorrências: numa série mensal essa janela produz 12 ocorrências além
     da âncora (uma por mês); numa série anual, a próxima ocorrência já cai
     exatamente na borda dessa janela (12 meses = 1 ano depois), então
-    produz só mais 1. É só o horizonte inicial, não o fim da recorrência
-    (a série continua aberta; a extensão contínua fica a cargo da geração
-    sob demanda, seção 5.20, fora do escopo deste commit).
+    produz só mais 1. É só o horizonte inicial, não o fim da recorrência —
+    a série continua aberta e a extensão contínua fica a cargo da geração
+    sob demanda (`gerar_ocorrencias_sob_demanda`, seção 5.20).
     """
     ano_ancora, mes_ancora, dia_ancora = map(int, data_inicio.split("-"))
     avancar = (
@@ -513,16 +536,7 @@ def _gerar_datas_ocorrencias(frequencia, data_inicio, data_termino):
     else:
         limite_ano, limite_mes = ano_ancora + 1, mes_ancora
 
-    datas = [data_inicio]
-    while True:
-        ano_atual, mes_atual, _ = map(int, datas[-1].split("-"))
-        proxima = avancar(ano_atual, mes_atual)
-        ano_proxima, mes_proxima, _ = map(int, proxima.split("-"))
-        if (ano_proxima, mes_proxima) > (limite_ano, limite_mes):
-            break
-        datas.append(proxima)
-
-    return datas
+    return [data_inicio] + _avancar_ate_limite(avancar, data_inicio, limite_ano, limite_mes)
 
 
 def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
@@ -590,6 +604,113 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
         conexao.close()
 
     return serie_id, ids_ocorrencias
+
+
+def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
+    """
+    Gera as ocorrências que faltam para cobrir `ate_data` ("AAAA-MM") de
+    uma série ativa e sem término (RF10/5.20/9.4/CT08) — o mecanismo que
+    estende o horizonte inicial de 12 meses (2.4) conforme a necessidade
+    real de exibir um período futuro ainda não gerado.
+
+    - Série inativa (`ativa=0`) ou com `data_termino`: não gera nada,
+      retorna `[]` — séries com término já saem geradas integralmente na
+      criação (2.4); séries removidas (RF29, fora do escopo desta fase)
+      não devem voltar a gerar ocorrências, só se preserva essa checagem.
+    - Nunca toca ocorrências existentes (passadas, pagas, editadas
+      individualmente ou não) — só insere o que falta a partir de
+      `horizonte_gerado_ate`, sempre usando `dia_ancora`/`mes_ancora` da
+      própria série (nunca redevirados de uma ocorrência já gerada), o
+      que garante ausência de arrasto (5.2) e preserva a âncora original.
+    - Antes de inserir, confirma contra `contas` que cada data calculada
+      ainda não existe para esta série (5.20/9.4) — dupla proteção além
+      de confiar apenas em `horizonte_gerado_ate`.
+    - Idempotente: se `ate_data` já está coberto por `horizonte_gerado_ate`
+      (ou atrás dele), não há nada a avançar e a função retorna `[]` sem
+      abrir transação nenhuma; chamar de novo com o mesmo `ate_data` nunca
+      duplica nem altera o estado.
+    - `horizonte_gerado_ate` só avança até a última ocorrência realmente
+      inserida por esta chamada — nunca antecipado além disso.
+    - Atômica: qualquer falha reverte tudo (ROLLBACK); nunca deixa parte
+      das ocorrências criadas nem o horizonte atualizado parcialmente.
+
+    Retorna a lista de ids das novas ocorrências criadas (vazia se não
+    havia nada a gerar). Levanta ValueError se `serie_id` não existir.
+    """
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT usuario_id, nome, valor, categoria_id, frequencia,
+                   dia_ancora, mes_ancora, data_termino, ativa, horizonte_gerado_ate
+            FROM series_recorrencia WHERE id = ?
+            """,
+            (serie_id,),
+        )
+        linha = cursor.fetchone()
+        if linha is None:
+            raise ValueError(f"series_recorrencia com id={serie_id} não existe")
+
+        (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+         mes_ancora, data_termino, ativa, horizonte_gerado_ate) = linha
+
+        if ativa == 0 or data_termino is not None:
+            return []
+
+        limite_ano, limite_mes = map(int, ate_data.split("-"))
+        avancar = (
+            (lambda ano, mes: _somar_mes(ano, mes, dia_ancora))
+            if frequencia == "mensal"
+            else (lambda ano, mes: _somar_ano(ano, mes_ancora, dia_ancora))
+        )
+        novas_datas = _avancar_ate_limite(avancar, horizonte_gerado_ate, limite_ano, limite_mes)
+
+        if not novas_datas:
+            return []
+
+        # Só a partir daqui uma transação é aberta -- o ROLLBACK abaixo deve
+        # cobrir exclusivamente este trecho, nunca as checagens acima (uma
+        # série inexistente/inativa/já coberta nunca chega a abrir transação).
+        try:
+            cursor.execute("BEGIN;")
+
+            placeholders = ",".join("?" * len(novas_datas))
+            cursor.execute(
+                f"SELECT data_vencimento FROM contas WHERE serie_id = ? AND data_vencimento IN ({placeholders})",
+                (serie_id, *novas_datas),
+            )
+            ja_existentes = {linha_existente[0] for linha_existente in cursor.fetchall()}
+
+            ids_novos = []
+            for data_ocorrencia in novas_datas:
+                if data_ocorrencia in ja_existentes:
+                    continue
+                cursor.execute(
+                    """
+                    INSERT INTO contas
+                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                    """,
+                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia),
+                )
+                ids_novos.append(cursor.lastrowid)
+
+            cursor.execute(
+                "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
+                (novas_datas[-1], serie_id),
+            )
+
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
+        conexao.close()
+
+    return ids_novos
 
 
 def listar_contas(usuario_id, ano_mes=None):
