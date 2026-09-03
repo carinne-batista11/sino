@@ -638,20 +638,63 @@ def obter_parcela(serie_id, conta_id):
     return posicao, total
 
 
-def marcar_conta_como_paga(conta_id):
+def marcar_conta_como_paga(conta_id, data_pagamento=None):
+    """
+    Marca a ocorrência como paga (RF06/RF24/5.10). Se `data_pagamento` não
+    for informada, usa a data atual. Rejeita data de pagamento futura --
+    nada é alterado e a função retorna False. Afeta somente esta
+    ocorrência: nunca outras da mesma série (5.9/5.1). Retorna True quando
+    a alteração é aplicada.
+    """
+    data_pagamento = data_pagamento or date.today().isoformat()
+    if data_pagamento > date.today().isoformat():
+        return False
+
     conexao = conectar()
     cursor = conexao.cursor()
-    cursor.execute("UPDATE contas SET status = 'pago' WHERE id = ?", (conta_id,))
+    cursor.execute(
+        "UPDATE contas SET status = 'pago', data_pagamento = ? WHERE id = ?",
+        (data_pagamento, conta_id),
+    )
     conexao.commit()
     conexao.close()
+    return True
 
 
 def marcar_conta_como_pendente(conta_id):
+    """
+    Reverte a ocorrência para pendente e limpa `data_pagamento` (RF06/5.10).
+    Afeta somente esta ocorrência.
+    """
     conexao = conectar()
     cursor = conexao.cursor()
-    cursor.execute("UPDATE contas SET status = 'pendente' WHERE id = ?", (conta_id,))
+    cursor.execute(
+        "UPDATE contas SET status = 'pendente', data_pagamento = NULL WHERE id = ?",
+        (conta_id,),
+    )
     conexao.commit()
     conexao.close()
+
+
+def editar_data_pagamento(conta_id, nova_data):
+    """
+    Altera a data de pagamento de uma ocorrência (RF06/5.10). Rejeita data
+    futura -- nada é alterado e a função retorna False. Não altera
+    `data_vencimento` nem qualquer outra ocorrência da série (5.9/5.1).
+    Retorna True quando a alteração é aplicada.
+    """
+    if nova_data > date.today().isoformat():
+        return False
+
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute(
+        "UPDATE contas SET data_pagamento = ? WHERE id = ?",
+        (nova_data, conta_id),
+    )
+    conexao.commit()
+    conexao.close()
+    return True
 
 
 def editar_conta_ocorrencia(conta_id, nome=None, valor=None, data_vencimento=None):
