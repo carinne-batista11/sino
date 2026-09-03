@@ -5,10 +5,12 @@ database.py — Camada de banco de dados do Sino (v2)
 import sqlite3
 import hashlib
 import os
-from datetime import date, timedelta
+import shutil
+from datetime import date, datetime, timedelta
 from calendar import monthrange
 
 NOME_DO_BANCO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sino.db")
+PASTA_BACKUPS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
 
 
 def conectar():
@@ -37,7 +39,31 @@ def criar_tabelas():
             usuario_id INTEGER NOT NULL,
             nome TEXT NOT NULL,
             icone TEXT,
+            cor TEXT,
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS series_recorrencia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            nome TEXT NOT NULL,
+            valor REAL NOT NULL,
+            categoria_id INTEGER,
+            frequencia TEXT NOT NULL,
+            dia_ancora INTEGER NOT NULL,
+            mes_ancora INTEGER,
+            data_inicio TEXT NOT NULL,
+            data_termino TEXT,
+            ativa INTEGER NOT NULL DEFAULT 1,
+            horizonte_gerado_ate TEXT NOT NULL,
+
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+            FOREIGN KEY (categoria_id) REFERENCES categorias(id),
+
+            CHECK (frequencia IN ('mensal', 'anual')),
+            CHECK (ativa IN (0, 1))
         )
     """)
 
@@ -51,20 +77,15 @@ def criar_tabelas():
             valor REAL NOT NULL,
             data_vencimento TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pendente',
-            conta_fixa INTEGER NOT NULL DEFAULT 0,
-            repetir_ate TEXT,
+            data_pagamento TEXT,
+            editado_individualmente INTEGER NOT NULL DEFAULT 0,
 
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
             FOREIGN KEY (categoria_id) REFERENCES categorias(id),
-            FOREIGN KEY (serie_id) REFERENCES contas(id),
+            FOREIGN KEY (serie_id) REFERENCES series_recorrencia(id),
 
             CHECK (status IN ('pago', 'pendente')),
-            CHECK (conta_fixa IN (0, 1)),
-            CHECK (
-                (conta_fixa = 0 AND repetir_ate IS NULL)
-                OR
-                (conta_fixa = 1 AND repetir_ate IS NOT NULL)
-            )
+            CHECK (editado_individualmente IN (0, 1))
         )
     """)
 
@@ -72,9 +93,281 @@ def criar_tabelas():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_contas_categoria ON contas(categoria_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_contas_vencimento ON contas(data_vencimento);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_contas_serie ON contas(serie_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_series_usuario ON series_recorrencia(usuario_id);")
 
     conexao.commit()
     conexao.close()
+
+
+def criar_backup(caminho_banco=None):
+    """
+    Copia o arquivo do banco para database/backups/ com timestamp no nome,
+    antes de qualquer migração destrutiva de schema. Retorna o caminho do
+    backup criado, ou None se o arquivo do banco ainda não existir.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        return None
+    os.makedirs(PASTA_BACKUPS, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    caminho_backup = os.path.join(PASTA_BACKUPS, f"sino_pre_migracao_v5_{timestamp}.db")
+    shutil.copy2(caminho_banco, caminho_backup)
+    return caminho_backup
+
+
+def _tabela_existe(cursor, nome_tabela):
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (nome_tabela,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _coluna_existe(cursor, nome_tabela, nome_coluna):
+    cursor.execute(f"PRAGMA table_info({nome_tabela})")
+    return any(linha[1] == nome_coluna for linha in cursor.fetchall())
+
+
+def migrar_schema_v5(caminho_banco=None):
+    """
+    Migração de schema do modelo v4.1 para a ERS v5.0 (seções 9.2 e 9.5).
+
+    Idempotente: se `series_recorrencia` já existir, não faz nada e retorna
+    {"executado": False, "motivo": "já migrado"}.
+
+    Passos:
+      1. Backup do banco atual (criar_backup) antes de qualquer alteração.
+      2. Adiciona `categorias.cor` (aditivo).
+      3. Cria `series_recorrencia`, uma linha por `serie_id` distinto hoje
+         existente em `contas`, usando a ocorrência-âncora (id == serie_id)
+         como fonte do nome/valor/categoria-modelo e da âncora (dia,
+         data_inicio); frequência fixada em 'mensal' (única existente hoje);
+         `data_termino` copiado de `repetir_ate`; `horizonte_gerado_ate` =
+         maior data_vencimento já gerada para aquela série.
+      4. Recria `contas` (via tabela auxiliar `contas_novo`, porque SQLite
+         não permite alterar o alvo de uma FOREIGN KEY nem remover colunas
+         acopladas a CHECK via ALTER TABLE): sem `conta_fixa`/`repetir_ate`,
+         com `data_pagamento` e `editado_individualmente` (ambos nascem
+         nulos/0 — RNF08, ERS 9.5.3), `serie_id` apontando para
+         `series_recorrencia`. Todo id, nome, valor, data_vencimento e
+         status são copiados literalmente — nenhum dado de negócio muda.
+
+    Roda inteira dentro de uma transação: qualquer falha reverte (ROLLBACK)
+    e nada fica em estado parcial. O backup do passo 1 permanece no disco
+    independente de sucesso ou falha.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+
+    conexao = sqlite3.connect(caminho_banco)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = OFF;")
+    cursor = conexao.cursor()
+
+    if _tabela_existe(cursor, "series_recorrencia"):
+        conexao.close()
+        return {"executado": False, "motivo": "já migrado", "backup": None}
+
+    caminho_backup = criar_backup(caminho_banco)
+    mapa_serie_antiga_para_nova = {}
+    linhas_antigas = []
+    try:
+        cursor.execute("BEGIN;")
+
+        if not _coluna_existe(cursor, "categorias", "cor"):
+            cursor.execute("ALTER TABLE categorias ADD COLUMN cor TEXT;")
+
+        cursor.execute("""
+            CREATE TABLE series_recorrencia (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER NOT NULL,
+                nome TEXT NOT NULL,
+                valor REAL NOT NULL,
+                categoria_id INTEGER,
+                frequencia TEXT NOT NULL,
+                dia_ancora INTEGER NOT NULL,
+                mes_ancora INTEGER,
+                data_inicio TEXT NOT NULL,
+                data_termino TEXT,
+                ativa INTEGER NOT NULL DEFAULT 1,
+                horizonte_gerado_ate TEXT NOT NULL,
+
+                FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+                FOREIGN KEY (categoria_id) REFERENCES categorias(id),
+
+                CHECK (frequencia IN ('mensal', 'anual')),
+                CHECK (ativa IN (0, 1))
+            );
+        """)
+
+        cursor.execute("SELECT DISTINCT serie_id FROM contas WHERE serie_id IS NOT NULL;")
+        series_antigas = [linha[0] for linha in cursor.fetchall()]
+
+        for serie_id_antigo in series_antigas:
+            cursor.execute(
+                """
+                SELECT usuario_id, categoria_id, nome, valor, data_vencimento, repetir_ate
+                FROM contas WHERE id = ?
+                """,
+                (serie_id_antigo,),
+            )
+            ancora = cursor.fetchone()
+            if ancora is None:
+                raise RuntimeError(
+                    f"serie_id={serie_id_antigo} não corresponde a nenhuma ocorrência-âncora "
+                    "(id == serie_id) — dado pré-existente inconsistente, migração abortada."
+                )
+            usuario_id, categoria_id, nome, valor, data_vencimento, repetir_ate = ancora
+            ano, mes, dia = map(int, data_vencimento.split("-"))
+
+            cursor.execute(
+                "SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?",
+                (serie_id_antigo,),
+            )
+            horizonte_gerado_ate = cursor.fetchone()[0]
+
+            cursor.execute(
+                """
+                INSERT INTO series_recorrencia
+                    (usuario_id, nome, valor, categoria_id, frequencia,
+                     dia_ancora, mes_ancora, data_inicio, data_termino,
+                     ativa, horizonte_gerado_ate)
+                VALUES (?, ?, ?, ?, 'mensal', ?, NULL, ?, ?, 1, ?)
+                """,
+                (usuario_id, nome, valor, categoria_id, dia,
+                 data_vencimento, repetir_ate, horizonte_gerado_ate),
+            )
+            mapa_serie_antiga_para_nova[serie_id_antigo] = cursor.lastrowid
+
+        cursor.execute("""
+            CREATE TABLE contas_novo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER NOT NULL,
+                categoria_id INTEGER,
+                serie_id INTEGER,
+                nome TEXT NOT NULL,
+                valor REAL NOT NULL,
+                data_vencimento TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pendente',
+                data_pagamento TEXT,
+                editado_individualmente INTEGER NOT NULL DEFAULT 0,
+
+                FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+                FOREIGN KEY (categoria_id) REFERENCES categorias(id),
+                FOREIGN KEY (serie_id) REFERENCES series_recorrencia(id),
+
+                CHECK (status IN ('pago', 'pendente')),
+                CHECK (editado_individualmente IN (0, 1))
+            );
+        """)
+
+        cursor.execute("""
+            SELECT id, usuario_id, categoria_id, serie_id, nome, valor,
+                   data_vencimento, status
+            FROM contas;
+        """)
+        linhas_antigas = cursor.fetchall()
+
+        for (id_, usuario_id, categoria_id, serie_id_antigo, nome, valor,
+             data_vencimento, status) in linhas_antigas:
+            serie_id_novo = (
+                mapa_serie_antiga_para_nova.get(serie_id_antigo)
+                if serie_id_antigo is not None else None
+            )
+            cursor.execute(
+                """
+                INSERT INTO contas_novo
+                    (id, usuario_id, categoria_id, serie_id, nome, valor,
+                     data_vencimento, status, data_pagamento, editado_individualmente)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)
+                """,
+                (id_, usuario_id, categoria_id, serie_id_novo, nome, valor,
+                 data_vencimento, status),
+            )
+
+        cursor.execute("DROP TABLE contas;")
+        cursor.execute("ALTER TABLE contas_novo RENAME TO contas;")
+
+        cursor.execute("CREATE INDEX idx_contas_usuario ON contas(usuario_id);")
+        cursor.execute("CREATE INDEX idx_contas_categoria ON contas(categoria_id);")
+        cursor.execute("CREATE INDEX idx_contas_vencimento ON contas(data_vencimento);")
+        cursor.execute("CREATE INDEX idx_contas_serie ON contas(serie_id);")
+        cursor.execute("CREATE INDEX idx_series_usuario ON series_recorrencia(usuario_id);")
+
+        cursor.execute("COMMIT;")
+    except Exception:
+        cursor.execute("ROLLBACK;")
+        raise
+    finally:
+        conexao.execute("PRAGMA foreign_keys = ON;")
+        conexao.close()
+
+    return {
+        "executado": True,
+        "backup": caminho_backup,
+        "series_migradas": len(mapa_serie_antiga_para_nova),
+        "contas_migradas": len(linhas_antigas),
+    }
+
+
+def validar_migracao_v5(caminho_banco=None):
+    """
+    Checagens de integridade pós-migração (contagens, FKs órfãs, presença
+    das colunas novas e ausência das antigas). Retorna um dicionário com
+    os resultados e uma chave "ok" resumindo se tudo passou; não levanta
+    exceção por si só — quem chama decide o que fazer com falhas.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    conexao = sqlite3.connect(caminho_banco)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+
+    resultado = {}
+
+    cursor.execute("SELECT COUNT(*) FROM contas;")
+    resultado["total_contas"] = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM series_recorrencia;")
+    resultado["total_series"] = cursor.fetchone()[0]
+
+    cursor.execute("SELECT SUM(valor) FROM contas;")
+    resultado["soma_valor_contas"] = cursor.fetchone()[0]
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM contas
+        WHERE serie_id IS NOT NULL
+              AND serie_id NOT IN (SELECT id FROM series_recorrencia);
+        """
+    )
+    resultado["series_id_orfaos"] = cursor.fetchone()[0]
+
+    cursor.execute("PRAGMA foreign_key_check(contas);")
+    resultado["violacoes_fk_contas"] = cursor.fetchall()
+
+    cursor.execute("PRAGMA foreign_key_check(series_recorrencia);")
+    resultado["violacoes_fk_series"] = cursor.fetchall()
+
+    for coluna in ("conta_fixa", "repetir_ate"):
+        resultado[f"contas_ainda_tem_{coluna}"] = _coluna_existe(cursor, "contas", coluna)
+
+    for coluna in ("data_pagamento", "editado_individualmente"):
+        resultado[f"contas_tem_{coluna}"] = _coluna_existe(cursor, "contas", coluna)
+
+    resultado["categorias_tem_cor"] = _coluna_existe(cursor, "categorias", "cor")
+
+    conexao.close()
+
+    resultado["ok"] = (
+        resultado["series_id_orfaos"] == 0
+        and not resultado["violacoes_fk_contas"]
+        and not resultado["violacoes_fk_series"]
+        and not resultado["contas_ainda_tem_conta_fixa"]
+        and not resultado["contas_ainda_tem_repetir_ate"]
+        and resultado["contas_tem_data_pagamento"]
+        and resultado["contas_tem_editado_individualmente"]
+        and resultado["categorias_tem_cor"]
+    )
+    return resultado
 
 
 def _gerar_hash_senha(senha):
