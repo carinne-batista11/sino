@@ -660,34 +660,6 @@ def main(page: ft.Page):
                         ),
                     ]
 
-                if conta.get("serie_id") is None:
-                    controles_recorrencia = [
-                        ft.Container(height=8),
-                        ft.TextButton(
-                            content="Transformar em recorrente",
-                            on_click=lambda e: mostrar_dialogo_transformar_recorrente(),
-                        ),
-                    ]
-                elif serie_ativa:
-                    controles_recorrencia = [
-                        ft.Container(height=8),
-                        ft.TextButton(
-                            content="Alterar frequência",
-                            on_click=lambda e: mostrar_dialogo_alterar_frequencia(),
-                        ),
-                        ft.Container(height=8),
-                        ft.TextButton(
-                            content="Remover recorrência",
-                            on_click=lambda e: mostrar_dialogo_remover_recorrencia(),
-                        ),
-                    ]
-                else:
-                    # Série já removida (RF29, ativa=0): a ocorrência se comporta
-                    # como conta individual -- nem RF27/RF29 (nada mais a alterar
-                    # ou remover) nem RF28 (transformar_em_recorrente continua
-                    # exigindo serie_id NULL no db.py; não é reaberto aqui).
-                    controles_recorrencia = []
-
                 area_corpo.controls = [
                     ft.Container(
                         padding=ft.Padding(20, 40, 20, 24),
@@ -708,7 +680,7 @@ def main(page: ft.Page):
                                     color="white",
                                     on_click=lambda e: confirmar_exclusao_conta(),
                                 ),
-                            ] + controles_recorrencia,
+                            ],
                         ),
                     ),
                 ]
@@ -1156,6 +1128,37 @@ def main(page: ft.Page):
                     ],
                 )
 
+                # UX (movida da tela de detalhes para dentro de Editar): RF27/RF29
+                # continuam chamando exatamente os mesmos diálogos já existentes
+                # (mostrar_dialogo_alterar_frequencia/mostrar_dialogo_remover_recorrencia),
+                # sem nenhuma lógica nova. Mesmas três condições de sempre --
+                # conta.get("serie_id") e serie_ativa (D1/D2, calculado uma vez no
+                # topo de abrir_detalhe_conta): avulsa -> RF28; recorrência ativa ->
+                # RF27/RF29; recorrência inativa -> nenhuma ação de recorrência.
+                if conta.get("serie_id") is None:
+                    controles_recorrencia_edicao = [
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Transformar em recorrente",
+                            on_click=lambda e: mostrar_dialogo_transformar_recorrente(),
+                        ),
+                    ]
+                elif serie_ativa:
+                    controles_recorrencia_edicao = [
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Alterar frequência",
+                            on_click=lambda e: mostrar_dialogo_alterar_frequencia(),
+                        ),
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Remover recorrência",
+                            on_click=lambda e: mostrar_dialogo_remover_recorrencia(),
+                        ),
+                    ]
+                else:
+                    controles_recorrencia_edicao = []
+
                 area_corpo.controls = [
                     ft.Container(
                         padding=ft.Padding(20, 40, 20, 24),
@@ -1180,7 +1183,7 @@ def main(page: ft.Page):
                                     color="white",
                                     on_click=salvar_edicao,
                                 ),
-                            ],
+                            ] + controles_recorrencia_edicao,
                         ),
                     ),
                 ]
