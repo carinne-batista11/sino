@@ -485,16 +485,7 @@ def main(page: ft.Page):
                 page.update()
 
             def confirmar_exclusao_conta():
-                total_ocorrencias = 1
                 if conta.get("serie_id") is not None:
-                    parcela = database.obter_parcela(conta["serie_id"], conta["id"])
-                    if parcela:
-                        total_ocorrencias = parcela[1]
-
-                # total_ocorrencias é None para série sem término (RF26/5.19) — nesse
-                # caso a série sempre tem mais de uma ocorrência, então tratamos como
-                # "mais de 1" para decidir qual diálogo mostrar.
-                if total_ocorrencias is None or total_ocorrencias > 1:
                     mostrar_dialogo_exclusao_serie()
                 else:
                     mostrar_dialogo_exclusao_simples()
@@ -532,7 +523,7 @@ def main(page: ft.Page):
                 page.show_dialog(dialogo)
 
             def mostrar_dialogo_exclusao_serie():
-                def excluir_apenas_esta(e):
+                def excluir_somente_este_mes(e):
                     sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
                     if sucesso:
@@ -540,24 +531,27 @@ def main(page: ft.Page):
                     else:
                         mostrar_erro_exclusao()
 
-                def excluir_definitivamente(e):
-                    database.excluir_conta_serie(conta["id"])
+                def excluir_este_mes_em_diante(e):
+                    sucesso = database.excluir_conta_serie(conta["id"])
                     page.pop_dialog()
-                    mostrar_tela_principal()
+                    if sucesso:
+                        mostrar_tela_principal()
+                    else:
+                        mostrar_erro_exclusao()
 
                 acoes = [
                     ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                    ft.TextButton(content="Excluir somente este mês", on_click=excluir_apenas_esta),
-                    ft.Button(content="Excluir definitivamente", bgcolor="#A32D2D", color="white",
-                              on_click=excluir_definitivamente),
+                    ft.TextButton(content="Somente este mês", on_click=excluir_somente_este_mes),
+                    ft.Button(content="Este mês em diante", bgcolor="#A32D2D", color="white",
+                              on_click=excluir_este_mes_em_diante),
                 ]
 
                 dialogo = ft.AlertDialog(
                     modal=True,
-                    title=ft.Text("Excluir conta recorrente"),
+                    title=ft.Text("Como deseja excluir esta conta?"),
                     content=ft.Text(
-                        f"'{conta['nome']}' faz parte de uma série de contas fixas. "
-                        "O que você deseja excluir?"
+                        f"'{conta['nome']}' se repete todos os meses. Você pode excluir apenas "
+                        "esta ocorrência, ou esta e todas as futuras."
                     ),
                     actions=acoes,
                 )
