@@ -1261,15 +1261,81 @@ def main(page: ft.Page):
             options=opcoes_categoria, color="#0B1410",
         )
 
-        campo_repetir_ate = ft.TextField(
-            label="Repetir até (mês/ano)", hint_text="mm/aaaa", color="#0B1410", visible=False,
+        # RF10: tipo de conta -- Única (avulsa), Mensal ou Anual (recorrentes).
+        tipo_selecionado = {"valor": "unica"}
+
+        # RF10/5.18: término opcional -- "Sem data de término" por padrão; quando
+        # desativado, mostra o seletor visual de mês/ano (não mais campo de texto).
+        sem_termino = ft.Switch(value=True, active_color="#1D9E75")
+
+        ano_atual = date.today().year
+        campo_mes_termino = ft.Dropdown(
+            label="Mês", color="#0B1410", expand=True,
+            value=str(date.today().month),
+            options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
+        )
+        campo_ano_termino = ft.Dropdown(
+            label="Ano", color="#0B1410", expand=True,
+            value=str(ano_atual),
+            options=[ft.dropdown.Option(key=str(a), text=str(a)) for a in range(ano_atual, ano_atual + 11)],
+        )
+        linha_termino = ft.Row(spacing=8, controls=[campo_mes_termino, campo_ano_termino], visible=False)
+
+        cartao_termino = ft.Container(
+            bgcolor="white",
+            border_radius=12,
+            padding=14,
+            visible=False,
+            content=ft.Column(
+                spacing=12,
+                controls=[
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        controls=[
+                            ft.Text("Sem data de término", size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                            sem_termino,
+                        ],
+                    ),
+                    linha_termino,
+                ],
+            ),
         )
 
-        def ao_mudar_conta_fixa(e):
-            campo_repetir_ate.visible = campo_fixa.value
+        def atualizar_secao_termino():
+            eh_recorrente = tipo_selecionado["valor"] != "unica"
+            cartao_termino.visible = eh_recorrente
+            linha_termino.visible = eh_recorrente and not sem_termino.value
             page.update()
 
-        campo_fixa = ft.Switch(value=False, active_color="#1D9E75", on_change=ao_mudar_conta_fixa)
+        sem_termino.on_change = lambda e: atualizar_secao_termino()
+
+        linha_tipo = ft.Row(spacing=8, controls=[])
+
+        def chip_tipo(valor, rotulo):
+            ativo = tipo_selecionado["valor"] == valor
+            return ft.Container(
+                content=ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD,
+                                 color="white" if ativo else "#0B1410"),
+                bgcolor="#1D9E75" if ativo else "white",
+                border=None if ativo else ft.Border.all(1, "#E5E4DE"),
+                border_radius=10,
+                padding=ft.Padding(0, 12, 0, 12),
+                alignment=ft.Alignment.CENTER,
+                expand=True,
+                on_click=lambda e, v=valor: selecionar_tipo(v),
+            )
+
+        def montar_chips_tipo():
+            linha_tipo.controls.clear()
+            for valor, rotulo in (("unica", "Única"), ("mensal", "Mensal"), ("anual", "Anual")):
+                linha_tipo.controls.append(chip_tipo(valor, rotulo))
+
+        def selecionar_tipo(valor):
+            tipo_selecionado["valor"] = valor
+            montar_chips_tipo()
+            atualizar_secao_termino()
+
+        montar_chips_tipo()
 
         erro = ft.Text(value="", color="#A32D2D", size=12)
 
@@ -1277,8 +1343,8 @@ def main(page: ft.Page):
             nome = campo_nome.value.strip() if campo_nome.value else ""
             valor = parse_valor(campo_valor.value)
             categoria_id = int(campo_categoria.value) if campo_categoria.value else None
-            conta_fixa = 1 if campo_fixa.value else 0
-            repetir_ate = None
+            tipo = tipo_selecionado["valor"]
+            data_termino = None
 
             if not nome:
                 erro.value = "Digite um nome para a conta."
@@ -1286,18 +1352,15 @@ def main(page: ft.Page):
                 erro.value = "Informe um valor válido."
             elif data_selecionada["valor"] is None:
                 erro.value = "Escolha a data de vencimento."
-            elif conta_fixa:
-                texto_repetir = campo_repetir_ate.value.strip() if campo_repetir_ate.value else ""
-                if not re.fullmatch(r"(0[1-9]|1[0-2])/\d{4}", texto_repetir):
-                    erro.value = "Informe o mês final da recorrência no formato mm/aaaa."
+            elif tipo != "unica" and not sem_termino.value:
+                mes_termino = int(campo_mes_termino.value)
+                ano_termino = int(campo_ano_termino.value)
+                data_venc = data_selecionada["valor"]
+                if (ano_termino, mes_termino) < (data_venc.year, data_venc.month):
+                    erro.value = "O término não pode ser anterior à data de vencimento inicial."
                 else:
-                    mes_repetir, ano_repetir = (int(p) for p in texto_repetir.split("/"))
-                    data_venc = data_selecionada["valor"]
-                    if (ano_repetir, mes_repetir) < (data_venc.year, data_venc.month):
-                        erro.value = "O mês final da recorrência não pode ser anterior ao mês de vencimento."
-                    else:
-                        repetir_ate = f"{ano_repetir:04d}-{mes_repetir:02d}"
-                        erro.value = ""
+                    data_termino = f"{ano_termino:04d}-{mes_termino:02d}"
+                    erro.value = ""
             else:
                 erro.value = ""
 
@@ -1305,10 +1368,17 @@ def main(page: ft.Page):
                 page.update()
                 return
 
-            database.criar_conta(
-                usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
-                categoria_id=categoria_id, conta_fixa=conta_fixa, repetir_ate=repetir_ate,
-            )
+            if tipo == "unica":
+                database.criar_conta_unica(
+                    usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
+                    categoria_id=categoria_id,
+                )
+            else:
+                database.criar_serie_recorrente(
+                    usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
+                    "mensal" if tipo == "mensal" else "anual",
+                    data_termino=data_termino, categoria_id=categoria_id,
+                )
             mostrar_tela_principal()
 
         cabecalho = ft.Row(
@@ -1321,21 +1391,15 @@ def main(page: ft.Page):
             ],
         )
 
-        cartao_fixa = ft.Container(
+        cartao_tipo = ft.Container(
             bgcolor="white",
             border_radius=12,
             padding=14,
-            content=ft.Row(
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            content=ft.Column(
+                spacing=8,
                 controls=[
-                    ft.Column(
-                        controls=[
-                            ft.Text("Conta fixa (recorrente)", size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
-                            ft.Text("Repete todo mês até uma data limite", size=12, color="#888780"),
-                        ],
-                        spacing=2,
-                    ),
-                    campo_fixa,
+                    ft.Text("Tipo de conta", size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                    linha_tipo,
                 ],
             ),
         )
@@ -1360,8 +1424,9 @@ def main(page: ft.Page):
                             ]),
                             campo_categoria,
                             ft.Container(height=8),
-                            cartao_fixa,
-                            campo_repetir_ate,
+                            cartao_tipo,
+                            ft.Container(height=8),
+                            cartao_termino,
                             ft.Container(height=8),
                             erro,
                             ft.Button(
