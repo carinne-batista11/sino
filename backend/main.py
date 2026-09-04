@@ -387,14 +387,18 @@ def main(page: ft.Page):
                 else:
                     texto_botao_status, cor_botao_status = "Marcar como paga", "#39D67C"
 
-                recorrencia = "Sim" if conta.get("conta_fixa") == 1 else "Não"
+                recorrencia = "Sim" if conta.get("serie_id") is not None else "Não"
 
                 parcela_texto = None
-                if conta.get("conta_fixa") == 1 and conta.get("serie_id") is not None:
+                if conta.get("serie_id") is not None:
                     parcela = database.obter_parcela(conta["serie_id"], conta["id"])
                     if parcela:
                         posicao, total_ocorrencias = parcela
-                        parcela_texto = f"Parcela {posicao} de {total_ocorrencias}"
+                        parcela_texto = (
+                            f"Parcela {posicao} de {total_ocorrencias}"
+                            if total_ocorrencias is not None
+                            else f"Parcela {posicao}"
+                        )
 
                 def linha_detalhe(rotulo, valor, cor_valor="#0B1410"):
                     return ft.Column(
@@ -471,24 +475,24 @@ def main(page: ft.Page):
 
             def confirmar_exclusao_conta():
                 total_ocorrencias = 1
-                if conta.get("conta_fixa") == 1 and conta.get("serie_id") is not None:
+                if conta.get("serie_id") is not None:
                     parcela = database.obter_parcela(conta["serie_id"], conta["id"])
                     if parcela:
                         total_ocorrencias = parcela[1]
 
-                if total_ocorrencias > 1:
+                # total_ocorrencias é None para série sem término (RF26/5.19) — nesse
+                # caso a série sempre tem mais de uma ocorrência, então tratamos como
+                # "mais de 1" para decidir qual diálogo mostrar.
+                if total_ocorrencias is None or total_ocorrencias > 1:
                     mostrar_dialogo_exclusao_serie()
                 else:
                     mostrar_dialogo_exclusao_simples()
 
-            def mostrar_erro_exclusao_bloqueada():
+            def mostrar_erro_exclusao():
                 dialogo_erro = ft.AlertDialog(
                     modal=True,
                     title=ft.Text("Não foi possível excluir"),
-                    content=ft.Text(
-                        f"'{conta['nome']}' é a primeira ocorrência de uma série que ainda tem "
-                        "outras ocorrências. Use 'Excluir definitivamente' para remover a série."
-                    ),
+                    content=ft.Text(f"Não foi possível excluir '{conta['nome']}'."),
                     actions=[
                         ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
                                   on_click=lambda e: page.pop_dialog()),
@@ -503,10 +507,7 @@ def main(page: ft.Page):
                     if sucesso:
                         mostrar_tela_principal()
                     else:
-                        # Defesa extra: a camada de dados também recusa excluir uma
-                        # âncora de série com ocorrências ainda existentes, mesmo que
-                        # algo além desta tela chame a função sem passar por aqui.
-                        mostrar_erro_exclusao_bloqueada()
+                        mostrar_erro_exclusao()
 
                 dialogo = ft.AlertDialog(
                     modal=True,
@@ -520,34 +521,25 @@ def main(page: ft.Page):
                 page.show_dialog(dialogo)
 
             def mostrar_dialogo_exclusao_serie():
-                # A âncora da série é a ocorrência cujo próprio id é o serie_id
-                # compartilhado pelas demais. Excluí-la sozinha ("somente este mês")
-                # deixaria as ocorrências futuras com uma referência quebrada, então
-                # essa opção nem é oferecida quando a conta clicada é a âncora.
-                eh_ancora = conta.get("serie_id") == conta.get("id")
-
                 def excluir_apenas_esta(e):
                     sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
                     if sucesso:
                         mostrar_tela_principal()
                     else:
-                        mostrar_erro_exclusao_bloqueada()
+                        mostrar_erro_exclusao()
 
                 def excluir_definitivamente(e):
                     database.excluir_conta_serie(conta["id"])
                     page.pop_dialog()
                     mostrar_tela_principal()
 
-                acoes = [ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog())]
-                if not eh_ancora:
-                    acoes.append(
-                        ft.TextButton(content="Excluir somente este mês", on_click=excluir_apenas_esta)
-                    )
-                acoes.append(
+                acoes = [
+                    ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
+                    ft.TextButton(content="Excluir somente este mês", on_click=excluir_apenas_esta),
                     ft.Button(content="Excluir definitivamente", bgcolor="#A32D2D", color="white",
-                              on_click=excluir_definitivamente)
-                )
+                              on_click=excluir_definitivamente),
+                ]
 
                 dialogo = ft.AlertDialog(
                     modal=True,
@@ -755,11 +747,16 @@ def main(page: ft.Page):
                 frase = f"vence em {dias_delta} dia(s)"
 
             partes_subtitulo = [p for p in (nome_categoria, frase) if p]
-            if conta.get("conta_fixa") == 1 and conta.get("serie_id") is not None:
+            if conta.get("serie_id") is not None:
                 parcela = database.obter_parcela(conta["serie_id"], conta["id"])
                 if parcela:
                     posicao, total_ocorrencias = parcela
-                    partes_subtitulo.append(f"Parcela {posicao} de {total_ocorrencias}")
+                    texto_parcela = (
+                        f"Parcela {posicao} de {total_ocorrencias}"
+                        if total_ocorrencias is not None
+                        else f"Parcela {posicao}"
+                    )
+                    partes_subtitulo.append(texto_parcela)
             subtitulo = " · ".join(partes_subtitulo)
 
             return ft.Container(
