@@ -874,23 +874,88 @@ def main(page: ft.Page):
                 page.show_dialog(dialogo)
 
             def mostrar_dialogo_alterar_frequencia():
-                # RF27: só para conta recorrente -- botão condicionado em
+                # RF27 (5.5) + D5: só para conta recorrente -- botão condicionado em
                 # mostrar_visualizacao(). Não pré-seleciona a frequência atual
                 # (database/db.py não expõe um getter para isso); o usuário escolhe
                 # explicitamente a nova frequência.
+                #
+                # D5 (decisão de produto): o término anterior nunca é preservado
+                # automaticamente -- o usuário escolhe de novo até quando a série
+                # (já na nova frequência) continua, mesmo padrão de "Transformar em
+                # recorrente". "Sem data de término" começa DESMARCADO aqui (só
+                # nesta tela nova; "Transformar em recorrente" não foi alterado).
                 nova_frequencia = {"valor": "mensal"}
                 linha_frequencia_alt = construir_seletor_frequencia(nova_frequencia)
+
+                sem_termino_alt = ft.Switch(value=False, active_color="#1D9E75")
+                ano_atual_alt = date.today().year
+                campo_mes_termino_alt = ft.Dropdown(
+                    label="Mês", color="#0B1410", expand=True,
+                    value=str(date.today().month),
+                    options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
+                )
+                campo_ano_termino_alt = ft.Dropdown(
+                    label="Ano", color="#0B1410", expand=True,
+                    value=str(ano_atual_alt),
+                    options=[ft.dropdown.Option(key=str(a), text=str(a))
+                             for a in range(ano_atual_alt, ano_atual_alt + 11)],
+                )
+                linha_termino_alt = ft.Row(
+                    spacing=8, controls=[campo_mes_termino_alt, campo_ano_termino_alt], visible=True,
+                )
                 erro_freq = ft.Text(value="", color="#A32D2D", size=12)
 
+                def ao_mudar_sem_termino_alt(e):
+                    linha_termino_alt.visible = not sem_termino_alt.value
+                    page.update()
+
+                sem_termino_alt.on_change = ao_mudar_sem_termino_alt
+
                 def confirmar_alteracao(e):
+                    data_termino = None
+                    if not sem_termino_alt.value:
+                        mes_termino = int(campo_mes_termino_alt.value)
+                        ano_termino = int(campo_ano_termino_alt.value)
+                        data_venc_atual = date.fromisoformat(conta["data_vencimento"])
+                        if (ano_termino, mes_termino) < (data_venc_atual.year, data_venc_atual.month):
+                            erro_freq.value = "O término não pode ser anterior à data desta ocorrência."
+                            page.update()
+                            return
+                        data_termino = f"{ano_termino:04d}-{mes_termino:02d}"
+
                     try:
-                        database.alterar_frequencia_serie(conta["id"], nova_frequencia["valor"])
+                        database.alterar_frequencia_serie(
+                            conta["id"], nova_frequencia["valor"], data_termino=data_termino,
+                        )
                     except ValueError:
                         erro_freq.value = "Não foi possível alterar a frequência desta conta."
                         page.update()
                         return
-                    page.pop_dialog()
-                    mostrar_tela_principal()
+
+                    mostrar_confirmacao_alteracao(nova_frequencia["valor"], data_termino)
+
+                def mostrar_confirmacao_alteracao(frequencia_escolhida, termino_escolhido):
+                    frequencia_texto = "mensalmente" if frequencia_escolhida == "mensal" else "anualmente"
+                    if termino_escolhido:
+                        ano_t, mes_t = map(int, termino_escolhido.split("-"))
+                        termino_texto = f"até {MESES_PT[mes_t - 1].lower()} de {ano_t}"
+                    else:
+                        termino_texto = "sem data de término"
+
+                    def fechar_confirmacao(e):
+                        page.pop_dialog()
+                        mostrar_tela_principal()
+
+                    dialogo.title = ft.Text("Frequência alterada")
+                    dialogo.content = ft.Text(
+                        f"A partir deste mês, a conta passa a se repetir {frequencia_texto}, "
+                        f"{termino_texto}."
+                    )
+                    dialogo.actions = [
+                        ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                                  on_click=fechar_confirmacao),
+                    ]
+                    page.update()
 
                 dialogo = ft.AlertDialog(
                     modal=True,
@@ -904,6 +969,14 @@ def main(page: ft.Page):
                                 "nova frequência escolhida."
                             ),
                             linha_frequencia_alt,
+                            ft.Row(
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                controls=[
+                                    ft.Text("Sem data de término", size=13, color="#0B1410"),
+                                    sem_termino_alt,
+                                ],
+                            ),
+                            linha_termino_alt,
                             erro_freq,
                         ],
                     ),

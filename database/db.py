@@ -1360,7 +1360,7 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     return True
 
 
-def alterar_frequencia_serie(conta_id, nova_frequencia):
+def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
     """
     RF27 (5.5): altera a frequência de uma série a partir da ocorrência
     selecionada, que passa a ser a nova âncora.
@@ -1371,21 +1371,35 @@ def alterar_frequencia_serie(conta_id, nova_frequencia):
       nova âncora; só a configuração da série muda a partir dela.
     - Ocorrências futuras (data_vencimento > referência) que ainda seguem
       o padrão mecânico da série (`editado_individualmente = 0`) são
-      substituídas: removidas e regeradas sob a nova frequência a partir
-      da nova âncora (sem arrasto — `_somar_mes`/`_somar_ano`), até o
-      horizonte que a série já tinha (`horizonte_gerado_ate`, capturado
-      antes da mudança — mesmo raciocínio de 2.4/2.5, sem inventar um
-      novo alcance).
+      substituídas: removidas e regeradas sob a nova frequência e o novo
+      término, a partir da nova âncora (sem arrasto —
+      `_somar_mes`/`_somar_ano`).
     - Ocorrências futuras já editadas individualmente
       (`editado_individualmente = 1`): preservadas, nunca substituídas —
-      exceção fechada em 5.1/5.5.
+      exceção fechada em 5.1/5.5, independente do novo término escolhido.
     - `status` e `data_pagamento` nunca são tocados, para nenhuma
       ocorrência (5.9).
-    - `series_recorrencia.frequencia/dia_ancora/mes_ancora/data_inicio`
-      são atualizados para refletir a nova âncora (9.3);
+    - `series_recorrencia.frequencia/dia_ancora/mes_ancora/data_inicio/
+      data_termino` são atualizados para refletir a nova configuração;
       `horizonte_gerado_ate` é recalculado como o maior `data_vencimento`
       realmente existente na série após a operação (cobre tanto as novas
-      ocorrências quanto qualquer preservada que esteja mais à frente).
+      ocorrências quanto qualquer preservada que esteja mais à frente do
+      novo término).
+
+    Fase D5 (decisão de produto): `data_termino` ("AAAA-MM" ou `None`) é
+    uma escolha nova e explícita do usuário a cada alteração de
+    frequência -- o término anterior da série NUNCA é preservado
+    automaticamente. `None` = a série passa a ser sem término (aberta,
+    sujeita à geração sob demanda — 5.20). Reaproveita
+    `_gerar_datas_ocorrencias` (a mesma função usada por
+    `criar_serie_recorrente`/`transformar_em_recorrente`) para não
+    duplicar a regra de horizonte: geração integral até o término quando
+    informado, ou 12 meses a partir da nova âncora quando aberta (5.3).
+    Isso substitui o comportamento anterior (Fase 3.8), que reaproveitava
+    cegamente o `horizonte_gerado_ate` antigo como teto -- o que podia
+    deixar uma série com término travada permanentemente quando a nova
+    frequência não coubesse mais nenhuma vez antes do término antigo
+    (bug identificado na auditoria pós-Fase-3, item D3).
 
     Operação transacional: qualquer falha reverte tudo (ROLLBACK). Retorna
     um dicionário com os ids afetados. Levanta ValueError se `conta_id`
@@ -1418,14 +1432,10 @@ def alterar_frequencia_serie(conta_id, nova_frequencia):
             raise ValueError("RF27 não se aplica a conta avulsa (sem série)")
 
         cursor.execute(
-            """
-            SELECT usuario_id, nome, valor, categoria_id, horizonte_gerado_ate, ativa
-            FROM series_recorrencia WHERE id = ?
-            """,
+            "SELECT usuario_id, nome, valor, categoria_id, ativa FROM series_recorrencia WHERE id = ?",
             (serie_id,),
         )
-        (usuario_id, nome_serie, valor_serie, categoria_id_serie,
-         horizonte_atual, ativa) = cursor.fetchone()
+        usuario_id, nome_serie, valor_serie, categoria_id_serie, ativa = cursor.fetchone()
         if ativa == 0:
             raise ValueError(
                 f"série id={serie_id} não está ativa -- recorrência já removida (RF29), "
@@ -1444,13 +1454,8 @@ def alterar_frequencia_serie(conta_id, nova_frequencia):
         substituiveis = [oc_id for oc_id, editado in futuras if editado == 0]
         preservadas = [oc_id for oc_id, editado in futuras if editado == 1]
 
-        avancar = (
-            (lambda ano, mes: _somar_mes(ano, mes, dia_ancora_novo))
-            if nova_frequencia == "mensal"
-            else (lambda ano, mes: _somar_ano(ano, mes_ancora_novo, dia_ancora_novo))
-        )
-        limite_ano, limite_mes, _ = map(int, horizonte_atual.split("-"))
-        novas_datas = _avancar_ate_limite(avancar, referencia, limite_ano, limite_mes)
+        datas = _gerar_datas_ocorrencias(nova_frequencia, referencia, data_termino)
+        novas_datas = datas[1:]  # a primeira (referencia) já existe -- é a própria conta_id
 
         try:
             cursor.execute("BEGIN;")
@@ -1458,10 +1463,10 @@ def alterar_frequencia_serie(conta_id, nova_frequencia):
             cursor.execute(
                 """
                 UPDATE series_recorrencia
-                SET frequencia = ?, dia_ancora = ?, mes_ancora = ?, data_inicio = ?
+                SET frequencia = ?, dia_ancora = ?, mes_ancora = ?, data_inicio = ?, data_termino = ?
                 WHERE id = ?
                 """,
-                (nova_frequencia, dia_ancora_novo, mes_ancora_novo, referencia, serie_id),
+                (nova_frequencia, dia_ancora_novo, mes_ancora_novo, referencia, data_termino, serie_id),
             )
 
             if substituiveis:
