@@ -23,6 +23,33 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def frase_vencimento_futuro(dias_delta):
+    """RF11 (5.17): linguagem natural para uma conta pendente/a vencer -- só
+    apresentação, não recalcula nem reinterpreta dias_delta."""
+    if dias_delta == 0:
+        return "vence hoje"
+    if dias_delta == 1:
+        return "vence amanhã"
+    return f"vence em {dias_delta} dias"
+
+
+def frase_vencimento_passado(dias_atraso):
+    """RF11 (5.17): linguagem natural para uma conta atrasada. `dias_atraso`
+    é a quantidade de dias já passados (positiva) -- quem chama já calcula
+    isso a partir de dias_delta; esta função só formata o texto."""
+    if dias_atraso == 1:
+        return "venceu ontem"
+    return f"venceu há {dias_atraso} dias"
+
+
+def frase_resumo_proximas(quantidade):
+    """RF17 (5.17): singular/plural correto para o resumo de contas que
+    vencem nos próximos 7 dias."""
+    if quantidade == 1:
+        return "1 conta vence nos próximos 7 dias"
+    return f"{quantidade} contas vencem nos próximos 7 dias"
+
+
 def parse_valor(texto):
     texto = (texto or "").strip().replace("R$", "").strip()
     if not texto:
@@ -1066,13 +1093,13 @@ def main(page: ft.Page):
                 frase = None
             elif conta["status"] == "atrasado":
                 cor, rotulo_status = "#A32D2D", "Atrasado"
-                frase = f"venceu há {abs(dias_delta)} dia(s)"
+                frase = frase_vencimento_passado(abs(dias_delta))
             elif dias_delta == 0:
                 cor, rotulo_status = "#C9820A", "A vencer"
-                frase = "vence hoje"
+                frase = frase_vencimento_futuro(dias_delta)
             else:
                 cor, rotulo_status = "#888780", "Pendente"
-                frase = f"vence em {dias_delta} dia(s)"
+                frase = frase_vencimento_futuro(dias_delta)
 
             partes_subtitulo = [p for p in (nome_categoria, frase) if p]
             if conta.get("serie_id") is not None:
@@ -1172,7 +1199,7 @@ def main(page: ft.Page):
                         ft.Container(width=8),
                         ft.Column(
                             controls=[
-                                ft.Text(f"{len(proximas)} conta(s) vencem nos próximos 7 dias", size=13,
+                                ft.Text(frase_resumo_proximas(len(proximas)), size=13,
                                          weight=ft.FontWeight.BOLD, color="#7A5B00"),
                                 ft.Text(f"Total de {formatar_moeda(total_proximas)}", size=12, color="#7A5B00"),
                             ],
