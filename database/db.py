@@ -407,29 +407,159 @@ def verificar_login(email, senha):
     return {"id": resultado[0], "nome": resultado[1], "email": resultado[2]}
 
 
-def criar_categoria(usuario_id, nome, icone=None):
-    conexao = conectar()
+# RF14/5.11: catálogo pré-criado, disponível "desde o primeiro acesso... não é
+# necessário criá-las manualmente". Emoji = primeira sugestão de cada linha da
+# tabela 5.12 (proposta inicial de UX, não valor imutável da ERS).
+CATEGORIAS_PRE_CRIADAS = [
+    ("Casa", "🏡"),
+    ("Automóvel", "🚗"),
+    ("Lazer", "🎡"),
+    ("Faculdade", "📚"),
+    ("Academia", "🏋🏻‍♀️"),
+    ("Saúde", "🏥"),
+    ("Cartão de crédito", "💳"),
+    ("Beleza", "💄"),
+    ("Streaming", "📽️"),
+    ("Creche", "👶"),
+    ("Outro", "💕"),
+]
+
+# RF18/5.13: "paleta de até 30 cores... valores exatos não são fixados nesta
+# ERS como decisão definitiva". Placeholder de implementação (30 hex
+# distintos, começando pelas cores já usadas na interface hoje).
+PALETA_CORES_CATEGORIAS = [
+    "#1D9E75", "#39D67C", "#0B1410", "#E0A030", "#A32D2D",
+    "#2D6FA3", "#7A3DA3", "#3DA37E", "#C9820A", "#5B5FC7",
+    "#D6397C", "#397CD6", "#8AA33D", "#A3673D", "#3DA3A0",
+    "#C74A6E", "#6E4AC7", "#4AC76E", "#C7A44A", "#4A7EC7",
+    "#C74A4A", "#4AC7B8", "#B84AC7", "#7EC74A", "#C77E4A",
+    "#4A5FC7", "#C74AA4", "#A4C74A", "#4AA4C7", "#8A4AC7",
+]
+
+LIMITE_CATEGORIAS_POR_USUARIO = 30  # 5.11, contando as pré-criadas
+
+
+def _proxima_cor_disponivel(cursor, usuario_id, ignorar_categoria_id=None):
+    """Primeira cor da paleta ainda não usada por outra categoria do usuário (5.13)."""
+    sql = "SELECT cor FROM categorias WHERE usuario_id = ? AND cor IS NOT NULL"
+    parametros = [usuario_id]
+    if ignorar_categoria_id is not None:
+        sql += " AND id != ?"
+        parametros.append(ignorar_categoria_id)
+    cursor.execute(sql, parametros)
+    cores_em_uso = {linha[0] for linha in cursor.fetchall()}
+    for cor in PALETA_CORES_CATEGORIAS:
+        if cor not in cores_em_uso:
+            return cor
+    return None
+
+
+def criar_categoria(usuario_id, nome, icone=None, cor=None):
+    """
+    RF14/RF18 (5.11/5.13): cria uma categoria para o usuário.
+
+    Respeita o limite de 30 categorias por usuário (contando as
+    pré-criadas) -- levanta ValueError se já atingido. Se `cor` não for
+    informada, atribui automaticamente a primeira cor disponível da
+    paleta; se for informada e já estiver em uso por outra categoria do
+    mesmo usuário, ou se não houver nenhuma cor disponível para
+    atribuição automática, a chamada é rejeitada (levanta ValueError) --
+    nunca falha silenciosamente nem atribui cor duplicada.
+
+    Operação transacional. Retorna o id da categoria criada.
+    """
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
     cursor = conexao.cursor()
-    cursor.execute(
-        "INSERT INTO categorias (usuario_id, nome, icone) VALUES (?, ?, ?)",
-        (usuario_id, nome, icone),
-    )
-    conexao.commit()
-    novo_id = cursor.lastrowid
-    conexao.close()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM categorias WHERE usuario_id = ?", (usuario_id,))
+        if cursor.fetchone()[0] >= LIMITE_CATEGORIAS_POR_USUARIO:
+            raise ValueError(
+                f"limite de {LIMITE_CATEGORIAS_POR_USUARIO} categorias atingido "
+                f"para o usuário {usuario_id}"
+            )
+
+        if cor is not None:
+            cursor.execute(
+                "SELECT COUNT(*) FROM categorias WHERE usuario_id = ? AND cor = ?",
+                (usuario_id, cor),
+            )
+            if cursor.fetchone()[0] > 0:
+                raise ValueError(f"cor {cor!r} já está em uso por outra categoria deste usuário")
+        else:
+            cor = _proxima_cor_disponivel(cursor, usuario_id)
+            if cor is None:
+                raise ValueError(f"nenhuma cor disponível na paleta para o usuário {usuario_id}")
+
+        try:
+            cursor.execute("BEGIN;")
+            cursor.execute(
+                "INSERT INTO categorias (usuario_id, nome, icone, cor) VALUES (?, ?, ?, ?)",
+                (usuario_id, nome, icone, cor),
+            )
+            novo_id = cursor.lastrowid
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
+        conexao.close()
+
     return novo_id
+
+
+def inicializar_categorias_padrao(usuario_id):
+    """
+    RF14 (5.11): cria as 11 categorias pré-criadas para um usuário, cada
+    uma com emoji sugerido (5.12) e cor própria da paleta (5.13). Pensada
+    para ser chamada uma vez ao cadastrar o usuário (RF01) -- o catálogo
+    fica disponível "desde o primeiro acesso... não é necessário
+    criá-las manualmente".
+
+    Idempotente: se o usuário já tiver qualquer categoria (deste
+    catálogo ou não), não faz nada -- evita duplicar caso seja chamada
+    de novo. Operação transacional. Retorna a lista de ids criados, ou
+    lista vazia se o usuário já tinha categorias.
+    """
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM categorias WHERE usuario_id = ?", (usuario_id,))
+        if cursor.fetchone()[0] > 0:
+            return []
+
+        try:
+            cursor.execute("BEGIN;")
+            ids_criados = []
+            for indice, (nome, icone) in enumerate(CATEGORIAS_PRE_CRIADAS):
+                cursor.execute(
+                    "INSERT INTO categorias (usuario_id, nome, icone, cor) VALUES (?, ?, ?, ?)",
+                    (usuario_id, nome, icone, PALETA_CORES_CATEGORIAS[indice]),
+                )
+                ids_criados.append(cursor.lastrowid)
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
+        conexao.close()
+
+    return ids_criados
 
 
 def listar_categorias(usuario_id):
     conexao = conectar()
     cursor = conexao.cursor()
     cursor.execute(
-        "SELECT id, nome, icone FROM categorias WHERE usuario_id = ? ORDER BY nome",
+        "SELECT id, nome, icone, cor FROM categorias WHERE usuario_id = ? ORDER BY nome",
         (usuario_id,),
     )
     linhas = cursor.fetchall()
     conexao.close()
-    return [{"id": l[0], "nome": l[1], "icone": l[2]} for l in linhas]
+    return [{"id": l[0], "nome": l[1], "icone": l[2], "cor": l[3]} for l in linhas]
 
 
 def _ajustar_dia(ano, mes, dia):
@@ -1324,29 +1454,101 @@ def alterar_frequencia_serie(conta_id, nova_frequencia):
     }
 
 
-def editar_categoria(categoria_id, nome=None, icone=None):
-    """Atualiza nome e/ou ícone de uma categoria existente."""
-    conexao = conectar()
+def editar_categoria(usuario_id, categoria_id, nome=None, icone=None, cor=None):
+    """
+    Atualiza nome/ícone/cor de uma categoria (RF18/5.13). Isolamento
+    entre usuários: só altera se `categoria_id` pertencer a `usuario_id`
+    -- retorna False caso contrário (a categoria de um usuário não pode
+    ser alterada por outro).
+
+    Se `cor` for informada, deve estar livre entre as OUTRAS categorias
+    do mesmo usuário -- caso contrário a chamada é rejeitada (nada é
+    alterado) e a função levanta ValueError. Trocar a cor libera a
+    anterior automaticamente (5.13): assim que a linha é atualizada, a
+    cor antiga deixa de estar em uso por qualquer categoria, sem
+    nenhuma ação extra necessária.
+
+    Operação transacional. Retorna True quando a alteração é aplicada
+    (inclusive quando nenhum campo foi informado).
+    """
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
     cursor = conexao.cursor()
-    if nome is not None:
-        cursor.execute("UPDATE categorias SET nome = ? WHERE id = ?", (nome, categoria_id))
-    if icone is not None:
-        cursor.execute("UPDATE categorias SET icone = ? WHERE id = ?", (icone, categoria_id))
-    conexao.commit()
-    conexao.close()
+    try:
+        cursor.execute(
+            "SELECT id FROM categorias WHERE id = ? AND usuario_id = ?",
+            (categoria_id, usuario_id),
+        )
+        if cursor.fetchone() is None:
+            return False
+
+        if cor is not None:
+            cursor.execute(
+                "SELECT COUNT(*) FROM categorias WHERE usuario_id = ? AND cor = ? AND id != ?",
+                (usuario_id, cor, categoria_id),
+            )
+            if cursor.fetchone()[0] > 0:
+                raise ValueError(f"cor {cor!r} já está em uso por outra categoria deste usuário")
+
+        campos, valores = [], []
+        if nome is not None:
+            campos.append("nome = ?"); valores.append(nome)
+        if icone is not None:
+            campos.append("icone = ?"); valores.append(icone)
+        if cor is not None:
+            campos.append("cor = ?"); valores.append(cor)
+
+        if campos:
+            try:
+                cursor.execute("BEGIN;")
+                sql = f"UPDATE categorias SET {', '.join(campos)} WHERE id = ?"
+                cursor.execute(sql, (*valores, categoria_id))
+                cursor.execute("COMMIT;")
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
+    finally:
+        conexao.close()
+
+    return True
 
 
-def excluir_categoria(categoria_id):
+def excluir_categoria(usuario_id, categoria_id):
     """
-    Exclui uma categoria. Contas associadas NÃO são excluídas (RF14 / seção 5):
-    elas passam a ficar sem categoria (categoria_id = NULL).
+    Exclui uma categoria do usuário informado (RF14/5.11). Contas
+    associadas NÃO são excluídas: passam a ficar sem categoria
+    (`categoria_id = NULL`). A cor da categoria excluída volta a ficar
+    disponível automaticamente (5.13) -- basta a linha deixar de existir.
+
+    Isolamento entre usuários: só exclui se `categoria_id` pertencer a
+    `usuario_id` -- retorna False caso contrário. Operação transacional.
+    Retorna True quando a exclusão é aplicada.
     """
-    conexao = conectar()
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
     cursor = conexao.cursor()
-    cursor.execute("UPDATE contas SET categoria_id = NULL WHERE categoria_id = ?", (categoria_id,))
-    cursor.execute("DELETE FROM categorias WHERE id = ?", (categoria_id,))
-    conexao.commit()
-    conexao.close()
+    try:
+        cursor.execute(
+            "SELECT id FROM categorias WHERE id = ? AND usuario_id = ?",
+            (categoria_id, usuario_id),
+        )
+        if cursor.fetchone() is None:
+            return False
+
+        try:
+            cursor.execute("BEGIN;")
+            cursor.execute("UPDATE contas SET categoria_id = NULL WHERE categoria_id = ?", (categoria_id,))
+            cursor.execute("DELETE FROM categorias WHERE id = ?", (categoria_id,))
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
+        conexao.close()
+
+    return True
 
 
 def excluir_conta(conta_id):
