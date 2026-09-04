@@ -1260,61 +1260,142 @@ def excluir_categoria(categoria_id):
 
 def excluir_conta(conta_id):
     """
-    Exclui somente esta ocorrência da conta (RF08).
+    RF08 "Somente este mês" (5.7): exclui APENAS esta ocorrência. Nenhuma
+    outra ocorrência da mesma série é tocada, passada ou futura. Funciona
+    mesmo quando a ocorrência é a primeira da série — a limitação do
+    modelo antigo (serie_id autorreferenciado, seção 9.1) não existe mais:
+    `contas.serie_id` aponta para `series_recorrencia`, nunca para outra
+    linha de `contas`, então não há mais FK para quebrar.
 
-    Se a ocorrência for a âncora de uma série (serie_id == id, a mais antiga)
-    e ainda existirem outras ocorrências da mesma série apontando para ela,
-    excluí-la sozinha quebraria a referência dessas ocorrências (FOREIGN
-    KEY): nesse caso a chamada é recusada (nada é alterado) e a função
-    retorna False. Use excluir_conta_serie() para remover a série inteira
-    a partir da âncora. Retorna True quando a exclusão é aplicada.
+    Se a ocorrência excluída pertencia a uma série:
+      - se ainda restar ao menos uma ocorrência da série, `horizonte_gerado_ate`
+        é recalculado como `MAX(data_vencimento)` das que restam, para nunca
+        apontar a uma data sem ocorrência correspondente;
+      - se não restar nenhuma ocorrência, o próprio registro em
+        `series_recorrencia` é removido junto — sem ocorrências, não há
+        mais nada para a série rastrear.
+
+    Retorna False se a conta não existir; True quando a exclusão é
+    aplicada. Operação transacional.
     """
-    conexao = conectar()
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
     try:
-        cursor = conexao.cursor()
         cursor.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,))
         linha = cursor.fetchone()
         if linha is None:
             return False
         serie_id = linha[0]
-        if serie_id == conta_id:
-            cursor.execute(
-                "SELECT COUNT(*) FROM contas WHERE serie_id = ? AND id != ?",
-                (serie_id, conta_id),
-            )
-            if cursor.fetchone()[0] > 0:
-                return False
-        cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
-        conexao.commit()
-        return True
+
+        try:
+            cursor.execute("BEGIN;")
+            cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
+
+            if serie_id is not None:
+                cursor.execute(
+                    "SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,)
+                )
+                novo_horizonte = cursor.fetchone()[0]
+                if novo_horizonte is None:
+                    cursor.execute("DELETE FROM series_recorrencia WHERE id = ?", (serie_id,))
+                else:
+                    cursor.execute(
+                        "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
+                        (novo_horizonte, serie_id),
+                    )
+
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
     finally:
         conexao.close()
+
+    return True
 
 
 def excluir_conta_serie(conta_id):
     """
-    Exclui esta ocorrência e todas as futuras da mesma série (mesmo critério
-    de 'data_vencimento >= referência' usado em editar_conta_serie).
-    Ocorrências passadas da série são preservadas.
+    RF08 "Este mês em diante" (5.7): exclui a ocorrência selecionada e
+    todas as futuras da mesma série (`data_vencimento >= referência`).
+    Ocorrências anteriores permanecem no histórico. Sem exceção para
+    ocorrências já pagas ou editadas individualmente dentro do trecho
+    excluído — a ERS (5.7) não prevê nenhuma proteção nesse sentido para
+    exclusão (diferente da edição, RF20/RF27, onde `editado_individualmente`
+    protege contra RF27): "Este mês em diante" aqui é definido sem
+    ressalvas, exclui tudo dali pra frente.
+
+    Funciona mesmo quando a ocorrência selecionada é a primeira da série
+    (CT15): nesse caso todas as ocorrências desaparecem e o próprio
+    registro em `series_recorrencia` é removido junto — "a série inteira
+    é removida", sem erro de integridade referencial. Quando restam
+    ocorrências anteriores à referência, a série persiste e
+    `horizonte_gerado_ate` é recalculado para a última ocorrência que de
+    fato permanece.
+
+    Conta avulsa (`serie_id` NULL): exclui diretamente, sem efeito em
+    nenhuma série.
+
+    Nota de arquitetura — limitação conhecida, deliberadamente não
+    resolvida nesta fase (fora do escopo de RF29): como
+    `horizonte_gerado_ate` passa a refletir o novo teto real (exigência de
+    integridade, não negociável), uma chamada futura de
+    `gerar_ocorrencias_sob_demanda` para uma data além desse novo teto,
+    numa série sem término, volta a gerar ocorrências novas (pendentes,
+    sem pagamento) nas mesmas datas/padrão que acabaram de ser excluídas.
+    A série continua aberta/ativa — nada nesta fase a interrompe
+    permanentemente, porque isso é, por definição, o papel do RF29 (seção
+    5.8: "Remover recorrência ≠ Excluir contas futuras"), explicitamente
+    fora de escopo aqui. Suprimir essa regeneração exigiria ou um novo
+    marcador de estado não previsto no ERS, ou antecipar RF29 — as duas
+    coisas vedadas nesta fase. Registrado aqui em vez de mascarado.
+
+    Retorna False se a conta não existir; True quando a exclusão é
+    aplicada. Operação transacional.
     """
-    conexao = conectar()
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
     try:
-        cursor = conexao.cursor()
         cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
         linha = cursor.fetchone()
         if linha is None:
-            return
+            return False
         serie_id, data_referencia = linha
-        if serie_id is None:
-            cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
-        else:
-            cursor.execute(
-                "DELETE FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
-                (serie_id, data_referencia),
-            )
-        conexao.commit()
+
+        try:
+            cursor.execute("BEGIN;")
+
+            if serie_id is None:
+                cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
+            else:
+                cursor.execute(
+                    "DELETE FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
+                    (serie_id, data_referencia),
+                )
+                cursor.execute(
+                    "SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,)
+                )
+                novo_horizonte = cursor.fetchone()[0]
+                if novo_horizonte is None:
+                    cursor.execute("DELETE FROM series_recorrencia WHERE id = ?", (serie_id,))
+                else:
+                    cursor.execute(
+                        "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
+                        (novo_horizonte, serie_id),
+                    )
+
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
     finally:
         conexao.close()
+
+    return True
 
 if __name__ == "__main__":
     criar_tabelas()
