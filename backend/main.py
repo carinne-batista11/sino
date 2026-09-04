@@ -625,35 +625,21 @@ def main(page: ft.Page):
                         page.update()
                         return
 
-                    if conta.get("conta_fixa") == 1:
-                        # RF20: uma ocorrência de conta fixa representa um mês/ano
-                        # específico da série — a data só pode mudar de dia, nunca de
-                        # mês/ano (nem "somente este mês", nem "este mês em diante").
-                        # Bloqueamos aqui, antes de qualquer diálogo, para que o
-                        # usuário corrija a data sem perder o que já preencheu.
-                        data_original = date.fromisoformat(conta["data_vencimento"])
-                        nova_data = data_selecionada["valor"]
-                        if (nova_data.year, nova_data.month) != (data_original.year, data_original.month):
-                            erro_edit.value = (
-                                "Esta é uma conta fixa: a data só pode mudar de dia, "
-                                "mantendo o mês e o ano da ocorrência atual."
-                            )
-                            page.update()
-                            return
+                    nova_data = data_selecionada["valor"]
+
+                    if conta.get("serie_id") is not None:
+                        # RF20 (5.6): ocorrência de uma série -- pergunta o escopo antes
+                        # de aplicar. Sem restrição de mês/ano (removida na Fase 2.6);
+                        # a nova data pode cair em qualquer mês/ano.
                         mostrar_dialogo_escopo_edicao(nome, valor, nova_data)
                     else:
                         database.editar_conta_ocorrencia(
                             conta["id"], nome=nome, valor=valor,
-                            data_vencimento=data_selecionada["valor"].isoformat(),
+                            data_vencimento=nova_data.isoformat(),
                         )
                         mostrar_tela_principal()
 
                 def mostrar_dialogo_escopo_edicao(nome, valor, nova_data):
-                    # RF20: para contas fixas, é preciso perguntar se a alteração vale só
-                    # para esta ocorrência ou também para as futuras da mesma série.
-                    # Mês/ano da nova data já foi validado em salvar_edicao antes de
-                    # chegar aqui, então as duas opções são sempre seguras de oferecer.
-
                     def aplicar_somente_esta(e):
                         sucesso = database.editar_conta_ocorrencia(
                             conta["id"], nome=nome, valor=valor,
@@ -663,10 +649,7 @@ def main(page: ft.Page):
                         if sucesso:
                             mostrar_tela_principal()
                         else:
-                            # Defesa extra: a camada de dados também recusa mudança de
-                            # mês/ano para contas fixas, mesmo que algo além desta tela
-                            # chame a função sem passar pela validação da UI.
-                            erro_edit.value = "Não foi possível salvar: a data mudaria de mês/ano nesta conta fixa."
+                            erro_edit.value = "Não foi possível salvar esta alteração."
                             page.update()
 
                     def aplicar_este_mes_em_diante(e):
@@ -678,15 +661,18 @@ def main(page: ft.Page):
                         if sucesso:
                             mostrar_tela_principal()
                         else:
-                            erro_edit.value = "Não foi possível salvar: a data mudaria de mês/ano nesta conta fixa."
+                            erro_edit.value = (
+                                "Não foi possível salvar: a nova data ultrapassaria o "
+                                "término definido para esta recorrência."
+                            )
                             page.update()
 
                     dialogo = ft.AlertDialog(
                         modal=True,
-                        title=ft.Text("Aplicar alteração"),
+                        title=ft.Text("Como deseja aplicar esta alteração?"),
                         content=ft.Text(
-                            "Esta é uma conta fixa. A alteração deve valer apenas para este mês "
-                            "ou também para os próximos meses da série?"
+                            "Esta conta faz parte de uma recorrência. Você pode alterar "
+                            "apenas esta ocorrência ou também as próximas da mesma recorrência."
                         ),
                         actions=[
                             ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
