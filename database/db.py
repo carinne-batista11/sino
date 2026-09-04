@@ -1069,6 +1069,25 @@ def obter_parcela(serie_id, conta_id):
     return posicao, total
 
 
+def serie_esta_ativa(serie_id):
+    """
+    True se `serie_id` existe e está ativa (`series_recorrencia.ativa = 1`);
+    False se foi removida via RF29 (`remover_recorrencia`, `ativa = 0`) ou
+    se `serie_id` não corresponde a nenhuma série -- nos dois casos a
+    resposta prática para quem chama é a mesma: não deve ser tratada como
+    recorrência em funcionamento (RF27, "Este mês em diante" do RF20,
+    geração sob demanda).
+
+    Somente leitura -- não altera nenhum dado.
+    """
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id,))
+    linha = cursor.fetchone()
+    conexao.close()
+    return linha is not None and linha[0] == 1
+
+
 def marcar_conta_como_paga(conta_id, data_pagamento=None):
     """
     Marca a ocorrência como paga (RF06/RF24/5.10). Se `data_pagamento` não
@@ -1215,9 +1234,17 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     Conta avulsa (`serie_id` NULL): delega para `editar_conta_ocorrencia`
     (CT40 — sem diálogo de escopo, edição direta).
 
+    Série inativa (`ativa = 0`, removida via RF29 -- `remover_recorrencia`):
+    a chamada é rejeitada (nada é alterado), mesmo contrato de retorno já
+    usado para "reorganização ultrapassaria o término" -- False, sem
+    exceção. RF29 (5.8) encerra o ajuste mecânico da série; sem esta
+    checagem, "Este mês em diante" continuaria reorganizando âncora/datas
+    de uma série que o usuário já havia removido. A rejeição acontece
+    antes de qualquer UPDATE/DELETE/INSERT.
+
     Operação transacional: qualquer falha reverte tudo (ROLLBACK). Retorna
-    True quando aplicada, False se rejeitada (conta inexistente, ou
-    reorganização ultrapassaria o término).
+    True quando aplicada, False se rejeitada (conta inexistente, série
+    inativa, ou reorganização ultrapassaria o término).
     """
     conexao_leitura = conectar()
     cursor_leitura = conexao_leitura.cursor()
@@ -1233,10 +1260,13 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
                                         categoria_id=categoria_id, data_vencimento=data_vencimento)
 
     cursor_leitura.execute(
-        "SELECT frequencia, data_termino FROM series_recorrencia WHERE id = ?",
+        "SELECT frequencia, data_termino, ativa FROM series_recorrencia WHERE id = ?",
         (serie_id,),
     )
-    frequencia, data_termino = cursor_leitura.fetchone()
+    frequencia, data_termino, ativa = cursor_leitura.fetchone()
+    if ativa == 0:
+        conexao_leitura.close()
+        return False
 
     cursor_leitura.execute(
         """
@@ -1359,8 +1389,17 @@ def alterar_frequencia_serie(conta_id, nova_frequencia):
 
     Operação transacional: qualquer falha reverte tudo (ROLLBACK). Retorna
     um dicionário com os ids afetados. Levanta ValueError se `conta_id`
-    não existir, não pertencer a nenhuma série, ou `nova_frequencia` for
+    não existir, não pertencer a nenhuma série, a série estiver inativa
+    (removida via RF29 -- `remover_recorrencia`), ou `nova_frequencia` for
     inválida.
+
+    Fase de correção D2 (série inativa): RF29 (5.8) encerra o ajuste
+    mecânico de uma série -- "a série deixa de gerar novas ocorrências".
+    Sem esta checagem, uma série já removida (`ativa = 0`) ainda podia ter
+    sua âncora/frequência reescritas e suas ocorrências futuras não
+    editadas individualmente substituídas, contradizendo RF29. A rejeição
+    acontece antes de qualquer UPDATE/DELETE/INSERT -- nada é tocado numa
+    tentativa contra série inativa.
     """
     if nova_frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {nova_frequencia!r} (use 'mensal' ou 'anual')")
@@ -1379,10 +1418,19 @@ def alterar_frequencia_serie(conta_id, nova_frequencia):
             raise ValueError("RF27 não se aplica a conta avulsa (sem série)")
 
         cursor.execute(
-            "SELECT usuario_id, nome, valor, categoria_id, horizonte_gerado_ate FROM series_recorrencia WHERE id = ?",
+            """
+            SELECT usuario_id, nome, valor, categoria_id, horizonte_gerado_ate, ativa
+            FROM series_recorrencia WHERE id = ?
+            """,
             (serie_id,),
         )
-        usuario_id, nome_serie, valor_serie, categoria_id_serie, horizonte_atual = cursor.fetchone()
+        (usuario_id, nome_serie, valor_serie, categoria_id_serie,
+         horizonte_atual, ativa) = cursor.fetchone()
+        if ativa == 0:
+            raise ValueError(
+                f"série id={serie_id} não está ativa -- recorrência já removida (RF29), "
+                "não é possível alterar sua frequência"
+            )
 
         ano_ref, mes_ref, dia_ref = map(int, referencia.split("-"))
         dia_ancora_novo = dia_ref

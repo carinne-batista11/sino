@@ -405,6 +405,17 @@ def main(page: ft.Page):
             categorias_atuais = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
             nome_categoria = categorias_atuais.get(conta.get("categoria_id")) or "Sem categoria"
 
+            # Correção D1/D2 (auditoria pós-Fase 3): serie_id sozinho não basta --
+            # uma série removida (RF29, ativa=0) continua com serie_id preenchido
+            # em suas ocorrências (preserva histórico/RF26), mas elas devem se
+            # comportar como conta individual daqui em diante (5.8). Computado uma
+            # vez aqui porque nenhuma mutação de recorrência (RF27/28/29) deixa o
+            # usuário na mesma tela sem recarregar via mostrar_tela_principal().
+            serie_ativa = (
+                conta.get("serie_id") is not None
+                and database.serie_esta_ativa(conta["serie_id"])
+            )
+
             area_corpo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
 
             def construir_seletor_frequencia(estado):
@@ -598,7 +609,7 @@ def main(page: ft.Page):
                             on_click=lambda e: mostrar_dialogo_transformar_recorrente(),
                         ),
                     ]
-                else:
+                elif serie_ativa:
                     controles_recorrencia = [
                         ft.Container(height=8),
                         ft.TextButton(
@@ -611,6 +622,12 @@ def main(page: ft.Page):
                             on_click=lambda e: mostrar_dialogo_remover_recorrencia(),
                         ),
                     ]
+                else:
+                    # Série já removida (RF29, ativa=0): a ocorrência se comporta
+                    # como conta individual -- nem RF27/RF29 (nada mais a alterar
+                    # ou remover) nem RF28 (transformar_em_recorrente continua
+                    # exigindo serie_id NULL no db.py; não é reaberto aqui).
+                    controles_recorrencia = []
 
                 area_corpo.controls = [
                     ft.Container(
@@ -639,7 +656,7 @@ def main(page: ft.Page):
                 page.update()
 
             def confirmar_exclusao_conta():
-                if conta.get("serie_id") is not None:
+                if conta.get("serie_id") is not None and serie_ativa:
                     mostrar_dialogo_exclusao_serie()
                 else:
                     mostrar_dialogo_exclusao_simples()
@@ -940,10 +957,11 @@ def main(page: ft.Page):
 
                     nova_data = data_selecionada["valor"]
 
-                    if conta.get("serie_id") is not None:
-                        # RF20 (5.6): ocorrência de uma série -- pergunta o escopo antes
-                        # de aplicar. Sem restrição de mês/ano (removida na Fase 2.6);
-                        # a nova data pode cair em qualquer mês/ano.
+                    if conta.get("serie_id") is not None and serie_ativa:
+                        # RF20 (5.6): ocorrência de uma série ainda ativa -- pergunta o
+                        # escopo antes de aplicar. Sem restrição de mês/ano (removida na
+                        # Fase 2.6); a nova data pode cair em qualquer mês/ano. Série já
+                        # removida (RF29) cai direto no ramo de baixo, como conta avulsa.
                         mostrar_dialogo_escopo_edicao(nome, valor, nova_data)
                     else:
                         database.editar_conta_ocorrencia(
