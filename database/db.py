@@ -713,6 +713,97 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
     return ids_novos
 
 
+def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
+    """
+    RF28 (5.4): transforma uma conta avulsa (Única) em recorrente. A
+    ocorrência existente passa a ser a âncora de uma nova série -- não é
+    duplicada nem recriada, só passa a referenciar a série nova via
+    `serie_id`. "Não existem ocorrências anteriores a incorporar — a
+    série começa exatamente a partir daquela ocorrência" (5.4).
+
+    Gera as ocorrências futuras a partir da âncora com a mesma regra de
+    horizonte de `criar_serie_recorrente` (2.4): integral até
+    `data_termino` se houver, ou até o horizonte inicial de "12 meses
+    seguintes à âncora" se não houver (5.3/9.4).
+
+    Levanta ValueError se `conta_id` não existir, já pertencer a uma
+    série (RF28 só se aplica a conta avulsa), ou `frequencia` for
+    inválida. Operação transacional: qualquer falha reverte tudo
+    (ROLLBACK), inclusive o `UPDATE` que vincula a âncora à nova série.
+
+    Retorna (serie_id, ids_das_novas_ocorrencias) -- a própria `conta_id`
+    não está nessa lista: ela é a âncora, mantém seu id e todos os seus
+    dados (nome/valor/categoria/status/data_pagamento), só ganha um
+    `serie_id` novo.
+    """
+    if frequencia not in ("mensal", "anual"):
+        raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
+
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+    try:
+        cursor.execute(
+            "SELECT usuario_id, categoria_id, serie_id, nome, valor, data_vencimento FROM contas WHERE id = ?",
+            (conta_id,),
+        )
+        linha = cursor.fetchone()
+        if linha is None:
+            raise ValueError(f"conta com id={conta_id} não existe")
+        usuario_id, categoria_id, serie_id_atual, nome, valor, data_vencimento = linha
+        if serie_id_atual is not None:
+            raise ValueError(
+                f"conta id={conta_id} já pertence a uma série (serie_id={serie_id_atual}) -- "
+                "RF28 só se aplica a conta avulsa"
+            )
+
+        ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
+        mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
+
+        datas = _gerar_datas_ocorrencias(frequencia, data_vencimento, data_termino)
+        datas_futuras = datas[1:]  # a primeira (data_vencimento) já existe -- é a própria conta_id
+        horizonte_gerado_ate = datas[-1]
+
+        try:
+            cursor.execute("BEGIN;")
+
+            cursor.execute(
+                """
+                INSERT INTO series_recorrencia
+                    (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+                     mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+                 mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate),
+            )
+            serie_id = cursor.lastrowid
+
+            cursor.execute("UPDATE contas SET serie_id = ? WHERE id = ?", (serie_id, conta_id))
+
+            ids_novos = []
+            for data_ocorrencia in datas_futuras:
+                cursor.execute(
+                    """
+                    INSERT INTO contas
+                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                    """,
+                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia),
+                )
+                ids_novos.append(cursor.lastrowid)
+
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
+        conexao.close()
+
+    return serie_id, ids_novos
+
+
 def listar_contas(usuario_id, ano_mes=None):
     conexao = conectar()
     cursor = conexao.cursor()
@@ -1396,6 +1487,36 @@ def excluir_conta_serie(conta_id):
         conexao.close()
 
     return True
+
+
+def remover_recorrencia(serie_id):
+    """
+    RF29 (5.8): remove a recorrência de uma série -- ela para de gerar
+    novas ocorrências (`ativa = 0`), mas NENHUMA ocorrência já existente é
+    excluída, passada ou futura; o histórico permanece intacto. Não é o
+    mesmo que excluir contas: "Remover recorrência ≠ Excluir contas
+    futuras" (5.8) -- quem quer apagar contas futuras usa a exclusão
+    "Este mês em diante" (RF08, `excluir_conta_serie`).
+
+    `series_recorrencia.ativa = 0` já é respeitado por
+    `gerar_ocorrencias_sob_demanda` (2.5), que se recusa a gerar qualquer
+    ocorrência nova para uma série inativa -- nenhuma mudança adicional
+    foi necessária ali para esta fase.
+
+    Idempotente: chamar de novo numa série já inativa não tem efeito
+    colateral (permanece `ativa = 0`). Levanta ValueError se `serie_id`
+    não existir.
+    """
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT id FROM series_recorrencia WHERE id = ?", (serie_id,))
+    if cursor.fetchone() is None:
+        conexao.close()
+        raise ValueError(f"series_recorrencia com id={serie_id} não existe")
+    cursor.execute("UPDATE series_recorrencia SET ativa = 0 WHERE id = ?", (serie_id,))
+    conexao.commit()
+    conexao.close()
+
 
 if __name__ == "__main__":
     criar_tabelas()
