@@ -1138,10 +1138,15 @@ def main(page: ft.Page):
                     return
                 icone = campo_icone.value.strip() if campo_icone.value else None
 
-                if cat:
-                    database.editar_categoria(cat["id"], nome=nome, icone=icone)
-                else:
-                    database.criar_categoria(usuario_atual["id"], nome, icone)
+                try:
+                    if cat:
+                        database.editar_categoria(usuario_atual["id"], cat["id"], nome=nome, icone=icone)
+                    else:
+                        database.criar_categoria(usuario_atual["id"], nome, icone)
+                except ValueError:
+                    erro.value = "Limite de 30 categorias atingido. Exclua uma categoria existente para criar uma nova."
+                    page.update()
+                    return
 
                 page.pop_dialog()
                 atualizar_lista()
@@ -1159,7 +1164,7 @@ def main(page: ft.Page):
 
         def confirmar_exclusao(cat):
             def excluir(e):
-                database.excluir_categoria(cat["id"])
+                database.excluir_categoria(usuario_atual["id"], cat["id"])
                 page.pop_dialog()
                 atualizar_lista()
 
