@@ -368,6 +368,38 @@ def main(page: ft.Page):
 
             area_corpo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
 
+            def construir_seletor_frequencia(estado):
+                # RF27/RF28: chips Mensal/Anual reutilizáveis nos diálogos de
+                # transformar em recorrente e alterar frequência -- mesmo estilo
+                # visual dos chips de tipo da tela Nova conta.
+                linha = ft.Row(spacing=8, controls=[])
+
+                def montar():
+                    linha.controls.clear()
+                    for valor, rotulo in (("mensal", "Mensal"), ("anual", "Anual")):
+                        ativo = estado["valor"] == valor
+                        linha.controls.append(
+                            ft.Container(
+                                content=ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD,
+                                                 color="white" if ativo else "#0B1410"),
+                                bgcolor="#1D9E75" if ativo else "white",
+                                border=None if ativo else ft.Border.all(1, "#E5E4DE"),
+                                border_radius=10,
+                                padding=ft.Padding(0, 12, 0, 12),
+                                alignment=ft.Alignment.CENTER,
+                                expand=True,
+                                on_click=lambda e, v=valor: selecionar(v),
+                            )
+                        )
+
+                def selecionar(valor):
+                    estado["valor"] = valor
+                    montar()
+                    page.update()
+
+                montar()
+                return linha
+
             def mostrar_visualizacao():
                 page.overlay.clear()
 
@@ -519,6 +551,28 @@ def main(page: ft.Page):
                         ),
                     ]
 
+                if conta.get("serie_id") is None:
+                    controles_recorrencia = [
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Transformar em recorrente",
+                            on_click=lambda e: mostrar_dialogo_transformar_recorrente(),
+                        ),
+                    ]
+                else:
+                    controles_recorrencia = [
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Alterar frequência",
+                            on_click=lambda e: mostrar_dialogo_alterar_frequencia(),
+                        ),
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Remover recorrência",
+                            on_click=lambda e: mostrar_dialogo_remover_recorrencia(),
+                        ),
+                    ]
+
                 area_corpo.controls = [
                     ft.Container(
                         padding=ft.Padding(20, 40, 20, 24),
@@ -539,7 +593,7 @@ def main(page: ft.Page):
                                     color="white",
                                     on_click=lambda e: confirmar_exclusao_conta(),
                                 ),
-                            ],
+                            ] + controles_recorrencia,
                         ),
                     ),
                 ]
@@ -615,6 +669,171 @@ def main(page: ft.Page):
                         "esta ocorrência, ou esta e todas as futuras."
                     ),
                     actions=acoes,
+                )
+                page.show_dialog(dialogo)
+
+            def mostrar_dialogo_transformar_recorrente():
+                # RF28: só para conta única (serie_id None) -- botão que abre este
+                # diálogo já é condicionado a isso em mostrar_visualizacao().
+                frequencia_transf = {"valor": "mensal"}
+                linha_frequencia_transf = construir_seletor_frequencia(frequencia_transf)
+
+                sem_termino_transf = ft.Switch(value=True, active_color="#1D9E75")
+                ano_atual_transf = date.today().year
+                campo_mes_termino_transf = ft.Dropdown(
+                    label="Mês", color="#0B1410", expand=True,
+                    value=str(date.today().month),
+                    options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
+                )
+                campo_ano_termino_transf = ft.Dropdown(
+                    label="Ano", color="#0B1410", expand=True,
+                    value=str(ano_atual_transf),
+                    options=[ft.dropdown.Option(key=str(a), text=str(a))
+                             for a in range(ano_atual_transf, ano_atual_transf + 11)],
+                )
+                linha_termino_transf = ft.Row(
+                    spacing=8, controls=[campo_mes_termino_transf, campo_ano_termino_transf], visible=False,
+                )
+                erro_transf = ft.Text(value="", color="#A32D2D", size=12)
+
+                def ao_mudar_sem_termino_transf(e):
+                    linha_termino_transf.visible = not sem_termino_transf.value
+                    page.update()
+
+                sem_termino_transf.on_change = ao_mudar_sem_termino_transf
+
+                def confirmar_transformacao(e):
+                    data_termino = None
+                    if not sem_termino_transf.value:
+                        mes_termino = int(campo_mes_termino_transf.value)
+                        ano_termino = int(campo_ano_termino_transf.value)
+                        data_venc = date.fromisoformat(conta["data_vencimento"])
+                        if (ano_termino, mes_termino) < (data_venc.year, data_venc.month):
+                            erro_transf.value = "O término não pode ser anterior à data de vencimento desta conta."
+                            page.update()
+                            return
+                        data_termino = f"{ano_termino:04d}-{mes_termino:02d}"
+
+                    try:
+                        novo_serie_id, _ = database.transformar_em_recorrente(
+                            conta["id"], frequencia_transf["valor"], data_termino=data_termino,
+                        )
+                    except ValueError:
+                        erro_transf.value = "Não foi possível transformar esta conta em recorrente."
+                        page.update()
+                        return
+
+                    conta["serie_id"] = novo_serie_id
+                    page.pop_dialog()
+                    mostrar_tela_principal()
+
+                dialogo = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Transformar em recorrente"),
+                    content=ft.Column(
+                        tight=True,
+                        spacing=12,
+                        controls=[
+                            ft.Text(
+                                "A partir de agora, esta conta passa a se repetir automaticamente. "
+                                "Escolha a frequência:"
+                            ),
+                            linha_frequencia_transf,
+                            ft.Row(
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                controls=[
+                                    ft.Text("Sem data de término", size=13, color="#0B1410"),
+                                    sem_termino_transf,
+                                ],
+                            ),
+                            linha_termino_transf,
+                            erro_transf,
+                        ],
+                    ),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
+                        ft.Button(content="Transformar", bgcolor="#1D9E75", color="white",
+                                  on_click=confirmar_transformacao),
+                    ],
+                )
+                page.show_dialog(dialogo)
+
+            def mostrar_dialogo_alterar_frequencia():
+                # RF27: só para conta recorrente -- botão condicionado em
+                # mostrar_visualizacao(). Não pré-seleciona a frequência atual
+                # (database/db.py não expõe um getter para isso); o usuário escolhe
+                # explicitamente a nova frequência.
+                nova_frequencia = {"valor": "mensal"}
+                linha_frequencia_alt = construir_seletor_frequencia(nova_frequencia)
+                erro_freq = ft.Text(value="", color="#A32D2D", size=12)
+
+                def confirmar_alteracao(e):
+                    try:
+                        database.alterar_frequencia_serie(conta["id"], nova_frequencia["valor"])
+                    except ValueError:
+                        erro_freq.value = "Não foi possível alterar a frequência desta conta."
+                        page.update()
+                        return
+                    page.pop_dialog()
+                    mostrar_tela_principal()
+
+                dialogo = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Alterar frequência"),
+                    content=ft.Column(
+                        tight=True,
+                        spacing=12,
+                        controls=[
+                            ft.Text(
+                                "A partir desta ocorrência, a conta passa a se repetir com a "
+                                "nova frequência escolhida."
+                            ),
+                            linha_frequencia_alt,
+                            erro_freq,
+                        ],
+                    ),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
+                        ft.Button(content="Confirmar", bgcolor="#1D9E75", color="white",
+                                  on_click=confirmar_alteracao),
+                    ],
+                )
+                page.show_dialog(dialogo)
+
+            def mostrar_dialogo_remover_recorrencia():
+                # RF29: não exclui nenhuma ocorrência -- só impede que a série gere
+                # novas contas no futuro (database.remover_recorrencia).
+                erro_remocao = ft.Text(value="", color="#A32D2D", size=12)
+
+                def confirmar_remocao(e):
+                    try:
+                        database.remover_recorrencia(conta["serie_id"])
+                    except ValueError:
+                        erro_remocao.value = "Não foi possível remover a recorrência desta conta."
+                        page.update()
+                        return
+                    page.pop_dialog()
+                    mostrar_tela_principal()
+
+                dialogo = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Remover recorrência"),
+                    content=ft.Column(
+                        tight=True,
+                        spacing=12,
+                        controls=[
+                            ft.Text(
+                                "Esta conta deixa de se repetir automaticamente a partir de agora. "
+                                "As ocorrências já existentes, passadas e futuras, não são apagadas."
+                            ),
+                            erro_remocao,
+                        ],
+                    ),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
+                        ft.Button(content="Remover recorrência", bgcolor="#A32D2D", color="white",
+                                  on_click=confirmar_remocao),
+                    ],
                 )
                 page.show_dialog(dialogo)
 
