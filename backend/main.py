@@ -18,6 +18,38 @@ MESES_PT = [
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ]
 
+# RF18/5.12 (Fase D4): sugestões de emoji por nome de categoria pré-criada --
+# dado só de apresentação (UI), por isso vive aqui e não em database/db.py.
+# Baseado na tabela da seção 5.12 do ERS v5.0; a própria ERS declara esses
+# valores como "proposta inicial de UX, não valores imutáveis". A linha
+# "Casa" da ERS lista só 4 emojis (🏡 🏘️ 🏚️ 🏢) -- completada aqui com uma
+# quinta opção coerente (🛋️) para manter 5 sugestões por categoria, como o
+# restante da tabela já tem. Chaves normalizadas (minúsculas, sem espaços
+# nas bordas) -- ver sugestoes_emoji_para.
+SUGESTOES_EMOJI_CATEGORIA = {
+    "casa": ["🏡", "🏘️", "🏚️", "🏢", "🛋️"],
+    "automóvel": ["🚗", "🚕", "🏍️", "✈️", "🚃"],
+    "lazer": ["🎡", "🏟️", "🏖️", "🎮", "🎳"],
+    "faculdade": ["📚", "📋", "📝", "👩‍💻", "📖"],
+    "academia": ["🏋🏻‍♀️", "⛹🏻‍♂️", "🛹", "🏊🏻‍♂️", "🚴🏻‍♂️"],
+    "saúde": ["🏥", "💊", "🩺", "🩻", "💉"],
+    "cartão de crédito": ["💳", "💵", "🪙", "💰", "🪪"],
+    "beleza": ["💄", "💅🏻", "👗", "👟", "👜"],
+    "streaming": ["📽️", "🎥", "📺", "🍿", "🎬"],
+    "creche": ["👶", "👧", "🧒", "🧸", "🚼"],
+    "outro": ["💕", "🔨", "🐾", "🧳", "🛒"],
+}
+
+
+def sugestoes_emoji_para(nome):
+    """RF18 (5.12): 5 sugestões de emoji para um nome de categoria
+    reconhecido, ou lista vazia se não houver sugestão específica (ERS:
+    "sem sugestões pré-definidas específicas" para categorias do usuário).
+    Comparação tolerante a diferenças simples de maiúsculas/minúsculas e
+    espaços nas bordas -- nada além disso."""
+    chave = (nome or "").strip().lower()
+    return SUGESTOES_EMOJI_CATEGORIA.get(chave, [])
+
 
 def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -1538,6 +1570,56 @@ def main(page: ft.Page):
                                         value=cat["icone"] if cat else "", width=280)
             erro = ft.Text(value="", color="#A32D2D", size=12)
 
+            # RF18/5.12 (Fase D4): sugestões de emoji contextuais ao nome digitado.
+            # emoji_sugerido_selecionado rastreia qual sugestão foi clicada (mesmo
+            # papel de cor_selecionada para a paleta de cores, abaixo) -- não é a
+            # mesma coisa que "o texto atual de campo_icone", porque o campo livre
+            # continua editável e não deve ser observado/sobrescrito por digitação.
+            emoji_sugerido_selecionado = {"valor": cat["icone"] if cat and cat.get("icone") else None}
+            linha_sugestoes_emoji = ft.Row(spacing=8, run_spacing=8, wrap=True, width=280)
+            bloco_sugestoes_emoji = ft.Column(
+                spacing=6,
+                visible=False,
+                controls=[
+                    ft.Text("Sugestões", size=12, color="#888780"),
+                    linha_sugestoes_emoji,
+                ],
+            )
+
+            def montar_sugestoes_emoji():
+                sugestoes = sugestoes_emoji_para(campo_nome.value)
+                bloco_sugestoes_emoji.visible = bool(sugestoes)
+                linha_sugestoes_emoji.controls.clear()
+                for emoji in sugestoes:
+                    selecionado = emoji_sugerido_selecionado["valor"] == emoji
+                    linha_sugestoes_emoji.controls.append(
+                        ft.Container(
+                            content=ft.Text(emoji, size=16),
+                            width=36,
+                            height=36,
+                            border_radius=18,
+                            bgcolor="#F5F4F0",
+                            alignment=ft.Alignment.CENTER,
+                            border=ft.Border.all(2, "#1D9E75") if selecionado else None,
+                            on_click=lambda e, em=emoji: selecionar_emoji_sugerido(em),
+                        )
+                    )
+
+            def selecionar_emoji_sugerido(emoji):
+                # Ação explícita do usuário -- só aqui o campo de ícone é
+                # preenchido. Trocar o nome (ao_mudar_nome) nunca faz isso.
+                campo_icone.value = emoji
+                emoji_sugerido_selecionado["valor"] = emoji
+                montar_sugestoes_emoji()
+                page.update()
+
+            def ao_mudar_nome(e):
+                montar_sugestoes_emoji()
+                page.update()
+
+            campo_nome.on_change = ao_mudar_nome
+            montar_sugestoes_emoji()
+
             # RF18/5.13 (Fase 3.11): paleta já existente em database.py -- nenhuma
             # cor nova é inventada aqui. Cores já usadas por OUTRA categoria deste
             # usuário ficam desabilitadas na própria paleta, só para não oferecer
@@ -1609,6 +1691,7 @@ def main(page: ft.Page):
                     controls=[
                         campo_nome,
                         campo_icone,
+                        bloco_sugestoes_emoji,
                         ft.Text("Cor", size=12, color="#888780"),
                         linha_cores,
                         erro,
