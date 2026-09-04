@@ -907,76 +907,34 @@ def editar_data_pagamento(conta_id, nova_data):
     return True
 
 
-def editar_conta_ocorrencia(conta_id, nome=None, valor=None, data_vencimento=None):
+def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None):
     """
-    Atualiza nome/valor/data_vencimento de uma única ocorrência.
+    RF20 "Somente este mês" (5.6): altera nome/valor/categoria/data de
+    vencimento de uma única ocorrência. Sem restrição de mês/ano — a trava
+    do modelo antigo (conta_fixa) não existe mais no v5.0 (seção 9); quem
+    determina o que pode mudar é a posição da ocorrência e seu estado, não
+    o mês do calendário atual.
 
-    Para contas fixas (conta_fixa = 1), a ocorrência representa um mês/ano
-    específico da série: a data só pode mudar de dia, nunca de mês/ano. Se
-    isso for tentado, a chamada inteira é rejeitada (nada é alterado) e a
-    função retorna False. Contas não fixas continuam podendo mudar de
-    mês/ano livremente. Retorna True quando a alteração é aplicada.
-    """
-    conexao = conectar()
-    cursor = conexao.cursor()
+    Se a ocorrência pertence a uma série (`serie_id IS NOT NULL`), marca
+    `editado_individualmente = 1`: passa a ser histórico protegido contra
+    um ajuste mecânico futuro da série (RF27, seção 5.5) — ver o princípio
+    geral em 5.1. Para conta avulsa (`serie_id` NULL) o campo não é
+    tocado — não há série para a ocorrência "seguir" ou se desviar.
 
-    if data_vencimento is not None:
-        cursor.execute("SELECT conta_fixa, data_vencimento FROM contas WHERE id = ?", (conta_id,))
-        linha = cursor.fetchone()
-        if linha is None:
-            conexao.close()
-            return False
-        conta_fixa, data_atual = linha
-        if conta_fixa == 1:
-            ano_novo, mes_novo, _ = map(int, data_vencimento.split("-"))
-            ano_atual, mes_atual, _ = map(int, data_atual.split("-"))
-            if (ano_novo, mes_novo) != (ano_atual, mes_atual):
-                conexao.close()
-                return False
-
-    if nome is not None:
-        cursor.execute("UPDATE contas SET nome = ? WHERE id = ?", (nome, conta_id))
-    if valor is not None:
-        cursor.execute("UPDATE contas SET valor = ? WHERE id = ?", (valor, conta_id))
-    if data_vencimento is not None:
-        cursor.execute("UPDATE contas SET data_vencimento = ? WHERE id = ?", (data_vencimento, conta_id))
-    conexao.commit()
-    conexao.close()
-    return True
-
-
-def editar_conta_serie(conta_id, nome=None, valor=None, data_vencimento=None):
-    """
-    Aplica nome/valor/data à ocorrência informada e às futuras da mesma série
-    (data_vencimento >= referência, capturada antes de qualquer alteração).
-
-    nome e valor são copiados literalmente para todas as ocorrências afetadas.
-    data_vencimento segue uma regra diferente: cada ocorrência futura permanece
-    no seu próprio mês/ano, apenas o dia é recalculado a partir do dia da nova
-    data informada (com o mesmo ajuste de fim de mês usado na geração da série);
-    a ocorrência editada recebe exatamente a data informada — mas só se essa
-    data mantiver o mesmo mês/ano que a ocorrência já tinha. Caso contrário,
-    a chamada inteira é rejeitada (nada é alterado) e a função retorna False.
-    Retorna True quando a alteração é aplicada.
+    `None` em qualquer parâmetro significa "não alterar este campo" (não
+    "limpar" — mesma convenção já usada em `editar_categoria`). Retorna
+    False se a conta não existir; True quando a alteração é aplicada
+    (inclusive quando nenhum campo foi informado — nada a fazer).
     """
     conexao = conectar()
     cursor = conexao.cursor()
-    cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+
+    cursor.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,))
     linha = cursor.fetchone()
     if linha is None:
         conexao.close()
         return False
-    serie_id, data_referencia = linha
-    if serie_id is None:
-        conexao.close()
-        return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor, data_vencimento=data_vencimento)
-
-    if data_vencimento is not None:
-        ano_novo, mes_novo, _ = map(int, data_vencimento.split("-"))
-        ano_ref, mes_ref, _ = map(int, data_referencia.split("-"))
-        if (ano_novo, mes_novo) != (ano_ref, mes_ref):
-            conexao.close()
-            return False
+    serie_id = linha[0]
 
     campos, valores = [], []
     if nome is not None:
@@ -985,33 +943,294 @@ def editar_conta_serie(conta_id, nome=None, valor=None, data_vencimento=None):
     if valor is not None:
         campos.append("valor = ?")
         valores.append(valor)
-    if campos:
-        sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND data_vencimento >= ?"
-        cursor.execute(sql, (*valores, serie_id, data_referencia))
-
+    if categoria_id is not None:
+        campos.append("categoria_id = ?")
+        valores.append(categoria_id)
     if data_vencimento is not None:
-        cursor.execute(
-            "SELECT id, data_vencimento FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
-            (serie_id, data_referencia),
-        )
-        ocorrencias_futuras = cursor.fetchall()
-        dia_novo = date.fromisoformat(data_vencimento).day
+        campos.append("data_vencimento = ?")
+        valores.append(data_vencimento)
+    if serie_id is not None and campos:
+        campos.append("editado_individualmente = 1")
 
-        for ocorrencia_id, data_atual in ocorrencias_futuras:
-            if ocorrencia_id == conta_id:
-                nova_data = data_vencimento
-            else:
-                ano_linha, mes_linha, _ = map(int, data_atual.split("-"))
-                dia_ajustado = _ajustar_dia(ano_linha, mes_linha, dia_novo)
-                nova_data = date(ano_linha, mes_linha, dia_ajustado).isoformat()
-            cursor.execute(
-                "UPDATE contas SET data_vencimento = ? WHERE id = ?",
-                (nova_data, ocorrencia_id),
-            )
-
-    conexao.commit()
+    if campos:
+        sql = f"UPDATE contas SET {', '.join(campos)} WHERE id = ?"
+        cursor.execute(sql, (*valores, conta_id))
+        conexao.commit()
     conexao.close()
     return True
+
+
+def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None):
+    """
+    RF20 "Este mês em diante" (5.6): aplica nome/valor/categoria/data à
+    ocorrência selecionada e às futuras da mesma série (data_vencimento >=
+    referência, capturada antes de qualquer alteração) — INCLUSIVE
+    ocorrências já editadas individualmente (`editado_individualmente=1`)
+    ou já pagas. Decisão fechada da ERS (5.1): "Este mês em diante" é uma
+    ação deliberada do usuário sobre a série no escopo que ele escolheu, e
+    continua se aplicando à selecionada e às futuras exatamente como
+    definido — a proteção de `editado_individualmente` só vale contra um
+    ajuste MECÂNICO de outra operação (RF27, seção 5.5), nunca contra este
+    escopo. `status` e `data_pagamento` nunca são tocados, para nenhuma
+    ocorrência (5.9) — não fazem parte do que esta função altera.
+
+    nome/valor/categoria são copiados literalmente para as ocorrências
+    afetadas e para o "modelo" da série (`series_recorrencia`), para que
+    ocorrências futuras ainda não geradas já nasçam com o novo padrão
+    (9.3).
+
+    data_vencimento redefine a âncora da série a partir desta ocorrência
+    (9.3): a ocorrência selecionada recebe exatamente a data informada, e
+    a mesma quantidade de ocorrências futuras que já existia é recalculada
+    em sequência a partir da nova âncora (dia/mês) e da frequência atual
+    da série, sem arrasto (mesmo mecanismo de `_somar_mes`/`_somar_ano`
+    usado na geração — seção 5.2). `dia_ancora`/`mes_ancora`/`data_inicio`
+    da série são atualizados de acordo, e `horizonte_gerado_ate` passa a
+    refletir a última ocorrência realmente existente após a reorganização.
+    Se a série tem `data_termino` e a reorganização ultrapassaria esse
+    limite, a chamada inteira é rejeitada (nada é alterado) e a função
+    retorna False.
+
+    Conta avulsa (`serie_id` NULL): delega para `editar_conta_ocorrencia`
+    (CT40 — sem diálogo de escopo, edição direta).
+
+    Operação transacional: qualquer falha reverte tudo (ROLLBACK). Retorna
+    True quando aplicada, False se rejeitada (conta inexistente, ou
+    reorganização ultrapassaria o término).
+    """
+    conexao_leitura = conectar()
+    cursor_leitura = conexao_leitura.cursor()
+    cursor_leitura.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+    linha = cursor_leitura.fetchone()
+    if linha is None:
+        conexao_leitura.close()
+        return False
+    serie_id, data_referencia = linha
+    if serie_id is None:
+        conexao_leitura.close()
+        return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor,
+                                        categoria_id=categoria_id, data_vencimento=data_vencimento)
+
+    cursor_leitura.execute(
+        "SELECT frequencia, data_termino FROM series_recorrencia WHERE id = ?",
+        (serie_id,),
+    )
+    frequencia, data_termino = cursor_leitura.fetchone()
+
+    cursor_leitura.execute(
+        """
+        SELECT id, data_vencimento FROM contas
+        WHERE serie_id = ? AND data_vencimento >= ?
+        ORDER BY data_vencimento
+        """,
+        (serie_id, data_referencia),
+    )
+    ocorrencias_futuras = cursor_leitura.fetchall()
+    conexao_leitura.close()
+
+    novas_datas_por_id = None
+    dia_ancora_novo = mes_ancora_novo = None
+    if data_vencimento is not None:
+        data_nova = date.fromisoformat(data_vencimento)
+        dia_ancora_novo, mes_ancora_novo = data_nova.day, data_nova.month
+        avancar = (
+            (lambda ano, mes: _somar_mes(ano, mes, dia_ancora_novo))
+            if frequencia == "mensal"
+            else (lambda ano, mes: _somar_ano(ano, mes_ancora_novo, dia_ancora_novo))
+        )
+        novas_datas = [data_vencimento]
+        for _ in range(len(ocorrencias_futuras) - 1):
+            ano_atual, mes_atual, _ = map(int, novas_datas[-1].split("-"))
+            novas_datas.append(avancar(ano_atual, mes_atual))
+
+        if data_termino is not None:
+            limite_ano, limite_mes = map(int, data_termino.split("-"))
+            ano_ultima, mes_ultima, _ = map(int, novas_datas[-1].split("-"))
+            if (ano_ultima, mes_ultima) > (limite_ano, limite_mes):
+                return False
+
+        novas_datas_por_id = {
+            ocorrencias_futuras[i][0]: novas_datas[i] for i in range(len(ocorrencias_futuras))
+        }
+
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+    try:
+        cursor.execute("BEGIN;")
+
+        campos, valores = [], []
+        if nome is not None:
+            campos.append("nome = ?"); valores.append(nome)
+        if valor is not None:
+            campos.append("valor = ?"); valores.append(valor)
+        if categoria_id is not None:
+            campos.append("categoria_id = ?"); valores.append(categoria_id)
+        if campos:
+            sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND data_vencimento >= ?"
+            cursor.execute(sql, (*valores, serie_id, data_referencia))
+
+        if novas_datas_por_id is not None:
+            for oc_id, nova_data in novas_datas_por_id.items():
+                cursor.execute("UPDATE contas SET data_vencimento = ? WHERE id = ?", (nova_data, oc_id))
+
+        campos_serie, valores_serie = [], []
+        if nome is not None:
+            campos_serie.append("nome = ?"); valores_serie.append(nome)
+        if valor is not None:
+            campos_serie.append("valor = ?"); valores_serie.append(valor)
+        if categoria_id is not None:
+            campos_serie.append("categoria_id = ?"); valores_serie.append(categoria_id)
+        if data_vencimento is not None:
+            campos_serie.append("dia_ancora = ?"); valores_serie.append(dia_ancora_novo)
+            campos_serie.append("mes_ancora = ?")
+            valores_serie.append(mes_ancora_novo if frequencia == "anual" else None)
+            campos_serie.append("data_inicio = ?"); valores_serie.append(data_vencimento)
+        if campos_serie:
+            sql = f"UPDATE series_recorrencia SET {', '.join(campos_serie)} WHERE id = ?"
+            cursor.execute(sql, (*valores_serie, serie_id))
+
+        if novas_datas_por_id is not None:
+            cursor.execute("SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,))
+            novo_horizonte = cursor.fetchone()[0]
+            cursor.execute(
+                "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
+                (novo_horizonte, serie_id),
+            )
+
+        cursor.execute("COMMIT;")
+    except Exception:
+        cursor.execute("ROLLBACK;")
+        raise
+    finally:
+        conexao.close()
+
+    return True
+
+
+def alterar_frequencia_serie(conta_id, nova_frequencia):
+    """
+    RF27 (5.5): altera a frequência de uma série a partir da ocorrência
+    selecionada, que passa a ser a nova âncora.
+
+    - Ocorrências anteriores à selecionada (data_vencimento < referência):
+      nunca tocadas.
+    - A ocorrência selecionada em si: não é alterada — sua data já É a
+      nova âncora; só a configuração da série muda a partir dela.
+    - Ocorrências futuras (data_vencimento > referência) que ainda seguem
+      o padrão mecânico da série (`editado_individualmente = 0`) são
+      substituídas: removidas e regeradas sob a nova frequência a partir
+      da nova âncora (sem arrasto — `_somar_mes`/`_somar_ano`), até o
+      horizonte que a série já tinha (`horizonte_gerado_ate`, capturado
+      antes da mudança — mesmo raciocínio de 2.4/2.5, sem inventar um
+      novo alcance).
+    - Ocorrências futuras já editadas individualmente
+      (`editado_individualmente = 1`): preservadas, nunca substituídas —
+      exceção fechada em 5.1/5.5.
+    - `status` e `data_pagamento` nunca são tocados, para nenhuma
+      ocorrência (5.9).
+    - `series_recorrencia.frequencia/dia_ancora/mes_ancora/data_inicio`
+      são atualizados para refletir a nova âncora (9.3);
+      `horizonte_gerado_ate` é recalculado como o maior `data_vencimento`
+      realmente existente na série após a operação (cobre tanto as novas
+      ocorrências quanto qualquer preservada que esteja mais à frente).
+
+    Operação transacional: qualquer falha reverte tudo (ROLLBACK). Retorna
+    um dicionário com os ids afetados. Levanta ValueError se `conta_id`
+    não existir, não pertencer a nenhuma série, ou `nova_frequencia` for
+    inválida.
+    """
+    if nova_frequencia not in ("mensal", "anual"):
+        raise ValueError(f"frequencia inválida: {nova_frequencia!r} (use 'mensal' ou 'anual')")
+
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+    try:
+        cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+        linha = cursor.fetchone()
+        if linha is None:
+            raise ValueError(f"conta com id={conta_id} não existe")
+        serie_id, referencia = linha
+        if serie_id is None:
+            raise ValueError("RF27 não se aplica a conta avulsa (sem série)")
+
+        cursor.execute(
+            "SELECT usuario_id, nome, valor, categoria_id, horizonte_gerado_ate FROM series_recorrencia WHERE id = ?",
+            (serie_id,),
+        )
+        usuario_id, nome_serie, valor_serie, categoria_id_serie, horizonte_atual = cursor.fetchone()
+
+        ano_ref, mes_ref, dia_ref = map(int, referencia.split("-"))
+        dia_ancora_novo = dia_ref
+        mes_ancora_novo = mes_ref if nova_frequencia == "anual" else None
+
+        cursor.execute(
+            "SELECT id, editado_individualmente FROM contas WHERE serie_id = ? AND data_vencimento > ?",
+            (serie_id, referencia),
+        )
+        futuras = cursor.fetchall()
+        substituiveis = [oc_id for oc_id, editado in futuras if editado == 0]
+        preservadas = [oc_id for oc_id, editado in futuras if editado == 1]
+
+        avancar = (
+            (lambda ano, mes: _somar_mes(ano, mes, dia_ancora_novo))
+            if nova_frequencia == "mensal"
+            else (lambda ano, mes: _somar_ano(ano, mes_ancora_novo, dia_ancora_novo))
+        )
+        limite_ano, limite_mes, _ = map(int, horizonte_atual.split("-"))
+        novas_datas = _avancar_ate_limite(avancar, referencia, limite_ano, limite_mes)
+
+        try:
+            cursor.execute("BEGIN;")
+
+            cursor.execute(
+                """
+                UPDATE series_recorrencia
+                SET frequencia = ?, dia_ancora = ?, mes_ancora = ?, data_inicio = ?
+                WHERE id = ?
+                """,
+                (nova_frequencia, dia_ancora_novo, mes_ancora_novo, referencia, serie_id),
+            )
+
+            if substituiveis:
+                placeholders = ",".join("?" * len(substituiveis))
+                cursor.execute(f"DELETE FROM contas WHERE id IN ({placeholders})", substituiveis)
+
+            ids_novos = []
+            for nova_data in novas_datas:
+                cursor.execute(
+                    """
+                    INSERT INTO contas
+                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                    """,
+                    (usuario_id, categoria_id_serie, serie_id, nome_serie, valor_serie, nova_data),
+                )
+                ids_novos.append(cursor.lastrowid)
+
+            cursor.execute("SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,))
+            novo_horizonte = cursor.fetchone()[0]
+            cursor.execute(
+                "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
+                (novo_horizonte, serie_id),
+            )
+
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
+        conexao.close()
+
+    return {
+        "serie_id": serie_id,
+        "ocorrencias_substituidas": substituiveis,
+        "ocorrencias_preservadas": preservadas,
+        "ocorrencias_novas": ids_novos,
+    }
 
 
 def editar_categoria(categoria_id, nome=None, icone=None):
