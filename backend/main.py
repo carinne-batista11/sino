@@ -1459,7 +1459,7 @@ def main(page: ft.Page):
                                 ft.Container(
                                     content=ft.Text(cat["icone"] or cat["nome"][0].upper(),
                                                      size=16, color="white"),
-                                    bgcolor="#1D9E75",
+                                    bgcolor=cat["cor"] or "#1D9E75",
                                     width=36,
                                     height=36,
                                     border_radius=18,
@@ -1493,6 +1493,45 @@ def main(page: ft.Page):
                                         value=cat["icone"] if cat else "", width=280)
             erro = ft.Text(value="", color="#A32D2D", size=12)
 
+            # RF18/5.13 (Fase 3.11): paleta já existente em database.py -- nenhuma
+            # cor nova é inventada aqui. Cores já usadas por OUTRA categoria deste
+            # usuário ficam desabilitadas na própria paleta, só para não oferecer
+            # uma opção que database.criar_categoria/editar_categoria já rejeitaria
+            # (a regra de unicidade continua vivendo inteiramente no db.py).
+            categorias_do_usuario = database.listar_categorias(usuario_atual["id"])
+            cores_em_uso = {
+                c["cor"] for c in categorias_do_usuario
+                if c["cor"] and (cat is None or c["id"] != cat["id"])
+            }
+            cor_selecionada = {"valor": cat["cor"] if cat and cat.get("cor") else None}
+
+            linha_cores = ft.Row(spacing=8, run_spacing=8, wrap=True, width=280)
+
+            def montar_paleta():
+                linha_cores.controls.clear()
+                for cor in database.PALETA_CORES_CATEGORIAS:
+                    em_uso = cor in cores_em_uso
+                    selecionada = cor_selecionada["valor"] == cor
+                    linha_cores.controls.append(
+                        ft.Container(
+                            width=28,
+                            height=28,
+                            border_radius=14,
+                            bgcolor=cor,
+                            opacity=0.25 if em_uso else 1.0,
+                            border=ft.Border.all(2, "#0B1410") if selecionada else None,
+                            tooltip="Já em uso por outra categoria sua" if em_uso else None,
+                            on_click=None if em_uso else (lambda e, c=cor: selecionar_cor(c)),
+                        )
+                    )
+
+            def selecionar_cor(cor):
+                cor_selecionada["valor"] = cor
+                montar_paleta()
+                page.update()
+
+            montar_paleta()
+
             def salvar(e):
                 nome = campo_nome.value.strip() if campo_nome.value else ""
                 if not nome:
@@ -1500,14 +1539,18 @@ def main(page: ft.Page):
                     page.update()
                     return
                 icone = campo_icone.value.strip() if campo_icone.value else None
+                cor = cor_selecionada["valor"]
 
                 try:
                     if cat:
-                        database.editar_categoria(usuario_atual["id"], cat["id"], nome=nome, icone=icone)
+                        database.editar_categoria(usuario_atual["id"], cat["id"], nome=nome, icone=icone, cor=cor)
                     else:
-                        database.criar_categoria(usuario_atual["id"], nome, icone)
-                except ValueError:
-                    erro.value = "Limite de 30 categorias atingido. Exclua uma categoria existente para criar uma nova."
+                        database.criar_categoria(usuario_atual["id"], nome, icone, cor)
+                except ValueError as erro_valor:
+                    if "cor" in str(erro_valor):
+                        erro.value = "Essa cor já está em uso por outra categoria sua. Escolha outra."
+                    else:
+                        erro.value = "Limite de 30 categorias atingido. Exclua uma categoria existente para criar uma nova."
                     page.update()
                     return
 
@@ -1517,7 +1560,17 @@ def main(page: ft.Page):
             dialogo = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("Editar categoria" if cat else "Nova categoria"),
-                content=ft.Column(controls=[campo_nome, campo_icone, erro], tight=True),
+                content=ft.Column(
+                    controls=[
+                        campo_nome,
+                        campo_icone,
+                        ft.Text("Cor", size=12, color="#888780"),
+                        linha_cores,
+                        erro,
+                    ],
+                    tight=True,
+                    spacing=10,
+                ),
                 actions=[
                     ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
                     ft.Button(content="Salvar", bgcolor="#1D9E75", color="white", on_click=salvar),
@@ -1603,8 +1656,16 @@ def main(page: ft.Page):
             page.show_dialog(seletor_data)
 
         categorias = database.listar_categorias(usuario_atual["id"])
+
+        def ponto_cor_categoria(cor):
+            return ft.Container(width=10, height=10, border_radius=5, bgcolor=cor or "#E5E4DE")
+
         opcoes_categoria = [ft.dropdown.Option(key="", text="Sem categoria")] + [
-            ft.dropdown.Option(key=str(c["id"]), text=f"{c['icone'] + ' ' if c['icone'] else ''}{c['nome']}")
+            ft.dropdown.Option(
+                key=str(c["id"]),
+                text=f"{c['icone'] + ' ' if c['icone'] else ''}{c['nome']}",
+                leading_icon=ponto_cor_categoria(c["cor"]),
+            )
             for c in categorias
         ]
         campo_categoria = ft.Dropdown(
