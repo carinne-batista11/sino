@@ -338,8 +338,47 @@ def main(page: ft.Page):
 
         banner_semana = ft.Container(visible=False)
 
-        cabecalho_atrasadas = ft.Text("Contas atrasadas", size=15, weight=ft.FontWeight.BOLD, color="#0B1410")
-        lista_atrasadas = ft.Column(controls=[], spacing=8)
+        bloco_atrasadas = ft.Container()
+
+        def construir_bloco_atrasadas(atrasadas):
+            # RF25/9: aviso compacto -- nunca a lista expandida de antes (Fase 3.9).
+            # "Ver essas contas" abre a tela dedicada (mostrar_tela_atrasadas), que
+            # busca TODAS as atrasadas do usuário via database.listar_contas_atrasadas,
+            # sem depender do mês selecionado aqui.
+            if atrasadas:
+                bloco_atrasadas.bgcolor = "#FBE4E4"
+                bloco_atrasadas.border_radius = 10
+                bloco_atrasadas.padding = 12
+                bloco_atrasadas.content = ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Icon(ft.Icons.ERROR_OUTLINE, size=18, color="#A32D2D"),
+                                ft.Container(width=8),
+                                ft.Text("Você possui contas em atraso!", size=13,
+                                         weight=ft.FontWeight.BOLD, color="#A32D2D"),
+                            ],
+                        ),
+                        ft.Container(
+                            content=ft.Text("Ver essas contas", size=12, weight=ft.FontWeight.BOLD,
+                                             color="#A32D2D"),
+                            on_click=lambda e: mostrar_tela_atrasadas(),
+                        ),
+                    ],
+                )
+            else:
+                bloco_atrasadas.bgcolor = "transparent"
+                bloco_atrasadas.border_radius = 0
+                bloco_atrasadas.padding = ft.Padding(0, 4, 0, 4)
+                bloco_atrasadas.content = ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=16, color="#1D9E75"),
+                        ft.Container(width=6),
+                        ft.Text("Suas contas estão em dia!", size=13,
+                                 weight=ft.FontWeight.BOLD, color="#1D9E75"),
+                    ],
+                )
 
         def ao_clicar_ver_todas(e):
             ano_mes_atual = f"{mes_atual[0]:04d}-{mes_atual[1]:02d}"
@@ -1108,19 +1147,7 @@ def main(page: ft.Page):
             else:
                 banner_semana.visible = False
 
-            atrasadas = database.listar_contas_atrasadas(usuario_atual["id"])
-            lista_atrasadas.controls.clear()
-            if not atrasadas:
-                lista_atrasadas.controls.append(
-                    ft.Container(
-                        content=ft.Text("Todas as suas contas estão em dia!", color="#1D9E75", size=13,
-                                         weight=ft.FontWeight.BOLD),
-                        padding=16,
-                    )
-                )
-            else:
-                for c in atrasadas:
-                    lista_atrasadas.controls.append(linha_conta(c, categorias.get(c["categoria_id"], "")))
+            construir_bloco_atrasadas(database.listar_contas_atrasadas(usuario_atual["id"]))
 
             contas_ordenadas = sorted(
                 contas_mes,
@@ -1269,6 +1296,54 @@ def main(page: ft.Page):
             )
             page.update()
 
+        def mostrar_tela_atrasadas():
+            # RF25 (Fase 3.9): tela dedicada, sempre com TODAS as contas atrasadas
+            # do usuário -- database.listar_contas_atrasadas já ignora o mês
+            # selecionado na Tela Principal, então esta tela não filtra por
+            # mes_atual. Reaproveita linha_conta()/abrir_detalhe_conta() por estar
+            # aninhada no mesmo escopo de mostrar_tela_principal() (mesmo padrão de
+            # mostrar_tela_todas_contas).
+            page.controls.clear()
+            page.padding = 0
+
+            categorias_atuais = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
+            atrasadas_todas = database.listar_contas_atrasadas(usuario_atual["id"])
+
+            lista_atrasadas_tela = ft.ListView(expand=True, spacing=8, padding=ft.Padding(20, 0, 20, 24))
+            if not atrasadas_todas:
+                lista_atrasadas_tela.controls.append(
+                    ft.Container(
+                        content=ft.Text("Nenhuma conta atrasada.", color="#888780", size=13),
+                        padding=16,
+                    )
+                )
+            else:
+                for c in atrasadas_todas:
+                    lista_atrasadas_tela.controls.append(
+                        linha_conta(c, categorias_atuais.get(c["categoria_id"], ""))
+                    )
+
+            cabecalho_atrasadas_tela = ft.Container(
+                padding=ft.Padding(20, 40, 20, 0),
+                content=ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    controls=[
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                                      on_click=lambda e: mostrar_tela_principal()),
+                        ft.Text("Contas em atraso", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                        ft.Container(width=40),
+                    ],
+                ),
+            )
+
+            page.add(
+                ft.Column(
+                    expand=True,
+                    controls=[cabecalho_atrasadas_tela, ft.Container(height=8), lista_atrasadas_tela],
+                )
+            )
+            page.update()
+
         fab = ft.Container(
             content=ft.Icon(ft.Icons.ADD, color="white", size=26),
             bgcolor="#1D9E75",
@@ -1296,10 +1371,8 @@ def main(page: ft.Page):
                             card_total,
                             ft.Container(height=12),
                             banner_semana,
-                            ft.Container(height=16),
-                            cabecalho_atrasadas,
-                            ft.Container(height=8),
-                            lista_atrasadas,
+                            ft.Container(height=12),
+                            bloco_atrasadas,
                             ft.Container(height=16),
                             cabecalho_contas,
                             ft.Container(height=8),
