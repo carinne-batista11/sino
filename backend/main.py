@@ -130,6 +130,17 @@ def main(page: ft.Page):
                     mensagem.value = texto
                     mensagem.color = "#1D9E75" if sucesso else "#A32D2D"
                     if sucesso:
+                        # criar_usuario não retorna o id do novo usuário; buscamos via
+                        # verificar_login (mesmas credenciais, já validadas) para poder
+                        # inicializar o catálogo de categorias (RF14/5.11).
+                        novo_usuario = database.verificar_login(email, senha)
+                        if novo_usuario:
+                            try:
+                                database.inicializar_categorias_padrao(novo_usuario["id"])
+                            except Exception:
+                                # Não deixa uma falha aqui impedir a confirmação de que a
+                                # conta foi criada -- o cadastro em si já foi concluído.
+                                pass
                         alternar_modo(None)
                         mensagem.value = "Conta criada com sucesso! Faça login para continuar."
                         mensagem.color = "#1D9E75"
