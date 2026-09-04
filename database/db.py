@@ -1628,22 +1628,26 @@ def excluir_conta_serie(conta_id):
     `horizonte_gerado_ate` é recalculado para a última ocorrência que de
     fato permanece.
 
+    Fase 3.10 (fecho de arquitetura): se a série sobrevive à exclusão e
+    era sem término (`data_termino IS NULL`), `data_termino` passa a ser
+    definido como o mês/ano da última ocorrência que restou. Sem isso,
+    `horizonte_gerado_ate` sozinho não distingue "nunca gerado" de
+    "gerado e depois excluído por decisão explícita do usuário" — uma
+    chamada futura de `gerar_ocorrencias_sob_demanda` (5.20) recriaria,
+    a partir do novo horizonte mais baixo, exatamente as ocorrências que
+    "Este mês em diante" acabou de remover. Fechar a série no ponto onde
+    ela de fato termina agora reaproveita um mecanismo já existente e já
+    coberto por teste (`gerar_ocorrencias_sob_demanda` já recusa gerar
+    quando `data_termino is not None`) — não introduz nenhum campo ou
+    conceito novo. Não é o mesmo que RF29 (`remover_recorrencia`, seção
+    5.8): aqui a série realmente perde a capacidade de gerar mais
+    ocorrências dali em diante, porque essa é exatamente a extensão do
+    que "Este mês em diante" já significa (5.7) -- RF29 continua sendo a
+    ação para "parar de gerar mas manter a série ativa/sem fechar
+    término". Séries que já tinham `data_termino` não são alteradas.
+
     Conta avulsa (`serie_id` NULL): exclui diretamente, sem efeito em
     nenhuma série.
-
-    Nota de arquitetura — limitação conhecida, deliberadamente não
-    resolvida nesta fase (fora do escopo de RF29): como
-    `horizonte_gerado_ate` passa a refletir o novo teto real (exigência de
-    integridade, não negociável), uma chamada futura de
-    `gerar_ocorrencias_sob_demanda` para uma data além desse novo teto,
-    numa série sem término, volta a gerar ocorrências novas (pendentes,
-    sem pagamento) nas mesmas datas/padrão que acabaram de ser excluídas.
-    A série continua aberta/ativa — nada nesta fase a interrompe
-    permanentemente, porque isso é, por definição, o papel do RF29 (seção
-    5.8: "Remover recorrência ≠ Excluir contas futuras"), explicitamente
-    fora de escopo aqui. Suprimir essa regeneração exigiria ou um novo
-    marcador de estado não previsto no ERS, ou antecipar RF29 — as duas
-    coisas vedadas nesta fase. Registrado aqui em vez de mascarado.
 
     Retorna False se a conta não existir; True quando a exclusão é
     aplicada. Operação transacional.
@@ -1666,6 +1670,11 @@ def excluir_conta_serie(conta_id):
                 cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
             else:
                 cursor.execute(
+                    "SELECT data_termino FROM series_recorrencia WHERE id = ?", (serie_id,)
+                )
+                (termino_atual,) = cursor.fetchone()
+
+                cursor.execute(
                     "DELETE FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
                     (serie_id, data_referencia),
                 )
@@ -1676,9 +1685,18 @@ def excluir_conta_serie(conta_id):
                 if novo_horizonte is None:
                     cursor.execute("DELETE FROM series_recorrencia WHERE id = ?", (serie_id,))
                 else:
+                    # Série era sem término: fecha-a no mês/ano da última ocorrência
+                    # que restou, para que gerar_ocorrencias_sob_demanda nunca mais
+                    # recrie o que "Este mês em diante" acabou de excluir (ver
+                    # docstring). Série que já tinha término fica como estava.
+                    novo_termino = termino_atual if termino_atual is not None else novo_horizonte[:7]
                     cursor.execute(
-                        "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
-                        (novo_horizonte, serie_id),
+                        """
+                        UPDATE series_recorrencia
+                        SET horizonte_gerado_ate = ?, data_termino = ?
+                        WHERE id = ?
+                        """,
+                        (novo_horizonte, novo_termino, serie_id),
                     )
 
             cursor.execute("COMMIT;")

@@ -1098,9 +1098,28 @@ def main(page: ft.Page):
                 ),
             )
 
+        def garantir_ocorrencias_geradas(ano_mes):
+            # RF10/5.20 (Fase 3.10): geração sob demanda ao navegar para um mês
+            # ainda não gerado. database.gerar_ocorrencias_sob_demanda já decide
+            # sozinha se há algo a fazer (série inativa, com término, ou já
+            # coberta -- não faz nada nesses casos) e é idempotente; aqui só
+            # descobrimos quais séries o usuário tem (via qualquer ocorrência já
+            # existente, de qualquer mês) e pedimos ao banco que cubra até o mês
+            # navegado. Nenhuma regra de calendário/geração é duplicada aqui --
+            # inclusive chamar com um mês passado é inofensivo (a função não gera
+            # nada nesse caso).
+            series_do_usuario = {
+                c["serie_id"] for c in database.listar_contas(usuario_atual["id"])
+                if c["serie_id"] is not None
+            }
+            for serie_id in series_do_usuario:
+                database.gerar_ocorrencias_sob_demanda(serie_id, ano_mes)
+
         def atualizar_dados():
             texto_mes.value = f"{MESES_PT[mes_atual[1] - 1]} {mes_atual[0]}"
             ano_mes = f"{mes_atual[0]:04d}-{mes_atual[1]:02d}"
+
+            garantir_ocorrencias_geradas(ano_mes)
 
             contas_mes = database.listar_contas(usuario_atual["id"], ano_mes)
             categorias = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
