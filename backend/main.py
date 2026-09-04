@@ -369,6 +369,8 @@ def main(page: ft.Page):
             area_corpo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
 
             def mostrar_visualizacao():
+                page.overlay.clear()
+
                 data_venc = date.fromisoformat(conta["data_vencimento"])
                 dias_delta = (data_venc - date.today()).days
 
@@ -388,9 +390,11 @@ def main(page: ft.Page):
                     if conta["status"] == "pago":
                         database.marcar_conta_como_pendente(conta["id"])
                         conta["status"] = "atrasado" if dias_delta < 0 else "pendente"
+                        conta["data_pagamento"] = None
                     else:
                         database.marcar_conta_como_paga(conta["id"])
                         conta["status"] = "pago"
+                        conta["data_pagamento"] = date.today().isoformat()
                     mostrar_visualizacao()
 
                 if conta["status"] == "pago":
@@ -399,6 +403,50 @@ def main(page: ft.Page):
                     texto_botao_status, cor_botao_status = "Marcar como paga", "#39D67C"
 
                 recorrencia = "Sim" if conta.get("serie_id") is not None else "Não"
+
+                pago_em_texto = None
+                seletor_data_pagamento = None
+                if conta["status"] == "pago":
+                    if conta.get("data_pagamento"):
+                        pago_em_texto = date.fromisoformat(conta["data_pagamento"]).strftime("%d/%m/%Y")
+
+                    def mostrar_erro_data_pagamento():
+                        dialogo_erro = ft.AlertDialog(
+                            modal=True,
+                            title=ft.Text("Data inválida"),
+                            content=ft.Text("A data de pagamento não pode ser no futuro."),
+                            actions=[
+                                ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                                          on_click=lambda e: page.pop_dialog()),
+                            ],
+                        )
+                        page.show_dialog(dialogo_erro)
+
+                    def ao_escolher_data_pagamento(e):
+                        if not e.control.value:
+                            return
+                        nova_data = e.control.value.date()
+                        sucesso = database.editar_data_pagamento(conta["id"], nova_data.isoformat())
+                        page.pop_dialog()
+                        if sucesso:
+                            conta["data_pagamento"] = nova_data.isoformat()
+                            mostrar_visualizacao()
+                        else:
+                            mostrar_erro_data_pagamento()
+
+                    seletor_data_pagamento = ft.DatePicker(
+                        value=(
+                            date.fromisoformat(conta["data_pagamento"])
+                            if conta.get("data_pagamento") else date.today()
+                        ),
+                        first_date=date(2000, 1, 1),
+                        last_date=date(2100, 12, 31),
+                        on_change=ao_escolher_data_pagamento,
+                    )
+                    page.overlay.append(seletor_data_pagamento)
+
+                def abrir_seletor_data_pagamento(e):
+                    page.show_dialog(seletor_data_pagamento)
 
                 parcela_texto = None
                 if conta.get("serie_id") is not None:
@@ -428,6 +476,8 @@ def main(page: ft.Page):
                     linha_detalhe("Status", rotulo_status, cor_valor=cor_status),
                     linha_detalhe("Recorrência", recorrencia),
                 ]
+                if pago_em_texto:
+                    linhas_cartao.append(linha_detalhe("Pago em", pago_em_texto))
                 if parcela_texto:
                     linhas_cartao.append(linha_detalhe("Parcela", parcela_texto))
 
@@ -448,22 +498,33 @@ def main(page: ft.Page):
                     ],
                 )
 
+                controles_acao = [
+                    cabecalho,
+                    ft.Container(height=20),
+                    cartao_detalhes,
+                    ft.Container(height=16),
+                    ft.Button(
+                        content=texto_botao_status,
+                        bgcolor=cor_botao_status,
+                        color="white",
+                        on_click=alternar_status_pagamento,
+                    ),
+                ]
+                if conta["status"] == "pago":
+                    controles_acao += [
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Alterar data de pagamento",
+                            on_click=abrir_seletor_data_pagamento,
+                        ),
+                    ]
+
                 area_corpo.controls = [
                     ft.Container(
                         padding=ft.Padding(20, 40, 20, 24),
                         content=ft.Column(
                             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                            controls=[
-                                cabecalho,
-                                ft.Container(height=20),
-                                cartao_detalhes,
-                                ft.Container(height=16),
-                                ft.Button(
-                                    content=texto_botao_status,
-                                    bgcolor=cor_botao_status,
-                                    color="white",
-                                    on_click=alternar_status_pagamento,
-                                ),
+                            controls=controles_acao + [
                                 ft.Container(height=8),
                                 ft.Button(
                                     content="Editar",
