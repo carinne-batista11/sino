@@ -545,49 +545,11 @@ def main(page: ft.Page):
 
                 recorrencia = "Sim" if conta.get("serie_id") is not None else "Não"
 
+                # A tela de Detalhes é só consulta -- exibe "Pago em" quando houver,
+                # mas a ação de alterar essa data mora em Editar (mostrar_formulario_edicao).
                 pago_em_texto = None
-                seletor_data_pagamento = None
-                if conta["status"] == "pago":
-                    if conta.get("data_pagamento"):
-                        pago_em_texto = date.fromisoformat(conta["data_pagamento"]).strftime("%d/%m/%Y")
-
-                    def mostrar_erro_data_pagamento():
-                        dialogo_erro = ft.AlertDialog(
-                            modal=True,
-                            title=ft.Text("Data inválida"),
-                            content=ft.Text("A data de pagamento não pode ser no futuro."),
-                            actions=[
-                                ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
-                                          on_click=lambda e: page.pop_dialog()),
-                            ],
-                        )
-                        page.show_dialog(dialogo_erro)
-
-                    def ao_escolher_data_pagamento(e):
-                        if not e.control.value:
-                            return
-                        nova_data = e.control.value.date()
-                        sucesso = database.editar_data_pagamento(conta["id"], nova_data.isoformat())
-                        page.pop_dialog()
-                        if sucesso:
-                            conta["data_pagamento"] = nova_data.isoformat()
-                            mostrar_visualizacao()
-                        else:
-                            mostrar_erro_data_pagamento()
-
-                    seletor_data_pagamento = ft.DatePicker(
-                        value=(
-                            date.fromisoformat(conta["data_pagamento"])
-                            if conta.get("data_pagamento") else date.today()
-                        ),
-                        first_date=date(2000, 1, 1),
-                        last_date=date(2100, 12, 31),
-                        on_change=ao_escolher_data_pagamento,
-                    )
-                    page.overlay.append(seletor_data_pagamento)
-
-                def abrir_seletor_data_pagamento(e):
-                    page.show_dialog(seletor_data_pagamento)
+                if conta["status"] == "pago" and conta.get("data_pagamento"):
+                    pago_em_texto = date.fromisoformat(conta["data_pagamento"]).strftime("%d/%m/%Y")
 
                 parcela_texto = None
                 if conta.get("serie_id") is not None:
@@ -651,14 +613,6 @@ def main(page: ft.Page):
                         on_click=alternar_status_pagamento,
                     ),
                 ]
-                if conta["status"] == "pago":
-                    controles_acao += [
-                        ft.Container(height=8),
-                        ft.TextButton(
-                            content="Alterar data de pagamento",
-                            on_click=abrir_seletor_data_pagamento,
-                        ),
-                    ]
 
                 area_corpo.controls = [
                     ft.Container(
@@ -765,7 +719,11 @@ def main(page: ft.Page):
                 frequencia_transf = {"valor": "mensal"}
                 linha_frequencia_transf = construir_seletor_frequencia(frequencia_transf)
 
-                sem_termino_transf = ft.Switch(value=True, active_color="#1D9E75")
+                # "Sem data de término" começa DESATIVADO -- mesmo padrão já usado em
+                # "Nova conta" e em "Alterar frequência" (D5): o término fica visível e
+                # disponível por padrão; só quando o usuário ativa explicitamente é que
+                # a recorrência passa a ser sem término.
+                sem_termino_transf = ft.Switch(value=False, active_color="#1D9E75")
                 ano_atual_transf = date.today().year
                 campo_mes_termino_transf = ft.Dropdown(
                     label="Mês", color="#0B1410", expand=True,
@@ -779,7 +737,7 @@ def main(page: ft.Page):
                              for a in range(ano_atual_transf, ano_atual_transf + 11)],
                 )
                 linha_termino_transf = ft.Row(
-                    spacing=8, controls=[campo_mes_termino_transf, campo_ano_termino_transf], visible=False,
+                    spacing=8, controls=[campo_mes_termino_transf, campo_ano_termino_transf], visible=True,
                 )
                 erro_transf = ft.Text(value="", color="#A32D2D", size=12)
 
@@ -816,6 +774,7 @@ def main(page: ft.Page):
 
                 dialogo = ft.AlertDialog(
                     modal=True,
+                    bgcolor="white",
                     title=ft.Text("Transformar em recorrente"),
                     content=ft.Column(
                         tight=True,
@@ -1040,6 +999,60 @@ def main(page: ft.Page):
                 def abrir_seletor_data(e):
                     page.show_dialog(seletor_data)
 
+                # UX (movida da tela de Detalhes para dentro de Editar): a tela de
+                # Detalhes passa a exibir só a data de pagamento ("Pago em"), sem
+                # oferecer a ação de alterá-la. Mesmo mecanismo de sempre --
+                # database.editar_data_pagamento, mesma validação de data futura
+                # (RF06/5.10) -- só muda de onde o usuário acessa.
+                if conta["status"] == "pago":
+                    def mostrar_erro_data_pagamento():
+                        dialogo_erro = ft.AlertDialog(
+                            modal=True,
+                            title=ft.Text("Data inválida"),
+                            content=ft.Text("A data de pagamento não pode ser no futuro."),
+                            actions=[
+                                ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                                          on_click=lambda e: page.pop_dialog()),
+                            ],
+                        )
+                        page.show_dialog(dialogo_erro)
+
+                    def ao_escolher_data_pagamento(e):
+                        if not e.control.value:
+                            return
+                        nova_data = e.control.value.date()
+                        sucesso = database.editar_data_pagamento(conta["id"], nova_data.isoformat())
+                        page.pop_dialog()
+                        if sucesso:
+                            conta["data_pagamento"] = nova_data.isoformat()
+                            mostrar_visualizacao()
+                        else:
+                            mostrar_erro_data_pagamento()
+
+                    seletor_data_pagamento = ft.DatePicker(
+                        value=(
+                            date.fromisoformat(conta["data_pagamento"])
+                            if conta.get("data_pagamento") else date.today()
+                        ),
+                        first_date=date(2000, 1, 1),
+                        last_date=date(2100, 12, 31),
+                        on_change=ao_escolher_data_pagamento,
+                    )
+                    page.overlay.append(seletor_data_pagamento)
+
+                    def abrir_seletor_data_pagamento(e):
+                        page.show_dialog(seletor_data_pagamento)
+
+                    controles_pagamento_edicao = [
+                        ft.Container(height=8),
+                        ft.TextButton(
+                            content="Alterar data de pagamento",
+                            on_click=abrir_seletor_data_pagamento,
+                        ),
+                    ]
+                else:
+                    controles_pagamento_edicao = []
+
                 erro_edit = ft.Text(value="", color="#A32D2D", size=12)
 
                 def salvar_edicao(e):
@@ -1183,7 +1196,7 @@ def main(page: ft.Page):
                                     color="white",
                                     on_click=salvar_edicao,
                                 ),
-                            ] + controles_recorrencia_edicao,
+                            ] + controles_pagamento_edicao + controles_recorrencia_edicao,
                         ),
                     ),
                 ]
@@ -1192,7 +1205,7 @@ def main(page: ft.Page):
             page.add(area_corpo)
             mostrar_visualizacao()
 
-        def linha_conta(conta, nome_categoria):
+        def linha_conta(conta, nome_categoria, acao_rapida_pagamento=False):
             data_venc = date.fromisoformat(conta["data_vencimento"])
             dias_delta = (data_venc - date.today()).days
 
@@ -1222,6 +1235,55 @@ def main(page: ft.Page):
                     partes_subtitulo.append(texto_parcela)
             subtitulo = " · ".join(partes_subtitulo)
 
+            controles_linha = [
+                ft.Column(
+                    controls=[
+                        ft.Text(conta["nome"], size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                        ft.Text(subtitulo, size=12, color="#888780"),
+                    ],
+                    spacing=2,
+                ),
+                ft.Column(
+                    controls=[
+                        ft.Text(formatar_moeda(conta["valor"]), size=14, weight=ft.FontWeight.BOLD,
+                                 color="#0B1410"),
+                        ft.Text(rotulo_status, size=12, color=cor),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.END,
+                    spacing=2,
+                ),
+            ]
+
+            # Layout: colunas de largura fixa para valor/status e para a ação, para
+            # que o texto do status não se desloque conforme o tamanho do valor --
+            # a coluna da esquerda (nome/subtítulo) absorve o espaço restante.
+            controles_linha[0].expand = True
+            controles_linha[1].width = 92
+
+            if acao_rapida_pagamento:
+                # Ação rápida em "Suas contas": reutiliza database.marcar_conta_como_paga
+                # (mesma função e mesma validação já usada no detalhe -- RF06/5.10), sem
+                # pedir data -- a data efetiva é sempre hoje aqui, exatamente como o botão
+                # "Marcar como paga" do detalhe já faz. Escolher outra data continua sendo
+                # uma ação separada, disponível em Editar quando a conta já está paga.
+                if conta["status"] == "pago":
+                    icone_pagamento = ft.Icon(ft.Icons.CHECK_CIRCLE, size=22, color="#39D67C")
+                else:
+                    def marcar_como_paga_rapido(e):
+                        database.marcar_conta_como_paga(conta["id"])
+                        atualizar_dados()
+
+                    icone_pagamento = ft.IconButton(
+                        icon=ft.Icons.CHECK_CIRCLE_OUTLINE,
+                        icon_color="#888780",
+                        icon_size=22,
+                        tooltip="Marcar como paga",
+                        on_click=marcar_como_paga_rapido,
+                    )
+                controles_linha.append(
+                    ft.Container(width=40, alignment=ft.Alignment.CENTER, content=icone_pagamento)
+                )
+
             return ft.Container(
                 bgcolor="white",
                 border_radius=10,
@@ -1230,24 +1292,8 @@ def main(page: ft.Page):
                 on_click=lambda e, c=conta: abrir_detalhe_conta(c),
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    controls=[
-                        ft.Column(
-                            controls=[
-                                ft.Text(conta["nome"], size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
-                                ft.Text(subtitulo, size=12, color="#888780"),
-                            ],
-                            spacing=2,
-                        ),
-                        ft.Column(
-                            controls=[
-                                ft.Text(formatar_moeda(conta["valor"]), size=14, weight=ft.FontWeight.BOLD,
-                                         color="#0B1410"),
-                                ft.Text(rotulo_status, size=12, color=cor),
-                            ],
-                            horizontal_alignment=ft.CrossAxisAlignment.END,
-                            spacing=2,
-                        ),
-                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=controles_linha,
                 ),
             )
 
@@ -1336,7 +1382,9 @@ def main(page: ft.Page):
                 )
             else:
                 for c in contas_ordenadas:
-                    lista_contas.controls.append(linha_conta(c, categorias.get(c["categoria_id"], "")))
+                    lista_contas.controls.append(
+                        linha_conta(c, categorias.get(c["categoria_id"], ""), acao_rapida_pagamento=True)
+                    )
 
             page.update()
 
@@ -1881,9 +1929,10 @@ def main(page: ft.Page):
         # RF10: tipo de conta -- Única (avulsa), Mensal ou Anual (recorrentes).
         tipo_selecionado = {"valor": "unica"}
 
-        # RF10/5.18: término opcional -- "Sem data de término" por padrão; quando
-        # desativado, mostra o seletor visual de mês/ano (não mais campo de texto).
-        sem_termino = ft.Switch(value=True, active_color="#1D9E75")
+        # RF10/5.18: término opcional, escolhido pelo usuário -- "Sem data de
+        # término" começa DESATIVADO (o término fica visível por padrão); quando
+        # ativado, mostra o seletor visual de mês/ano (não mais campo de texto).
+        sem_termino = ft.Switch(value=False, active_color="#1D9E75")
 
         ano_atual = date.today().year
         campo_mes_termino = ft.Dropdown(
