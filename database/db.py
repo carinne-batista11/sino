@@ -851,15 +851,28 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
     `serie_id`. "Não existem ocorrências anteriores a incorporar — a
     série começa exatamente a partir daquela ocorrência" (5.4).
 
+    RF28 se aplica tanto a uma conta avulsa de verdade (`serie_id IS NULL`)
+    quanto a uma conta cuja recorrência já foi encerrada (RF29/§5.8,
+    `serie_id` aponta para uma série com `ativa = 0`): depois do
+    encerramento, a conta passa a ser tratada como avulsa em toda a camada
+    de produto/UI, então "Transformar em recorrente" deve funcionar nela
+    exatamente como funcionaria numa conta que nunca foi recorrente. Só é
+    rejeitada quando `serie_id` aponta para uma série **ativa** -- nesse
+    caso a operação correta é "Alterar frequência" (RF27), não RF28. O
+    `serie_id` antigo (da série encerrada) nunca é apagado nem alterado
+    por esta função além do próprio `UPDATE` que aponta a conta para a
+    série nova -- a série antiga permanece intacta no banco, preservando o
+    histórico das demais ocorrências que ainda a referenciam.
+
     Gera as ocorrências futuras a partir da âncora com a mesma regra de
     horizonte de `criar_serie_recorrente` (2.4): integral até
     `data_termino` se houver, ou até o horizonte inicial de "12 meses
     seguintes à âncora" se não houver (5.3/9.4).
 
     Levanta ValueError se `conta_id` não existir, já pertencer a uma
-    série (RF28 só se aplica a conta avulsa), ou `frequencia` for
-    inválida. Operação transacional: qualquer falha reverte tudo
-    (ROLLBACK), inclusive o `UPDATE` que vincula a âncora à nova série.
+    série ativa, ou `frequencia` for inválida. Operação transacional:
+    qualquer falha reverte tudo (ROLLBACK), inclusive o `UPDATE` que
+    vincula a âncora à nova série.
 
     Retorna (serie_id, ids_das_novas_ocorrencias) -- a própria `conta_id`
     não está nessa lista: ela é a âncora, mantém seu id e todos os seus
@@ -883,10 +896,14 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
             raise ValueError(f"conta com id={conta_id} não existe")
         usuario_id, categoria_id, serie_id_atual, nome, valor, data_vencimento = linha
         if serie_id_atual is not None:
-            raise ValueError(
-                f"conta id={conta_id} já pertence a uma série (serie_id={serie_id_atual}) -- "
-                "RF28 só se aplica a conta avulsa"
-            )
+            cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id_atual,))
+            linha_serie_atual = cursor.fetchone()
+            serie_atual_ativa = linha_serie_atual is not None and linha_serie_atual[0] == 1
+            if serie_atual_ativa:
+                raise ValueError(
+                    f"conta id={conta_id} já pertence a uma série ativa (serie_id={serie_id_atual}) -- "
+                    "RF28 só se aplica a conta avulsa ou com recorrência encerrada"
+                )
 
         ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
         mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
@@ -1069,10 +1086,33 @@ def obter_parcela(serie_id, conta_id):
     return posicao, total
 
 
+def obter_info_serie(serie_id):
+    """
+    Dados de uma série para exibição (frase contextual de recorrência,
+    §5.8/RF29 revisado -- D7): frequência, término e se está ativa.
+    Somente leitura. Retorna `None` se `serie_id` for `None` ou não
+    corresponder a nenhuma série.
+    """
+    if serie_id is None:
+        return None
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute(
+        "SELECT frequencia, data_termino, ativa FROM series_recorrencia WHERE id = ?",
+        (serie_id,),
+    )
+    linha = cursor.fetchone()
+    conexao.close()
+    if linha is None:
+        return None
+    frequencia, data_termino, ativa = linha
+    return {"frequencia": frequencia, "data_termino": data_termino, "ativa": ativa == 1}
+
+
 def serie_esta_ativa(serie_id):
     """
     True se `serie_id` existe e está ativa (`series_recorrencia.ativa = 1`);
-    False se foi removida via RF29 (`remover_recorrencia`, `ativa = 0`) ou
+    False se foi encerrada (RF29 revisado -- `encerrar_recorrencia`, `ativa = 0`) ou
     se `serie_id` não corresponde a nenhuma série -- nos dois casos a
     resposta prática para quem chama é a mesma: não deve ser tratada como
     recorrência em funcionamento (RF27, "Este mês em diante" do RF20,
@@ -1234,7 +1274,7 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     Conta avulsa (`serie_id` NULL): delega para `editar_conta_ocorrencia`
     (CT40 — sem diálogo de escopo, edição direta).
 
-    Série inativa (`ativa = 0`, removida via RF29 -- `remover_recorrencia`):
+    Série inativa (`ativa = 0`, encerrada via RF29 -- `encerrar_recorrencia`):
     a chamada é rejeitada (nada é alterado), mesmo contrato de retorno já
     usado para "reorganização ultrapassaria o término" -- False, sem
     exceção. RF29 (5.8) encerra o ajuste mecânico da série; sem esta
@@ -1404,7 +1444,7 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
     Operação transacional: qualquer falha reverte tudo (ROLLBACK). Retorna
     um dicionário com os ids afetados. Levanta ValueError se `conta_id`
     não existir, não pertencer a nenhuma série, a série estiver inativa
-    (removida via RF29 -- `remover_recorrencia`), ou `nova_frequencia` for
+    (encerrada via RF29 -- `encerrar_recorrencia`), ou `nova_frequencia` for
     inválida.
 
     Fase de correção D2 (série inativa): RF29 (5.8) encerra o ajuste
@@ -1692,12 +1732,13 @@ def excluir_conta_serie(conta_id):
     ela de fato termina agora reaproveita um mecanismo já existente e já
     coberto por teste (`gerar_ocorrencias_sob_demanda` já recusa gerar
     quando `data_termino is not None`) — não introduz nenhum campo ou
-    conceito novo. Não é o mesmo que RF29 (`remover_recorrencia`, seção
-    5.8): aqui a série realmente perde a capacidade de gerar mais
-    ocorrências dali em diante, porque essa é exatamente a extensão do
-    que "Este mês em diante" já significa (5.7) -- RF29 continua sendo a
-    ação para "parar de gerar mas manter a série ativa/sem fechar
-    término". Séries que já tinham `data_termino` não são alteradas.
+    conceito novo. Não é o mesmo que RF29 revisado (`encerrar_recorrencia`,
+    seção 5.8): esta função (RF08) exclui a partir da própria ocorrência
+    selecionada (`>=`), sem nenhuma proteção para ocorrências pagas ou
+    editadas individualmente; `encerrar_recorrencia` preserva a ocorrência
+    selecionada e tudo que já aconteceu, removendo só o que ainda não se
+    realizou, com proteção explícita para ocorrências pagas/editadas.
+    Séries que já tinham `data_termino` não são alteradas.
 
     Conta avulsa (`serie_id` NULL): exclui diretamente, sem efeito em
     nenhuma série.
@@ -1762,33 +1803,104 @@ def excluir_conta_serie(conta_id):
     return True
 
 
-def remover_recorrencia(serie_id):
+def encerrar_recorrencia(conta_id):
     """
-    RF29 (5.8): remove a recorrência de uma série -- ela para de gerar
-    novas ocorrências (`ativa = 0`), mas NENHUMA ocorrência já existente é
-    excluída, passada ou futura; o histórico permanece intacto. Não é o
-    mesmo que excluir contas: "Remover recorrência ≠ Excluir contas
-    futuras" (5.8) -- quem quer apagar contas futuras usa a exclusão
-    "Este mês em diante" (RF08, `excluir_conta_serie`).
+    RF29 revisado (5.8, decisão D7): encerra a recorrência de uma série a
+    partir da ocorrência selecionada (`conta_id`) -- a série para de gerar
+    novas ocorrências (`ativa = 0`) e as ocorrências que ainda não se
+    realizaram são removidas, mas **tudo que já aconteceu é preservado**.
+
+    Substitui o antigo "Remover recorrência" (que nunca excluía nenhuma
+    ocorrência). A regra fundamental é nunca apagar histórico: o corte
+    usado para decidir o que remover é sempre o **maior** entre a data da
+    ocorrência selecionada e a data atual --
+    `corte = max(data_vencimento da ocorrência selecionada, hoje)`:
+
+    - se a ocorrência selecionada é passada (ex.: hoje é setembro/2026 e o
+      usuário está editando março/2026), o corte vira "hoje" -- tudo até
+      setembro/2026, inclusive o que aconteceu entre março e setembro,
+      permanece; só outubro/2026 em diante é removido;
+    - se a ocorrência selecionada é futura (ainda não chegou), o corte é a
+      própria ocorrência -- ela e tudo antes dela permanecem, só o que vem
+      estritamente depois é removido.
+    Em ambos os casos, a ocorrência selecionada nunca é removida.
+
+    Proteção adicional (defensiva, sem pedir nada extra ao usuário):
+    ocorrências que estariam no intervalo removido, mas que já carregam
+    informação histórica relevante -- `status = 'pago'`, `data_pagamento`
+    preenchida, ou `editado_individualmente = 1` -- são preservadas em vez
+    de apagadas silenciosamente.
 
     `series_recorrencia.ativa = 0` já é respeitado por
-    `gerar_ocorrencias_sob_demanda` (2.5), que se recusa a gerar qualquer
+    `gerar_ocorrencias_sob_demanda`, que se recusa a gerar qualquer
     ocorrência nova para uma série inativa -- nenhuma mudança adicional
-    foi necessária ali para esta fase.
+    foi necessária ali. Pelo mesmo motivo, `alterar_frequencia_serie` e
+    `editar_conta_serie` ("este mês em diante") já rejeitam série
+    inativa -- uma série encerrada não pode mais ser mecanicamente
+    ajustada.
 
-    Idempotente: chamar de novo numa série já inativa não tem efeito
-    colateral (permanece `ativa = 0`). Levanta ValueError se `serie_id`
-    não existir.
+    `horizonte_gerado_ate` é recalculado como o maior `data_vencimento`
+    realmente restante na série (nunca `NULL`, pois a ocorrência
+    selecionada e tudo até o corte sempre permanecem).
+
+    Operação transacional. Levanta ValueError se `conta_id` não existir,
+    não pertencer a nenhuma série (conta avulsa), ou a série já estiver
+    encerrada.
     """
-    conexao = conectar()
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
     cursor = conexao.cursor()
-    cursor.execute("SELECT id FROM series_recorrencia WHERE id = ?", (serie_id,))
-    if cursor.fetchone() is None:
+    try:
+        cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+        linha = cursor.fetchone()
+        if linha is None:
+            raise ValueError(f"conta com id={conta_id} não existe")
+        serie_id, referencia = linha
+        if serie_id is None:
+            raise ValueError("RF29 não se aplica a conta avulsa (sem série)")
+
+        cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id,))
+        linha_serie = cursor.fetchone()
+        if linha_serie is None:
+            raise ValueError(f"series_recorrencia com id={serie_id} não existe")
+        if linha_serie[0] == 0:
+            raise ValueError(f"série id={serie_id} já está encerrada")
+
+        corte = max(referencia, date.today().isoformat())
+
+        try:
+            cursor.execute("BEGIN;")
+
+            cursor.execute(
+                """
+                DELETE FROM contas
+                WHERE serie_id = ?
+                  AND data_vencimento > ?
+                  AND status != 'pago'
+                  AND data_pagamento IS NULL
+                  AND editado_individualmente = 0
+                """,
+                (serie_id, corte),
+            )
+            ocorrencias_removidas = cursor.rowcount
+
+            cursor.execute("SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,))
+            novo_horizonte = cursor.fetchone()[0]
+
+            cursor.execute(
+                "UPDATE series_recorrencia SET ativa = 0, horizonte_gerado_ate = ? WHERE id = ?",
+                (novo_horizonte, serie_id),
+            )
+
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
         conexao.close()
-        raise ValueError(f"series_recorrencia com id={serie_id} não existe")
-    cursor.execute("UPDATE series_recorrencia SET ativa = 0 WHERE id = ?", (serie_id,))
-    conexao.commit()
-    conexao.close()
+
+    return {"serie_id": serie_id, "ocorrencias_removidas": ocorrencias_removidas}
 
 
 if __name__ == "__main__":

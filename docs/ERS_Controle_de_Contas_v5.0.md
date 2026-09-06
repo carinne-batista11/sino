@@ -5,7 +5,7 @@
 **Autora:** Carinne Batista
 **Versão:** 5.0
 **Data original:** 28 de julho de 2025
-**Data desta revisão:** 1 de setembro de 2026
+**Data desta revisão:** 1 de setembro de 2026 (última alteração pontual: 5 de setembro de 2026, decisão D7 — ver seção 14)
 **Status:** Especificação para revisão e aprovação — **nenhuma alteração de código, banco de dados ou interface foi realizada nesta etapa**
 
 ---
@@ -29,6 +29,8 @@ Os documentos `ERS_Controle_de_Contas_v4.md` e `ERS_Controle_de_Contas_v4.1.md` 
 
 Esta revisão (**consolidação final**, 01/09/2026) fecha as decisões de produto que haviam ficado pendentes após a auditoria da v5.0: RF26 (posição na série adaptada ao tipo de recorrência), o horizonte de geração de séries com data de término (sem cap de 12 meses), a redação do RF28, o tratamento das ocorrências futuras ao alterar a frequência de uma série (RF27), a preservação de ocorrências editadas individualmente diante de uma alteração de frequência, a geração sob demanda ao navegar para períodos futuros de séries sem término, a disponibilidade das categorias no seletor de conta, o papel de `conta_fixa`/`repetir_ate` na nova arquitetura, e o não tratamento especial de `data_pagamento` histórico (o aplicativo ainda está em desenvolvimento, sem dados de produção). **Não há mais nenhuma decisão de produto pendente nesta ERS.** A seção 14 lista apenas pontos de implementação, sem impacto no comportamento já decidido.
 
+**Alteração pontual (decisão D7, 05/09/2026):** a validação manual do fluxo de edição de recorrência revelou que a redação original de RF29/§5.8 ("Remover recorrência") não correspondia à expectativa de uso do encerramento de uma recorrência. RF29 e §5.8 foram revisados — a ação passa a se chamar "Encerrar recorrência" e passa a remover ocorrências futuras ainda não realizadas a partir da ocorrência selecionada, preservando sempre o histórico já ocorrido e a própria ocorrência selecionada, com proteção defensiva para ocorrências futuras com informação histórica relevante (pagas, com data de pagamento, ou editadas individualmente). Ver seção 14, Decisão D7, para o registro completo. Nenhuma outra seção ou decisão anterior (D1–D6 inclusive) foi reaberta por esta alteração.
+
 ---
 
 # 1. Identificação e Versionamento
@@ -39,7 +41,7 @@ Esta revisão (**consolidação final**, 01/09/2026) fecha as decisões de produ
 | Documento | Especificação de Requisitos de Software (ERS) |
 | Versão | 5.0 |
 | Autora | Carinne Batista |
-| Data desta revisão | 01/09/2026 |
+| Data desta revisão | 01/09/2026 (última alteração pontual: 05/09/2026, decisão D7) |
 | Versão anterior | 4.1 (27/08/2026) |
 | Status desta versão | Em revisão — aguardando aprovação antes de qualquer implementação |
 
@@ -67,7 +69,7 @@ Mantido em relação à v4.1: aplicativo de uso pessoal, uma conta financeira vi
 
 Escopo desta revisão especificamente:
 
-* **Dentro do escopo:** recorrência mensal/anual sem arrasto de data, séries sem término, transformação de conta avulsa em recorrente, alteração de frequência, exclusão granular de ocorrências (incluindo a primeira da série), remoção de recorrência sem excluir ocorrências, data efetiva de pagamento, categorias pré-criadas com limite de 30, emoji e cor por categoria, banner de contas em atraso com tela dedicada, mensagens de vencimento em linguagem natural, seletor visual de "repetir até".
+* **Dentro do escopo:** recorrência mensal/anual sem arrasto de data, séries sem término, transformação de conta avulsa em recorrente, alteração de frequência, exclusão granular de ocorrências (incluindo a primeira da série), encerramento de recorrência preservando o histórico já ocorrido, data efetiva de pagamento, categorias pré-criadas com limite de 30, emoji e cor por categoria, banner de contas em atraso com tela dedicada, mensagens de vencimento em linguagem natural, seletor visual de "repetir até".
 * **Fora do escopo desta etapa:** implementação de código, alteração de schema, migração de banco, novas telas construídas, gráficos financeiros (RF21–RF23, permanecem não implementados), notificações, sincronização em nuvem, exportação de dados — ver seção 13 (Melhorias Futuras, mantida da v4.1) implícita nesta seção.
 
 ---
@@ -96,7 +98,7 @@ Este princípio se aplica, sem exceção, a:
 * alteração de valor, nome ou data de vencimento (RF20);
 * alteração de frequência (RF27);
 * transformação de conta avulsa em recorrente (RF28);
-* remoção da recorrência (RF29);
+* encerramento da recorrência (RF29);
 * exclusão de ocorrências (RF08);
 * qualquer outra alteração futura da série que venha a ser criada.
 
@@ -208,18 +210,28 @@ O termo "inativar" não deve aparecer em nenhum texto de interface relacionado a
 
 Para uma conta que não pertence a nenhuma série (Única), a exclusão ocorre diretamente, sem esse diálogo.
 
-## 5.8 Remover recorrência (RF29)
+## 5.8 Encerrar recorrência (RF29) — decisão final (revisão D7)
 
-"Remover recorrência" é uma ação diferente de "excluir contas".
+**Redação revisada nesta revisão (D7, ver seção 14).** A versão anterior deste requisito ("Remover recorrência") definia uma ação que nunca excluía nenhuma ocorrência, passada ou futura. A validação manual do fluxo de edição mostrou que essa regra confundia o usuário: ele esperava que "encerrar" uma recorrência também parasse de exibir as parcelas futuras que ainda não aconteceram, não apenas as impedisse de serem geradas. Esta seção substitui a regra anterior — a decisão abaixo é final e não deve ser reaberta.
 
-Ao remover a recorrência de uma série:
+"Encerrar recorrência" é uma ação diferente de "excluir contas" (RF08), mas — diferentemente da redação anterior — passa a remover ocorrências futuras ainda não realizadas, preservando integralmente o que já aconteceu.
 
-* a série deixa de gerar novas ocorrências;
-* **nenhuma ocorrência já existente é excluída** — passadas ou futuras;
-* as ocorrências futuras que já haviam sido geradas permanecem no sistema e passam a se comportar como contas individuais (podem ser editadas e excluídas isoladamente, sem diálogo de escopo, pois deixam de pertencer a uma série ativa);
-* o histórico anterior permanece intacto.
+A ação é **contextual à ocorrência que o usuário está editando** (não à data atual do sistema): o mês/ano dessa ocorrência é o ponto de encerramento comunicado ao usuário e usado para decidir o que é preservado.
 
-**Remover recorrência ≠ Excluir contas futuras.** Um usuário que quer parar de gerar novas contas de uma assinatura, mas manter as parcelas já lançadas para controle, usa "Remover recorrência". Um usuário que quer efetivamente apagar contas futuras usa a exclusão "Este mês em diante" (RF08).
+Ao encerrar a recorrência a partir da ocorrência selecionada:
+
+* a série deixa de gerar novas ocorrências (equivalente a `ativa = 0`, seção 9.2);
+* a ocorrência selecionada é sempre preservada;
+* **nenhuma ocorrência já realizada é excluída** — o corte usado para decidir o que remover é sempre o **mais tardio** entre a data da ocorrência selecionada e a data atual, nunca apenas a ocorrência selecionada isoladamente. Na prática:
+  * se a ocorrência selecionada é passada (ex.: hoje é setembro/2026 e o usuário está editando a ocorrência de março/2026), tudo o que já aconteceu — de março a setembro de 2026, inclusive — é preservado; só as ocorrências futuras a partir de outubro/2026 são removidas;
+  * se a ocorrência selecionada ainda não aconteceu, ela e tudo antes dela são preservados; só as ocorrências estritamente posteriores a ela são removidas;
+* ocorrências futuras que, mesmo estando no intervalo que seria removido, carreguem informação histórica relevante — já estiverem marcadas como pagas, já tiverem uma data de pagamento registrada, ou já tiverem sido editadas individualmente ("Somente este mês", seção 5.6) — **não são apagadas silenciosamente**; permanecem no sistema como conta individual, sem exigir nenhuma decisão adicional do usuário;
+* as ocorrências que permanecem (a selecionada e as anteriores) passam a se comportar como contas individuais (podem ser editadas e excluídas isoladamente, sem diálogo de escopo, pois deixam de pertencer a uma série ativa);
+* o histórico já ocorrido nunca é apagado, em nenhuma circunstância.
+
+**Encerrar recorrência ≠ Excluir contas futuras (RF08).** A diferença está na base de comparação e na proteção de histórico: "Excluir esta mês em diante" (RF08) age a partir da própria ocorrência escolhida pelo usuário, sem nenhuma proteção especial para ocorrências pagas ou editadas individualmente dentro do intervalo excluído. "Encerrar recorrência" (RF29) nunca exclui a ocorrência selecionada nem nada anterior a ela (mesmo quando isso significa preservar mais do que apenas a ocorrência escolhida, por causa da data atual), e protege explicitamente ocorrências futuras com informação histórica relevante.
+
+Ao encerrar uma recorrência, a conta deixa de possuir recorrência e passa a ser tratada como conta avulsa. Se o usuário quiser novamente uma recorrência, deverá utilizar "Transformar em recorrente" (RF28, seção 5.4), seguindo o mesmo fluxo de uma conta avulsa — não existe uma ação separada de "reativação". Essa nova série é uma série nova, começando naquela ocorrência como âncora; a série antiga (encerrada) não é reaproveitada nem precisa ser removida do banco — ela permanece apenas para preservar o histórico das ocorrências anteriores que ainda a referenciam (seção 9.1).
 
 ## 5.9 Status de pagamento independente por ocorrência
 
@@ -388,7 +400,7 @@ Esta regra vale apenas para séries ativas (não removidas — seção 5.8) e se
 | RF26 | Exibir, para ocorrências de séries, a indicação de posição: "Parcela X de Y" quando a série tem data de término definida, ou apenas "Parcela X" quando a série não tem término. *(seção 5.19)* | alterado — decisão final registrada; depende da nova arquitetura de séries |
 | RF27 | Permitir alterar a frequência de uma série existente (ex.: mensal → anual) a partir de uma ocorrência selecionada, que passa a ser a nova âncora; ocorrências anteriores permanecem inalteradas; ocorrências futuras já geradas sob a frequência anterior são ajustadas para seguir a nova frequência a partir da ocorrência selecionada, exceto as que já haviam sido editadas individualmente, que são preservadas. *(seção 5.5)* | **novo** — depende da nova arquitetura de séries |
 | RF28 | Permitir transformar uma conta avulsa (Única) em recorrente a partir da ocorrência existente, que passa a ser a âncora de uma nova série. *(seção 5.4)* | **novo** — depende da nova arquitetura de séries |
-| RF29 | Permitir remover a recorrência de uma série sem excluir nenhuma ocorrência já existente; a série deixa de gerar novas ocorrências e as futuras já geradas passam a se comportar como contas individuais. *(seção 5.8)* | **novo** — depende da nova arquitetura de séries |
+| RF29 | Permitir encerrar a recorrência de uma série a partir da ocorrência selecionada: a série deixa de gerar novas ocorrências, o histórico já realizado (incluindo a ocorrência selecionada) é sempre preservado, e as ocorrências futuras ainda não realizadas são removidas, exceto as que já tenham informação histórica relevante (pagas, com data de pagamento, ou editadas individualmente). *(seção 5.8)* | **novo** — revisado na consolidação D7; depende da nova arquitetura de séries |
 
 ---
 
@@ -428,7 +440,7 @@ Esta seção descreve o impacto de UX das decisões acima, sem redefinir o padr�
 * Campo de data de pagamento, editável por calendário quando a conta está paga, sem permitir datas futuras (RF06);
 * Diálogo de escopo de edição ("Somente este mês" / "Este mês em diante") com mensagem de confirmação em linguagem natural (RF20);
 * Diálogo de exclusão ("O que você deseja excluir?" com "Somente este mês" / "Este mês em diante" / "Cancelar"), funcional inclusive para a primeira ocorrência da série (RF08). O texto da interface não usa a palavra "inativar" em nenhum momento;
-* Ações "Transformar em recorrente" (RF28), "Alterar frequência" (RF27, quando aplicável) e "Remover recorrência" (RF29), distintas visualmente da ação de excluir.
+* Ações "Transformar em recorrente" (RF28), "Alterar frequência" (RF27, quando aplicável) e "Encerrar recorrência" (RF29, revisão D7), distintas visualmente da ação de excluir, agrupadas numa seção própria "Recorrência" junto aos demais dados da conta — não como ações soltas próximas de "Salvar alterações". Essa seção exibe também uma frase contextual sobre a recorrência (ex.: "Esta conta se repete mensalmente até dezembro de 2030."), no lugar de um rótulo genérico como "Recorrente: Sim". Uma conta sem recorrência exibe "Esta conta não possui recorrência." e a ação "Transformar em recorrente" — não existe um terceiro estado visual para "recorrência encerrada": depois de RF29, a conta é tratada como avulsa (seção 5.8).
 
 ### Categorias
 * Catálogo pré-criado de 11 categorias no primeiro acesso (RF14);
@@ -448,7 +460,7 @@ Essa limitação impede, ou torna artificialmente complexo:
 
 * excluir somente a primeira ocorrência de uma série (RF08);
 * alterar a frequência de uma série (RF27), já que a série não tem identidade própria além da primeira ocorrência;
-* remover a recorrência (RF29) preservando as ocorrências futuras como contas independentes, sem um lugar próprio para registrar "esta série não gera mais ocorrências";
+* encerrar a recorrência (RF29) preservando o histórico já realizado, sem um lugar próprio para registrar "esta série não gera mais ocorrências";
 * representar uma série sem data de término, já que `contas.repetir_ate` é obrigatório quando `conta_fixa = 1` e é interpretado por ocorrência, não por série;
 * gerar apenas mensal (o código de geração em `criar_conta` não suporta frequência anual).
 
@@ -470,7 +482,7 @@ A direção arquitetural está aprovada: separar **configuração da série** de
 | `mes_ancora` | Inteiro | Mês da data-âncora (apenas para `frequencia = anual`). |
 | `data_inicio` | Data | Data da ocorrência-âncora vigente (pode ser atualizada por RF27/RF28 — ver 9.3). |
 | `data_termino` | Data (nulo) | Fim da recorrência; `NULL` significa "sem data de término". |
-| `ativa` | Booleano | `0` quando a recorrência foi removida (RF29) — a série para de gerar novas ocorrências, mas o registro é preservado para as ocorrências existentes continuarem referenciando seu histórico. |
+| `ativa` | Booleano | `0` quando a recorrência foi encerrada (RF29, revisão D7) — a série para de gerar novas ocorrências, mas o registro é preservado para as ocorrências existentes continuarem referenciando seu histórico. |
 | `horizonte_gerado_ate` | Data | Até que data as ocorrências já foram geradas (ver 9.4). |
 
 ### `contas` (ocorrência — campos alterados)
@@ -545,7 +557,7 @@ Todos os casos abaixo estão **especificados, ainda não implementados**, exceto
 | CT13 | Excluir "somente este mês" de uma ocorrência no meio de uma série | Apenas a ocorrência selecionada é removida; anteriores e futuras permanecem | novo |
 | CT14 | Excluir "este mês em diante" a partir de uma ocorrência no meio de uma série | Ocorrência selecionada e futuras são removidas; anteriores permanecem no histórico | novo |
 | CT15 | Excluir "este mês em diante" a partir da **primeira** ocorrência de uma série | A série inteira é removida sem erro de integridade referencial | novo — cobre a limitação da seção 9.1 |
-| CT16 | Remover a recorrência de uma série com ocorrências futuras já geradas | Nenhuma ocorrência é excluída; a série para de gerar novas ocorrências; as ocorrências futuras já existentes continuam editáveis/excluíveis individualmente | novo |
+| CT16 | Encerrar a recorrência de uma série a partir de uma ocorrência futura ainda não realizada, com outras ocorrências futuras já geradas além dela | A ocorrência selecionada e tudo anterior a ela são preservados; as ocorrências estritamente posteriores são removidas; a série para de gerar novas ocorrências; as ocorrências que restam continuam editáveis/excluíveis individualmente | alterado (D7) — anteriormente "Remover recorrência", que não excluía nenhuma ocorrência |
 | CT17 | Criar a 30ª categoria de um usuário (contando as pré-criadas) | Categoria criada normalmente | novo |
 | CT18 | Tentar criar a 31ª categoria de um usuário | Sistema impede a criação e informa o limite atingido | novo |
 | CT19 | Atribuir a uma categoria uma cor já usada por outra categoria ativa do mesmo usuário | Sistema impede a seleção dessa cor para a nova categoria | novo |
@@ -570,6 +582,14 @@ Todos os casos abaixo estão **especificados, ainda não implementados**, exceto
 | CT38 | Excluir uma categoria e abrir o seletor de categoria em Nova Conta/Edição de Conta | A categoria excluída não aparece mais no seletor; contas que a utilizavam permanecem sem categoria | novo — §5.11 |
 | CT39 | Criar uma categoria quando todas as cores da paleta já estão em uso pelo próprio usuário | O sistema informa que não há cor disponível, em vez de duplicar uma cor ou falhar silenciosamente | novo — §5.13 |
 | CT40 | Editar uma ocorrência de conta Única (sem série) | A conta é salva diretamente, sem exibir diálogo de escopo | novo — baseline RF10/RF20 |
+| CT41 | Encerrar a recorrência a partir de uma ocorrência **passada** (ex.: hoje é setembro/2026, ocorrência selecionada é março/2026) | Todas as ocorrências entre março e setembro de 2026, inclusive, são preservadas (já aconteceram); só as ocorrências de outubro/2026 em diante são removidas; a série para de gerar novas ocorrências | novo — cobre §5.8 (D7) |
+| CT42 | Encerrar a recorrência a partir da ocorrência do **mês atual** | A ocorrência do mês atual é preservada; ocorrências futuras são removidas; a série para de gerar novas ocorrências | novo — cobre §5.8 (D7) |
+| CT43 | Encerrar a recorrência a partir de uma ocorrência **futura** ainda não realizada | A ocorrência selecionada e tudo anterior a ela (incluindo ocorrências já realizadas) são preservados; só as ocorrências estritamente posteriores à selecionada são removidas | novo — cobre §5.8 (D7) |
+| CT44 | Encerrar uma recorrência quando uma das ocorrências futuras que seria removida já está marcada como paga | Essa ocorrência não é excluída, mesmo estando no intervalo que seria removido; permanece no sistema como conta individual | novo — cobre a proteção defensiva de §5.8 (D7) |
+| CT45 | Encerrar uma recorrência quando uma das ocorrências futuras que seria removida já tem `data_pagamento` registrada | Essa ocorrência não é excluída | novo — cobre a proteção defensiva de §5.8 (D7) |
+| CT46 | Encerrar uma recorrência quando uma das ocorrências futuras que seria removida já foi editada individualmente ("Somente este mês") | Essa ocorrência não é excluída | novo — cobre a proteção defensiva de §5.8 (D7) |
+| CT47 | Consultar a seção "Recorrência" em Editar após um encerramento | Exibe "Esta conta não possui recorrência." e a ação "Transformar em recorrente" — a conta é tratada como avulsa; não oferece "Alterar frequência" nem "Encerrar recorrência" | novo — cobre §5.8/§8 |
+| CT48 | Usar "Transformar em recorrente" numa conta cuja recorrência já foi encerrada | Uma nova série é criada a partir dessa ocorrência como âncora, com a frequência e término escolhidos pelo usuário; a série antiga (encerrada) permanece intacta no banco, sem ser reaproveitada | novo — cobre §5.8/§5.4 |
 
 ---
 
@@ -579,7 +599,7 @@ A v5.0 é considerada atendida quando, para cada frente:
 
 * **Recorrência:** é possível criar séries Única/Mensal/Anual; séries mensais e anuais não apresentam arrasto de data (CT05, CT06); séries com término são geradas integralmente até a data definida, sem cap de 12 meses (CT34); séries sem término geram 12 meses inicialmente e passam a gerar ocorrências adicionais sob demanda quando o usuário navega além do horizonte gerado, sem exigir uma rotina contínua (CT07, CT08).
 * **Indicação de posição (RF26):** séries com término mostram "Parcela X de Y"; séries sem término mostram apenas "Parcela X" (CT35, CT36).
-* **Granularidade de ações sobre a série:** excluir, alterar frequência e remover recorrência funcionam corretamente para qualquer ocorrência da série, incluindo a primeira (CT15).
+* **Granularidade de ações sobre a série:** excluir, alterar frequência e encerrar recorrência funcionam corretamente para qualquer ocorrência da série, incluindo a primeira (CT15); encerrar recorrência nunca apaga histórico já realizado, seja qual for a posição da ocorrência selecionada em relação à data atual, e protege ocorrências futuras com informação histórica relevante (CT41–CT46).
 * **Alteração de frequência:** ocorrências futuras já geradas sob a frequência antiga são ajustadas para seguir a nova frequência a partir do ponto de alteração; ocorrências anteriores nunca são tocadas (CT10).
 * **Histórico:** nenhuma ação sobre a configuração futura de uma série altera ocorrências passadas, em nenhum dos fluxos acima (CT11, CT13, CT14, CT16, CT37).
 * **Pagamento:** toda ocorrência paga possui data de pagamento; reverter para pendente remove essa data; datas futuras são recusadas (CT01–CT03).
@@ -631,7 +651,7 @@ Para cada RF da v4.1, o que ocorre nesta versão:
 | 1. Revisão e aprovação desta ERS | — | Etapa atual. Nenhum código alterado até aprovação. |
 | 2. Migração de arquitetura (`series_recorrencia`, `data_pagamento`, `categorias.cor`) | Etapa 1 | Pré-requisito de RF08, RF10, RF27, RF28, RF29. Deve seguir o plano da seção 9.5 e respeitar RNF08. |
 | 3. Recorrência mensal/anual sem arrasto e sem término obrigatório (RF10) | Etapa 2 | Inclui geração incremental (seção 9.4). |
-| 4. Ações granulares sobre séries: exclusão (RF08), alteração de frequência (RF27), transformar em recorrente (RF28), remover recorrência (RF29) | Etapa 2 | Depende da nova arquitetura já estar disponível. |
+| 4. Ações granulares sobre séries: exclusão (RF08), alteração de frequência (RF27), transformar em recorrente (RF28), encerrar recorrência (RF29, revisão D7) | Etapa 2 | Depende da nova arquitetura já estar disponível. |
 | 5. Data efetiva de pagamento (RF06/RF24) | Etapa 2 (apenas o campo) | Pode ser desenvolvida em paralelo à etapa 3/4. |
 | 6. Categorias: catálogo pré-criado, limite de 30, emoji sugerido, cor (RF14/RF18) | Etapa 2 (apenas o campo `cor`) | Catálogo e limite não dependem de schema novo além da coluna `cor`. |
 | 7. UX: banner de atrasadas + tela dedicada (RF25), mensagens naturais (RF11/RF17), título dinâmico (RF05), seletor visual de término (RF10), indicação de posição adaptada ao tipo de série (RF26) | Etapas 3–6 | Majoritariamente mudanças de interface sobre dados já existentes ou já migrados. |
@@ -643,10 +663,26 @@ Itens já entregues antes desta ERS (RF01–04, RF07, RF09, RF12, RF13, RF15, RF
 
 # 14. Pendências e Decisões Técnicas
 
-Esta seção foi atualizada na consolidação final (01/09/2026). **Não há nenhuma decisão de produto pendente.** As duas questões que permaneciam em aberto após a auditoria da v5.0 foram fechadas nesta revisão:
+Esta seção foi atualizada na consolidação final (01/09/2026) e revisada novamente na decisão D7 (05/09/2026, ver abaixo). **Não há nenhuma decisão de produto pendente.** As duas questões que permaneciam em aberto após a auditoria da v5.0 foram fechadas na consolidação final:
 
 * A preservação de ocorrências editadas individualmente diante de uma alteração de frequência (RF27) — decisão final registrada nas seções 5.1 e 5.5: a edição individual sempre prevalece sobre um ajuste mecânico posterior da série.
 * O tratamento de `data_pagamento` para contas já pagas antes da migração — deixou de ser uma questão em aberto: o aplicativo ainda está em desenvolvimento, não há dados de produção com contas previamente pagas, e a regra de preenchimento de `data_pagamento` (seção 5.10) já cobre integralmente o comportamento a partir da implementação da v5.0 (ver seção 9.5, item 3).
+
+## Decisão D7 (05/09/2026) — revisão de RF29/§5.8, "Remover recorrência" → "Encerrar recorrência"
+
+Registrada após a validação manual do fluxo de edição de recorrência ter revelado que a redação original de RF29 ("nenhuma ocorrência já existente é excluída — passadas ou futuras") não correspondia à expectativa de uso: o usuário esperava que encerrar uma recorrência também deixasse de exibir as parcelas futuras ainda não realizadas, não apenas impedisse a geração de novas.
+
+**Decisão final, registrada objetivamente:**
+
+1. A ação passa a se chamar "Encerrar recorrência" em toda a interface e na documentação — "Remover recorrência" não é mais usada.
+2. A ação passa a excluir ocorrências futuras ainda não realizadas, o que a versão anterior do RF29 proibia explicitamente. Esta é uma reversão deliberada e final dessa proibição, não uma reinterpretação de texto.
+3. Histórico já realizado nunca é apagado: o ponto de corte usado é sempre o mais tardio entre a data da ocorrência selecionada e a data atual — nunca apenas a ocorrência selecionada isoladamente. Isso é o que impede que encerrar uma recorrência a partir de uma ocorrência passada apague ocorrências que já aconteceram entre aquele mês e hoje.
+4. A ocorrência selecionada pelo usuário é sempre preservada, nunca excluída por esta ação.
+5. Ocorrências futuras que, mesmo estando no intervalo removido, tenham informação histórica relevante (pagas, com `data_pagamento`, ou editadas individualmente) são preservadas em vez de apagadas — proteção técnica, sem exigir decisão adicional do usuário.
+6. A representação técnica reaproveita `series_recorrencia.ativa = 0` (já existente, seção 9.2) para "a série não gera mais ocorrências" — nenhum campo novo foi introduzido.
+7. Esta decisão altera o texto de §5.8 e a linha de RF29 na seção 6 diretamente (diferente de decisões técnicas anteriores como D1–D6, que não exigiram reabrir o texto da ERS). As demais seções desta ERS, incluindo D1–D6, permanecem como estavam — esta revisão não as reabre.
+
+Esta decisão está fechada e não deve ser reaberta durante a implementação.
 
 Os pontos abaixo são **decisões de implementação** (não de produto) e não bloqueiam a aprovação desta ERS — ficam a critério do desenvolvedor, desde que o comportamento observável descrito nas seções 5 e 9 seja respeitado:
 
@@ -665,4 +701,4 @@ Os pontos abaixo são **decisões de implementação** (não de produto) e não 
 | 3.0 | 09/08/2026 | Revisão baseada nos protótipos de tela: termos de uso, biometria, resumo semanal, ícones, criação a partir de categoria, escopo de edição de contas fixas, gráficos financeiros. |
 | 4.0 | 21/08/2026 | Revisão baseada na implementação da Tela Nova Conta: filtro do Total do Mês, contas atrasadas vinculadas ao mês original, seção "Contas atrasadas", indicação de parcela. Seção de rastreabilidade introduzida. |
 | 4.1 | 27/08/2026 | Revisão documental: RF09 simplificado (remoção do filtro de proximidade), alinhamento textual do RF17, atualização da rastreabilidade, registro da pendência do RF05. |
-| 5.0 | 01/09/2026 | Revisão estrutural completa: recorrência única/mensal/anual sem arrasto, com término opcional (RF10); arquitetura de séries aprovada (`series_recorrencia`) para corrigir a limitação do `serie_id` autorreferenciado, habilitando exclusão da primeira ocorrência, alteração de frequência (RF27, novo) e remoção de recorrência (RF29, novo) sem excluir ocorrências; transformação de conta avulsa em recorrente (RF28, novo); data efetiva de pagamento (RF06 estendido); catálogo de 11 categorias pré-criadas e limite de 30 (RF14 estendido); emoji sugerido e cor exclusiva por categoria (RF18 estendido); banner de contas em atraso com tela dedicada substituindo a lista embutida (RF25); mensagens de vencimento em linguagem natural com singular/plural corretos (RF11/RF17); correção da redação do RF05, resolvendo a pendência da v4.1. **Consolidação final (mesma data):** fechadas as decisões de RF26 (Parcela X de Y para séries com término, Parcela X para séries sem término — seção 5.19), geração integral de séries com término sem cap de 12 meses (seção 5.3, corrige inconsistência C1 da auditoria), ajuste das ocorrências futuras ao alterar a frequência de uma série (RF27, seção 5.5), geração sob demanda ao navegar para períodos futuros de séries sem término (seção 5.20, substitui a ideia de rotina periódica), disponibilidade das categorias no seletor de conta (seção 5.11), e remoção de `conta_fixa`/`repetir_ate` de `contas` em favor da entidade de série (seção 9.2). **Segunda rodada da consolidação final (mesma data):** registrada a decisão de que edição individual de uma ocorrência ("Somente este mês") prevalece sobre ajuste mecânico futuro da série, incluindo alteração de frequência (RF27, seções 5.1 e 5.5); removida a falsa pendência sobre `data_pagamento` histórico pré-migração — não há dados de produção a tratar (seção 9.5). Seção 14 não lista mais nenhuma decisão de produto em aberto, apenas pontos de implementação. Nenhuma alteração de código, banco de dados ou interface foi realizada nesta etapa — esta versão é somente especificação. |
+| 5.0 | 01/09/2026 | Revisão estrutural completa: recorrência única/mensal/anual sem arrasto, com término opcional (RF10); arquitetura de séries aprovada (`series_recorrencia`) para corrigir a limitação do `serie_id` autorreferenciado, habilitando exclusão da primeira ocorrência, alteração de frequência (RF27, novo) e remoção de recorrência (RF29, novo) sem excluir ocorrências; transformação de conta avulsa em recorrente (RF28, novo); data efetiva de pagamento (RF06 estendido); catálogo de 11 categorias pré-criadas e limite de 30 (RF14 estendido); emoji sugerido e cor exclusiva por categoria (RF18 estendido); banner de contas em atraso com tela dedicada substituindo a lista embutida (RF25); mensagens de vencimento em linguagem natural com singular/plural corretos (RF11/RF17); correção da redação do RF05, resolvendo a pendência da v4.1. **Consolidação final (mesma data):** fechadas as decisões de RF26 (Parcela X de Y para séries com término, Parcela X para séries sem término — seção 5.19), geração integral de séries com término sem cap de 12 meses (seção 5.3, corrige inconsistência C1 da auditoria), ajuste das ocorrências futuras ao alterar a frequência de uma série (RF27, seção 5.5), geração sob demanda ao navegar para períodos futuros de séries sem término (seção 5.20, substitui a ideia de rotina periódica), disponibilidade das categorias no seletor de conta (seção 5.11), e remoção de `conta_fixa`/`repetir_ate` de `contas` em favor da entidade de série (seção 9.2). **Segunda rodada da consolidação final (mesma data):** registrada a decisão de que edição individual de uma ocorrência ("Somente este mês") prevalece sobre ajuste mecânico futuro da série, incluindo alteração de frequência (RF27, seções 5.1 e 5.5); removida a falsa pendência sobre `data_pagamento` histórico pré-migração — não há dados de produção a tratar (seção 9.5). Seção 14 não lista mais nenhuma decisão de produto em aberto, apenas pontos de implementação. Nenhuma alteração de código, banco de dados ou interface foi realizada nesta etapa — esta versão é somente especificação. **Decisão D7 (05/09/2026):** revisão de RF29/§5.8 após validação manual — "Remover recorrência" passa a se chamar "Encerrar recorrência" e passa a remover ocorrências futuras ainda não realizadas a partir da ocorrência selecionada (o que a redação anterior proibia), preservando sempre o histórico já ocorrido, a ocorrência selecionada, e ocorrências futuras com informação histórica relevante (pagas, com data de pagamento, ou editadas individualmente). Ver seção 14 para o registro completo da decisão; nenhuma outra decisão (D1–D6) foi reaberta. |

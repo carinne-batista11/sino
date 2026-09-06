@@ -82,6 +82,18 @@ def frase_resumo_proximas(quantidade):
     return f"{quantidade} contas vencem nos próximos 7 dias"
 
 
+def frase_recorrencia(frequencia, data_termino):
+    """RF29 revisado (5.8, D7): frase contextual sobre a recorrência de uma
+    série ativa, no lugar do texto genérico "Recorrente: Sim". Não trata o
+    caso de série encerrada -- quem chama decide esse texto a partir de
+    `ativa` (obter_info_serie), já que aqui a série é sempre ativa."""
+    frequencia_texto = "mensalmente" if frequencia == "mensal" else "anualmente"
+    if data_termino:
+        ano_t, mes_t = map(int, data_termino.split("-"))
+        return f"Esta conta se repete {frequencia_texto} até {MESES_PT[mes_t - 1].lower()} de {ano_t}."
+    return f"Esta conta se repete {frequencia_texto} sem prazo definido para término."
+
+
 def parse_valor(texto):
     texto = (texto or "").strip().replace("R$", "").strip()
     if not texto:
@@ -475,6 +487,15 @@ def main(page: ft.Page):
                 and database.serie_esta_ativa(conta["serie_id"])
             )
 
+            # RF29 revisado (D7): frase contextual da seção "Recorrência" em
+            # Editar (substitui "Recorrente: Sim") e mensagem de confirmação
+            # de "Encerrar recorrência" -- calculado uma vez aqui pelo mesmo
+            # motivo de serie_ativa acima. None para conta avulsa.
+            info_serie = (
+                database.obter_info_serie(conta["serie_id"])
+                if conta.get("serie_id") is not None else None
+            )
+
             area_corpo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
 
             def construir_seletor_frequencia(estado):
@@ -524,26 +545,22 @@ def main(page: ft.Page):
                 else:
                     cor_status, rotulo_status = "#888780", "Pendente"
 
-                def alternar_status_pagamento(e):
-                    # RF06/RF24: alterna somente esta ocorrência. O escopo de série
+                # UX: Detalhes é predominantemente informativo -- a única ação de
+                # status que continua aqui é "Marcar como paga" (pendente/atrasado ->
+                # pago). Reverter de pago para pendente não tem mais ação nesta tela;
+                # as alterações de status ficam concentradas em Editar
+                # (mostrar_formulario_edicao: Pendente/Atrasado -> "Marcar como paga",
+                # Pago -> "Alterar data de pagamento"). database.marcar_conta_como_pendente
+                # continua existindo em database/db.py (RF06/5.10), só não tem mais
+                # nenhum ponto de UI que a chame nesta tela.
+                def marcar_como_paga_detalhes(e):
+                    # RF06/RF24: altera somente esta ocorrência. O escopo de série
                     # (RF20, seção 5.2 do ERS) só se aplica a nome/valor/data — status
                     # não tem variante "este mês em diante".
-                    if conta["status"] == "pago":
-                        database.marcar_conta_como_pendente(conta["id"])
-                        conta["status"] = "atrasado" if dias_delta < 0 else "pendente"
-                        conta["data_pagamento"] = None
-                    else:
-                        database.marcar_conta_como_paga(conta["id"])
-                        conta["status"] = "pago"
-                        conta["data_pagamento"] = date.today().isoformat()
+                    database.marcar_conta_como_paga(conta["id"])
+                    conta["status"] = "pago"
+                    conta["data_pagamento"] = date.today().isoformat()
                     mostrar_visualizacao()
-
-                if conta["status"] == "pago":
-                    texto_botao_status, cor_botao_status = "Marcar como pendente", "#E0A030"
-                else:
-                    texto_botao_status, cor_botao_status = "Marcar como paga", "#39D67C"
-
-                recorrencia = "Sim" if conta.get("serie_id") is not None else "Não"
 
                 # A tela de Detalhes é só consulta -- exibe "Pago em" quando houver,
                 # mas a ação de alterar essa data mora em Editar (mostrar_formulario_edicao).
@@ -571,13 +588,25 @@ def main(page: ft.Page):
                         spacing=2,
                     )
 
+                # Frase contextual de recorrência (mesma lógica de Editar --
+                # mostrar_formulario_edicao -- reaproveitando frase_recorrencia() e
+                # info_serie/serie_ativa já calculados uma vez no topo de
+                # abrir_detalhe_conta). Avulsa e recorrência encerrada mostram o
+                # mesmo texto -- depois de encerrada, a conta é tratada como avulsa
+                # também aqui em Detalhes, igual já acontece em Editar. As ações
+                # continuam só em Editar; aqui é somente consulta.
+                if serie_ativa:
+                    recorrencia_texto = frase_recorrencia(info_serie["frequencia"], info_serie["data_termino"])
+                else:
+                    recorrencia_texto = "Esta conta não possui recorrência."
+
                 linhas_cartao = [
                     linha_detalhe("Nome", conta["nome"]),
                     linha_detalhe("Valor", formatar_moeda(conta["valor"])),
                     linha_detalhe("Vencimento", data_venc.strftime("%d/%m/%Y")),
                     linha_detalhe("Categoria", nome_categoria),
                     linha_detalhe("Status", rotulo_status, cor_valor=cor_status),
-                    linha_detalhe("Recorrência", recorrencia),
+                    linha_detalhe("Recorrência", recorrencia_texto),
                 ]
                 if pago_em_texto:
                     linhas_cartao.append(linha_detalhe("Pago em", pago_em_texto))
@@ -606,13 +635,16 @@ def main(page: ft.Page):
                     ft.Container(height=20),
                     cartao_detalhes,
                     ft.Container(height=16),
-                    ft.Button(
-                        content=texto_botao_status,
-                        bgcolor=cor_botao_status,
-                        color="white",
-                        on_click=alternar_status_pagamento,
-                    ),
                 ]
+                if conta["status"] != "pago":
+                    controles_acao.append(
+                        ft.Button(
+                            content="Marcar como paga",
+                            bgcolor="#39D67C",
+                            color="white",
+                            on_click=marcar_como_paga_detalhes,
+                        ),
+                    )
 
                 area_corpo.controls = [
                     ft.Container(
@@ -714,8 +746,11 @@ def main(page: ft.Page):
                 page.show_dialog(dialogo)
 
             def mostrar_dialogo_transformar_recorrente():
-                # RF28: só para conta única (serie_id None) -- botão que abre este
-                # diálogo já é condicionado a isso em mostrar_visualizacao().
+                # RF28: conta avulsa de verdade (serie_id None) OU com recorrência já
+                # encerrada (serie_id aponta pra série inativa) -- tratadas da mesma
+                # forma, botão condicionado a "not serie_ativa" na seção Recorrência
+                # de mostrar_formulario_edicao. database.transformar_em_recorrente já
+                # aceita os dois casos, só rejeita série ativa.
                 frequencia_transf = {"valor": "mensal"}
                 linha_frequencia_transf = construir_seletor_frequencia(frequencia_transf)
 
@@ -919,16 +954,28 @@ def main(page: ft.Page):
                 )
                 page.show_dialog(dialogo)
 
-            def mostrar_dialogo_remover_recorrencia():
-                # RF29: não exclui nenhuma ocorrência -- só impede que a série gere
-                # novas contas no futuro (database.remover_recorrencia).
-                erro_remocao = ft.Text(value="", color="#A32D2D", size=12)
+            def mostrar_dialogo_encerrar_recorrencia():
+                # RF29 revisado (5.8, D7): contextual à ocorrência sendo editada
+                # (conta["data_vencimento"]), nunca à data atual do sistema --
+                # database.encerrar_recorrencia decide sozinha, a partir da
+                # própria referência e de hoje, o que preservar (regra fechada
+                # em D7: nunca apaga o que já aconteceu, nem a ocorrência
+                # selecionada).
+                erro_encerramento = ft.Text(value="", color="#A32D2D", size=12)
+                data_venc_referencia = date.fromisoformat(conta["data_vencimento"])
+                mes_referencia_texto = (
+                    f"{MESES_PT[data_venc_referencia.month - 1].lower()} de {data_venc_referencia.year}"
+                )
+                frase_estado = (
+                    frase_recorrencia(info_serie["frequencia"], info_serie["data_termino"])
+                    if info_serie else ""
+                )
 
-                def confirmar_remocao(e):
+                def confirmar_encerramento(e):
                     try:
-                        database.remover_recorrencia(conta["serie_id"])
+                        database.encerrar_recorrencia(conta["id"])
                     except ValueError:
-                        erro_remocao.value = "Não foi possível remover a recorrência desta conta."
+                        erro_encerramento.value = "Não foi possível encerrar a recorrência desta conta."
                         page.update()
                         return
                     page.pop_dialog()
@@ -936,22 +983,24 @@ def main(page: ft.Page):
 
                 dialogo = ft.AlertDialog(
                     modal=True,
-                    title=ft.Text("Remover recorrência"),
+                    title=ft.Text("Encerrar recorrência"),
                     content=ft.Column(
                         tight=True,
                         spacing=12,
                         controls=[
                             ft.Text(
-                                "Esta conta deixa de se repetir automaticamente a partir de agora. "
-                                "As ocorrências já existentes, passadas e futuras, não são apagadas."
+                                f"{frase_estado} Ao encerrar a recorrência a partir de "
+                                f"{mes_referencia_texto}, as contas que já aconteceram serão "
+                                "mantidas. As próximas contas ainda não realizadas serão "
+                                "removidas e nenhuma nova conta será criada."
                             ),
-                            erro_remocao,
+                            erro_encerramento,
                         ],
                     ),
                     actions=[
                         ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                        ft.Button(content="Remover recorrência", bgcolor="#A32D2D", color="white",
-                                  on_click=confirmar_remocao),
+                        ft.Button(content="Encerrar recorrência", bgcolor="#A32D2D", color="white",
+                                  on_click=confirmar_encerramento),
                     ],
                 )
                 page.show_dialog(dialogo)
@@ -999,12 +1048,26 @@ def main(page: ft.Page):
                 def abrir_seletor_data(e):
                     page.show_dialog(seletor_data)
 
-                # UX (movida da tela de Detalhes para dentro de Editar): a tela de
-                # Detalhes passa a exibir só a data de pagamento ("Pago em"), sem
-                # oferecer a ação de alterá-la. Mesmo mecanismo de sempre --
-                # database.editar_data_pagamento, mesma validação de data futura
-                # (RF06/5.10) -- só muda de onde o usuário acessa.
+                # UX: seção "Status" em Editar, no mesmo padrão visual dos demais
+                # campos (TextField somente-leitura igual a campo_categoria_edit,
+                # como peer direto na lista de controles -- não dentro de um
+                # Container/Column à parte, que é o que fazia Recorrência ficar
+                # estreita; ver secao_recorrencia_acoes abaixo). Conteúdo e ação
+                # são contextuais ao status:
+                # - Pago: mesmo mecanismo de sempre para alterar a data
+                #   (database.editar_data_pagamento, mesma validação de data
+                #   futura -- RF06/5.10), só que agora reaproveitado sob o campo
+                #   Status em vez de um botão solto.
+                # - Pendente/Atrasado: nova ação "Marcar como paga" (reaproveita
+                #   database.marcar_conta_como_paga, mesma função usada em
+                #   Detalhes e no quick-pay -- nenhuma lógica nova). "Marcar como
+                #   pendente" não existe aqui, por decisão de produto (some UX).
                 if conta["status"] == "pago":
+                    texto_status_edit = (
+                        f"Pago em {date.fromisoformat(conta['data_pagamento']).strftime('%d/%m/%Y')}"
+                        if conta.get("data_pagamento") else "Pago"
+                    )
+
                     def mostrar_erro_data_pagamento():
                         dialogo_erro = ft.AlertDialog(
                             modal=True,
@@ -1043,15 +1106,49 @@ def main(page: ft.Page):
                     def abrir_seletor_data_pagamento(e):
                         page.show_dialog(seletor_data_pagamento)
 
-                    controles_pagamento_edicao = [
-                        ft.Container(height=8),
+                    def marcar_como_pendente_edicao(e):
+                        # RF06/5.10: reaproveita database.marcar_conta_como_pendente tal
+                        # como já existe -- ela já limpa data_pagamento no banco. O
+                        # status recalculado aqui (Pendente vs Atrasado) usa a mesma
+                        # lógica de sempre (data de vencimento vs. hoje), igual ao que
+                        # listar_contas já faz -- não é uma regra nova.
+                        database.marcar_conta_como_pendente(conta["id"])
+                        dias_delta_atual = (data_venc_atual - date.today()).days
+                        conta["status"] = "atrasado" if dias_delta_atual < 0 else "pendente"
+                        conta["data_pagamento"] = None
+                        mostrar_visualizacao()
+
+                    acoes_status = [
                         ft.TextButton(
                             content="Alterar data de pagamento",
                             on_click=abrir_seletor_data_pagamento,
                         ),
+                        ft.TextButton(
+                            content="Marcar como pendente",
+                            on_click=marcar_como_pendente_edicao,
+                        ),
                     ]
                 else:
-                    controles_pagamento_edicao = []
+                    texto_status_edit = "Atrasado" if conta["status"] == "atrasado" else "Pendente"
+
+                    def marcar_como_paga_edicao(e):
+                        # RF06/RF24: mesma função e mesmo efeito de sempre -- só
+                        # muda de onde o usuário aciona (Editar, além de Detalhes
+                        # e do quick-pay já existentes).
+                        database.marcar_conta_como_paga(conta["id"])
+                        conta["status"] = "pago"
+                        conta["data_pagamento"] = date.today().isoformat()
+                        mostrar_visualizacao()
+
+                    acoes_status = [
+                        ft.TextButton(content="Marcar como paga", on_click=marcar_como_paga_edicao),
+                    ]
+
+                campo_status_edit = ft.TextField(
+                    label="Status", value=texto_status_edit,
+                    read_only=True, disabled=True, color="#0B1410",
+                )
+                secao_status_acoes = ft.Column(spacing=4, controls=acoes_status)
 
                 erro_edit = ft.Text(value="", color="#A32D2D", size=12)
 
@@ -1141,36 +1238,76 @@ def main(page: ft.Page):
                     ],
                 )
 
-                # UX (movida da tela de detalhes para dentro de Editar): RF27/RF29
-                # continuam chamando exatamente os mesmos diálogos já existentes
-                # (mostrar_dialogo_alterar_frequencia/mostrar_dialogo_remover_recorrencia),
-                # sem nenhuma lógica nova. Mesmas três condições de sempre --
-                # conta.get("serie_id") e serie_ativa (D1/D2, calculado uma vez no
-                # topo de abrir_detalhe_conta): avulsa -> RF28; recorrência ativa ->
-                # RF27/RF29; recorrência inativa -> nenhuma ação de recorrência.
-                if conta.get("serie_id") is None:
-                    controles_recorrencia_edicao = [
-                        ft.Container(height=8),
+                # UX (RF29 revisado -- D7 -- e o colapso avulsa/encerrada decidido em
+                # seguida): a seção "Recorrência" usa o mesmo padrão visual dos demais
+                # campos -- TextField somente-leitura igual a campo_categoria_edit,
+                # como peer direto na lista de controles principal (não dentro de um
+                # Container/Column à parte). Essa era a causa da largura estreita:
+                # um Container(content=Column(...)) sem horizontal_alignment=STRETCH
+                # na Column interna não herda a largura total que o Container (filho
+                # direto da Column externa em STRETCH) recebe -- a Column interna,
+                # com alinhamento padrão (START), encolhe para o tamanho intrínseco
+                # do TextField em vez de esticá-lo. Colocando o campo como peer direto
+                # (igual a campo_categoria_edit) ele estica corretamente, sem precisar
+                # de nenhuma configuração extra de largura/expand.
+                #
+                # As ações continuam logo abaixo do campo (não mais soltas perto de
+                # "Salvar alterações"), mas isoladas num Column pequeno e não
+                # esticado -- isso evita o problema oposto (visto em "Alterar data de
+                # pagamento" antes desta correção): um TextButton esticado por um
+                # Column em STRETCH fica centralizado, porque o Material centraliza o
+                # conteúdo do botão dentro da largura que ele recebe. Um Column comum
+                # (alinhamento padrão à esquerda) preserva o tamanho natural do botão,
+                # alinhado à esquerda, mesmo que a própria caixa do Column seja
+                # esticada pelo pai.
+                #
+                # Só duas condições agora -- serie_ativa (D1/D2, calculado uma vez no
+                # topo de abrir_detalhe_conta): recorrência ativa -> RF27 + RF29;
+                # qualquer outro caso (avulsa de verdade OU recorrência já encerrada,
+                # serie_id ainda aponta pra série inativa) -> tratado exatamente como
+                # avulsa (RF28). Encerrar uma recorrência não deixa um terceiro estado
+                # visual -- a conta passa a se comportar como avulsa em toda a camada
+                # de produto/UI; a série antiga (inativa) só continua existindo no
+                # banco para preservar o histórico das ocorrências anteriores que
+                # ainda a referenciam (ver transformar_em_recorrente).
+                if serie_ativa:
+                    # multiline=True é necessário aqui de verdade, não só herdado: a
+                    # frase mais longa ("...sem prazo definido para término.") não
+                    # cabe numa linha só nem com o campo na largura total -- sem isso
+                    # o texto seria cortado, ilegível, num TextField desabilitado (sem
+                    # como o usuário rolar para ver o resto).
+                    campo_recorrencia_edit = ft.TextField(
+                        label="Recorrência",
+                        value=frase_recorrencia(info_serie["frequencia"], info_serie["data_termino"]),
+                        read_only=True, disabled=True, color="#0B1410",
+                        multiline=True, min_lines=1, max_lines=2,
+                    )
+                    acoes_recorrencia = [
+                        ft.TextButton(
+                            content="Alterar frequência",
+                            on_click=lambda e: mostrar_dialogo_alterar_frequencia(),
+                        ),
+                        ft.TextButton(
+                            content="Encerrar recorrência",
+                            on_click=lambda e: mostrar_dialogo_encerrar_recorrencia(),
+                        ),
+                    ]
+                else:
+                    # "Esta conta não possui recorrência." cabe numa linha só mesmo na
+                    # largura total do campo -- sem multiline, a altura fica igual à
+                    # de Categoria/Status, como pedido.
+                    campo_recorrencia_edit = ft.TextField(
+                        label="Recorrência", value="Esta conta não possui recorrência.",
+                        read_only=True, disabled=True, color="#0B1410",
+                    )
+                    acoes_recorrencia = [
                         ft.TextButton(
                             content="Transformar em recorrente",
                             on_click=lambda e: mostrar_dialogo_transformar_recorrente(),
                         ),
                     ]
-                elif serie_ativa:
-                    controles_recorrencia_edicao = [
-                        ft.Container(height=8),
-                        ft.TextButton(
-                            content="Alterar frequência",
-                            on_click=lambda e: mostrar_dialogo_alterar_frequencia(),
-                        ),
-                        ft.Container(height=8),
-                        ft.TextButton(
-                            content="Remover recorrência",
-                            on_click=lambda e: mostrar_dialogo_remover_recorrencia(),
-                        ),
-                    ]
-                else:
-                    controles_recorrencia_edicao = []
+
+                secao_recorrencia_acoes = ft.Column(spacing=4, controls=acoes_recorrencia)
 
                 area_corpo.controls = [
                     ft.Container(
@@ -1188,7 +1325,11 @@ def main(page: ft.Page):
                                                   on_click=abrir_seletor_data),
                                 ]),
                                 campo_categoria_edit,
-                                ft.Container(height=8),
+                                campo_status_edit,
+                                secao_status_acoes,
+                                campo_recorrencia_edit,
+                                secao_recorrencia_acoes,
+                                ft.Container(height=16),
                                 erro_edit,
                                 ft.Button(
                                     content="Salvar alterações",
@@ -1196,7 +1337,7 @@ def main(page: ft.Page):
                                     color="white",
                                     on_click=salvar_edicao,
                                 ),
-                            ] + controles_pagamento_edicao + controles_recorrencia_edicao,
+                            ],
                         ),
                     ),
                 ]
@@ -1267,7 +1408,23 @@ def main(page: ft.Page):
                 # "Marcar como paga" do detalhe já faz. Escolher outra data continua sendo
                 # uma ação separada, disponível em Editar quando a conta já está paga.
                 if conta["status"] == "pago":
-                    icone_pagamento = ft.Icon(ft.Icons.CHECK_CIRCLE, size=22, color="#39D67C")
+                    # Toggle: reverter pelo quick-pay reaproveita
+                    # database.marcar_conta_como_pendente (mesma função de Editar) --
+                    # nenhuma regra nova. atualizar_dados() recarrega a lista pela
+                    # mesma listagem de sempre, então Pendente/Atrasado é recalculado
+                    # pela lógica já existente (data de vencimento vs. hoje), não por
+                    # um cálculo paralelo aqui.
+                    def marcar_como_pendente_rapido(e):
+                        database.marcar_conta_como_pendente(conta["id"])
+                        atualizar_dados()
+
+                    icone_pagamento = ft.IconButton(
+                        icon=ft.Icons.CHECK_CIRCLE,
+                        icon_color="#39D67C",
+                        icon_size=22,
+                        tooltip="Marcar como pendente",
+                        on_click=marcar_como_pendente_rapido,
+                    )
                 else:
                     def marcar_como_paga_rapido(e):
                         database.marcar_conta_como_paga(conta["id"])
