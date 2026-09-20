@@ -1217,7 +1217,8 @@ def editar_data_pagamento(conta_id, nova_data):
     return True
 
 
-def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None):
+def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
+                             remover_categoria=False):
     """
     RF20 "Somente este mês" (5.6): altera nome/valor/categoria/data de
     vencimento de uma única ocorrência. Sem restrição de mês/ano — a trava
@@ -1231,8 +1232,14 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     geral em 5.1. Para conta avulsa (`serie_id` NULL) o campo não é
     tocado — não há série para a ocorrência "seguir" ou se desviar.
 
-    `None` em qualquer parâmetro significa "não alterar este campo" (não
-    "limpar" — mesma convenção já usada em `editar_categoria`). Retorna
+    `None` em `nome`/`valor`/`data_vencimento`/`categoria_id` significa "não
+    alterar este campo" (não "limpar" — mesma convenção já usada em
+    `editar_categoria`). Como essa convenção não permite distinguir "não
+    mexer na categoria" de "remover a categoria" (RF07/5.11 -- ambos
+    seriam `categoria_id=None`), `remover_categoria=True` é o sinal
+    explícito para o segundo caso -- aplica `categoria_id = NULL` e tem
+    prioridade sobre `categoria_id` quando os dois forem informados juntos
+    (não deveria acontecer, mas a prioridade evita ambiguidade). Retorna
     False se a conta não existir; True quando a alteração é aplicada
     (inclusive quando nenhum campo foi informado — nada a fazer).
     """
@@ -1253,7 +1260,9 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     if valor is not None:
         campos.append("valor = ?")
         valores.append(valor)
-    if categoria_id is not None:
+    if remover_categoria:
+        campos.append("categoria_id = NULL")
+    elif categoria_id is not None:
         campos.append("categoria_id = ?")
         valores.append(categoria_id)
     if data_vencimento is not None:
@@ -1270,7 +1279,8 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     return True
 
 
-def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None):
+def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
+                        remover_categoria=False):
     """
     RF20 "Este mês em diante" (5.6): aplica nome/valor/categoria/data à
     ocorrência selecionada e às futuras da mesma série (data_vencimento >=
@@ -1301,6 +1311,10 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     limite, a chamada inteira é rejeitada (nada é alterado) e a função
     retorna False.
 
+    `remover_categoria=True` (RF07/5.11) aplica `categoria_id = NULL` tanto
+    às ocorrências afetadas quanto ao "modelo" da série, com prioridade
+    sobre `categoria_id` -- mesma convenção de `editar_conta_ocorrencia`.
+
     Conta avulsa (`serie_id` NULL): delega para `editar_conta_ocorrencia`
     (CT40 — sem diálogo de escopo, edição direta).
 
@@ -1327,7 +1341,8 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     if serie_id is None:
         conexao_leitura.close()
         return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor,
-                                        categoria_id=categoria_id, data_vencimento=data_vencimento)
+                                        categoria_id=categoria_id, data_vencimento=data_vencimento,
+                                        remover_categoria=remover_categoria)
 
     cursor_leitura.execute(
         "SELECT frequencia, data_termino, ativa FROM series_recorrencia WHERE id = ?",
@@ -1386,7 +1401,9 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             campos.append("nome = ?"); valores.append(nome)
         if valor is not None:
             campos.append("valor = ?"); valores.append(valor)
-        if categoria_id is not None:
+        if remover_categoria:
+            campos.append("categoria_id = NULL")
+        elif categoria_id is not None:
             campos.append("categoria_id = ?"); valores.append(categoria_id)
         if campos:
             sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND data_vencimento >= ?"
@@ -1401,7 +1418,9 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             campos_serie.append("nome = ?"); valores_serie.append(nome)
         if valor is not None:
             campos_serie.append("valor = ?"); valores_serie.append(valor)
-        if categoria_id is not None:
+        if remover_categoria:
+            campos_serie.append("categoria_id = NULL")
+        elif categoria_id is not None:
             campos_serie.append("categoria_id = ?"); valores_serie.append(categoria_id)
         if data_vencimento is not None:
             campos_serie.append("dia_ancora = ?"); valores_serie.append(dia_ancora_novo)
