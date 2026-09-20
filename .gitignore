@@ -5,3 +5,5 @@ sino.db
 # Cache do Python (gerado automaticamente, também não precisa versionar)
 __pycache__/
 *.pyc
+
+database/backups/

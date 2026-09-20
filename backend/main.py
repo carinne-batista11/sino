@@ -41,6 +41,125 @@ SUGESTOES_EMOJI_CATEGORIA = {
 }
 
 
+# Seletor geral de emojis (RF18/5.12, melhoria de UX pós-Bloco 1): catálogo
+# próprio do Sino organizado em grupos, independente do nome digitado --
+# garante acesso a um emoji pelo próprio app mesmo quando
+# sugestoes_emoji_para não reconhece o nome. Configuração inicial de UX
+# (mesmo espírito de PALETA_CORES_CATEGORIAS): dados puros, sem nenhuma
+# lógica de renderização aqui -- a tela (abrir_seletor_emoji_geral, dentro
+# de mostrar_tela_categorias) só lê esta lista. Editar/adicionar/remover/
+# reordenar um grupo ou um emoji é só editar esta estrutura.
+#
+# "nome": rótulo do grupo, exibido pequeno e integrado ao contorno.
+# "principais": exatamente 5 emojis, sempre visíveis com o grupo recolhido.
+# "adicionais": só aparecem quando o grupo é expandido.
+#
+# Emojis podem se repetir entre grupos de propósito (ex.: ❤️ aparece em
+# "Família", "Crianças" e "Outros") -- não há deduplicação global.
+GRUPOS_EMOJI_CATEGORIA = [
+    {
+        "nome": "Finanças",
+        "principais": ["💲", "💰", "🪙", "💳", "💸"],
+        "adicionais": ["💵", "💴", "💶", "💷", "💱", "🤑", "💹", "📊", "🏦", "🪪", "⚖️", "🧾", "📈", "📉", "💼", "🏧", "🧮", "🏷️", "💎"],
+    },
+    {
+        "nome": "Residencial",
+        "principais": ["🏠", "🏡", "🏘️", "🏢", "🏨"],
+        "adicionais": ["🏚️", "🏩", "🏬", "🏙️", "🏗️", "🛖", "🛋️", "🛏️", "🚪", "🪟", "🪑", "🛁", "🚿", "🚽", "🧹", "🧺", "🧽", "🪣", "🔑", "🔒", "💡", "🪴"],
+    },
+    {
+        "nome": "Veículo",
+        "principais": ["🚗", "🚕", "🚙", "🚌", "🏍️"],
+        "adicionais": ["🚎", "🚓", "🚐", "🛻", "🚚", "🚛", "🚜", "🚲", "🛵", "✈️", "🚂", "🛳️", "🚆", "🚇", "🚄", "🚢", "⛵", "🚤", "🚁", "🛺", "🚘", "🛞", "⛽", "🅿️", "🚦", "🔧"],
+    },
+    {
+        "nome": "Hospitalar",
+        "principais": ["🏥", "🚑", "💊", "💉", "🩺"],
+        "adicionais": ["🩻", "🤒", "😷", "🤧", "🤕", "🤢", "🩹", "🩼", "🦽", "🦷", "👓", "🧬", "🧪", "🌡️", "🩸", "❤️", "🫀", "🧠", "👩‍⚕️", "👨‍⚕️", "🧑‍⚕️"],
+    },
+    {
+        "nome": "Pets",
+        "principais": ["🐕", "🐈", "🐾", "🐇", "🦜"],
+        "adicionais": ["🐩", "🐈‍⬛", "🐁", "🐿️", "🦮", "🐕‍🦺", "🐠", "🐴", "🐎", "🐶", "🐱", "🐹", "🐰", "🐭", "🐦", "🐟", "🐢", "🦎", "🐍", "🐸", "🐔", "🦆", "🦉", "🦔", "🦴"],
+    },
+    {
+        "nome": "Estudos",
+        "principais": ["📚", "📝", "💻", "🎓", "📖"],
+        "adicionais": ["👩🏻‍💻", "🧑🏻‍💻", "📃", "📓", "📕", "📗", "📘", "📙", "📔", "📒", "📑", "📄", "📋", "✏️", "🖊️", "🖋️", "🖍️", "📏", "📐", "🏫", "🎒", "🧮", "🔬", "🔭", "🧪", "💡"],
+    },
+    {
+        "nome": "Lazer",
+        "principais": ["🎮", "🎬", "🎡", "🏖️", "🎨"],
+        "adicionais": ["🎲", "🎳", "🏟️", "⛱️", "🎢", "🎠", "🎥", "🍿", "🎭", "🎤", "🎧", "🎵", "🎶", "🎸", "🎹", "🥁", "🎯", "🎰", "🧩", "♟️", "🃏", "🎴", "🎪", "🏕️", "📺", "📷", "📸", "🎉"],
+    },
+    {
+        "nome": "Esportes",
+        "principais": ["⚽", "🛼", "🏋️", "🏊", "🚴"],
+        "adicionais": ["🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🏓", "🏸", "🏒", "🏑", "🥍", "🏏", "⛳", "🥊", "🥋", "🎽", "🛹", "⛸️", "🎿", "🏂", "🤸", "🏃", "🧘", "🤾", "🏄", "🤽", "🤺", "🏆", "🥇", "🥈", "🥉"],
+    },
+    {
+        "nome": "Alimentação",
+        "principais": ["🍽️", "🍔", "🍕", "🍎", "☕"],
+        "adicionais": ["🍴", "🥄", "🥢", "🍳", "🥘", "🍲", "🥗", "🍛", "🍝", "🍜", "🍣", "🍤", "🍱", "🍚", "🍟", "🌭", "🥪", "🌮", "🌯", "🥙", "🥩", "🍗", "🥓", "🥚", "🧀", "🥖", "🥐", "🍞", "🥞", "🧇", "🍌", "🍓", "🍇", "🥑", "🥦", "🍰", "🎂", "🍫", "🍪", "🍩", "🍦", "🫖", "🧃", "🥤"],
+    },
+    {
+        "nome": "Compras",
+        "principais": ["🛍️", "🛒", "👗", "👟", "🎁"],
+        "adicionais": ["🏷️", "👕", "👚", "👖", "🩳", "👔", "👙", "🩱", "👘", "👠", "👞", "🥾", "👜", "👛", "🎒", "💍", "💎", "⌚", "🕶️", "👓", "💄", "🧴", "🧼", "🧸", "📱", "💻", "🎧", "📦"],
+    },
+    {
+        "nome": "Família",
+        "principais": ["👨‍👩‍👧", "👨‍👩‍👧‍👦", "👵", "👴", "👶"],
+        "adicionais": ["👨‍👩‍👦", "👩‍👧", "👩‍👦", "👨‍👧", "👨‍👦", "👩", "👨", "🧑", "🧒", "👧", "👦", "👩‍🦰", "👨‍🦰", "👩‍🦳", "👨‍🦳", "🫂", "❤️", "💕", "🏡", "🎂", "🎁"],
+    },
+    {
+        "nome": "Trabalho",
+        "principais": ["💼", "🧑‍💻", "🏢", "📊", "📌"],
+        "adicionais": ["👩‍💼", "👨‍💼", "🧑‍💼", "👩‍💻", "👨‍💻", "💻", "🖥️", "⌨️", "🖱️", "🖨️", "📱", "☎️", "📞", "📧", "📅", "🗓️", "📋", "📎", "🗂️", "📁", "📈", "🤝", "✍️", "🪪"],
+    },
+    {
+        "nome": "Crianças",
+        "principais": ["👶", "🧸", "🍼", "🎈", "🛝"],
+        "adicionais": ["🪀", "🪁", "🎠", "🎡", "🎨", "🖍️", "📚", "🎒", "🏫", "🍭", "🍬", "🍪", "🎂", "🎁", "👕", "👟", "🛏️", "🛁", "🧩", "🎮", "⚽", "🚲", "🛴", "❤️"],
+    },
+    {
+        "nome": "Serviços",
+        "principais": ["🔧", "🔨", "🧰", "🧹", "⚙️"],
+        "adicionais": ["🪛", "🪚", "🔩", "🛠️", "🪜", "🧽", "🧺", "🪣", "🧼", "🚿", "🔌", "💡", "🔑", "🔒", "✂️", "📞", "📦", "🚚", "👷", "🧑‍🔧", "👨‍🔧", "👩‍🔧", "🧑‍🍳", "🧑‍🏫", "🧑‍⚕️", "💇", "💅"],
+    },
+    {
+        "nome": "Beleza e cuidados",
+        "principais": ["💄", "💅", "💋", "🧴", "👠"],
+        "adicionais": ["💇", "💇‍♀️", "💇‍♂️", "🧖", "🧖‍♀️", "🧖‍♂️", "💆", "💆‍♀️", "💆‍♂️", "👄", "🪞", "🪮", "✂️", "🧼", "🫧", "🚿", "🛁", "👗", "💍", "🕶️", "🌸", "✨"],
+    },
+    {
+        "nome": "Tecnologia",
+        "principais": ["📱", "💻", "📸", "🎧", "⌚"],
+        "adicionais": ["🖥️", "⌨️", "🖱️", "🖨️", "📷", "📹", "🎥", "📺", "📡", "🔌", "🔋", "💾", "💿", "📀", "🎮", "🕹️", "📞", "☎️", "🤖", "⚙️"],
+    },
+    {
+        "nome": "Assinaturas",
+        "principais": ["📺", "🎬", "🎵", "🎮", "▶️"],
+        "adicionais": ["🎧", "💻", "🖥️", "📚", "📰", "🗞️", "☁️", "📦", "🎥", "🍿", "🎙️", "📻", "🔔", "🔁", "🗓️", "💳"],
+    },
+    {
+        "nome": "Viagens",
+        "principais": ["✈️", "🧳", "🏨", "🗺️", "🏖️"],
+        "adicionais": ["🚆", "🚂", "🚄", "🚗", "🚕", "🚌", "🚢", "🛳️", "⛵", "🚤", "🚁", "🛫", "🛬", "🏝️", "⛱️", "🏕️", "🏙️", "🌆", "🌇", "🗽", "🗼", "🏰", "🏯", "🎡", "📷", "📸", "🎒", "🧭", "🌍", "🌎", "🌏"],
+    },
+    {
+        "nome": "Eventos e comemorações",
+        "principais": ["🎉", "🎂", "🎁", "🎈", "💐"],
+        "adicionais": ["🎊", "🥳", "🍰", "🧁", "🥂", "💍", "👰", "🤵", "💒", "🎓", "🪩", "🎶", "🎵", "🎤", "🎪", "🎀", "🪅", "🕯️", "🌹", "❤️", "💌", "🎟️", "📸", "✨", "🎇", "🎆"],
+    },
+    {
+        "nome": "Outros",
+        "principais": ["⭐", "❤️", "✨", "📌", "🔔"],
+        "adicionais": ["🌟", "💫", "💖", "💕", "🩷", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "🔥", "🌈", "☀️", "🌙", "☁️", "🌸", "🌻", "🍀", "🎯", "🏷️", "🔖", "📅", "🗓️", "⏰", "⏳", "🎉", "🎊", "🎁", "❗", "❓", "❕", "❔", "✅", "☑️", "➕", "➖", "🔵", "🟢", "🟡", "🟠", "🔴", "🟣", "⚪", "⚫", "🟤", "🔷", "🔶", "🔹", "🔸", "💠", "♻️"],
+    },
+]
+
+
 def sugestoes_emoji_para(nome):
     """RF18 (5.12): 5 sugestões de emoji para um nome de categoria
     reconhecido, ou lista vazia se não houver sugestão específica (ERS:
@@ -1901,11 +2020,132 @@ def main(page: ft.Page):
             campo_nome.on_change = ao_mudar_nome
             montar_sugestoes_emoji()
 
-            # RF18/5.13 (Fase 3.11): paleta já existente em database.py -- nenhuma
-            # cor nova é inventada aqui. Cores já usadas por OUTRA categoria deste
-            # usuário ficam desabilitadas na própria paleta, só para não oferecer
-            # uma opção que database.criar_categoria/editar_categoria já rejeitaria
-            # (a regra de unicidade continua vivendo inteiramente no db.py).
+            # Melhoria de UX pós-Bloco 1: seletor geral de emojis, sempre visível
+            # (com ou sem sugestões para o nome digitado) -- usa só ft.GridView,
+            # recurso nativo do Flet, sem lib externa. Reaproveita o mesmo
+            # mecanismo de seleção das sugestões (emoji_sugerido_selecionado +
+            # montar_sugestoes_emoji) para manter a borda de destaque coerente
+            # caso o emoji escolhido aqui coincida com uma sugestão.
+            def escolher_emoji_geral(emoji):
+                campo_icone.value = emoji
+                emoji_sugerido_selecionado["valor"] = emoji
+                montar_sugestoes_emoji()
+                page.pop_dialog()
+                page.update()
+
+            def abrir_seletor_emoji_geral(e):
+                # Catálogo próprio do Sino em 20 grupos (GRUPOS_EMOJI_CATEGORIA,
+                # topo do arquivo) -- esta função só renderiza a partir dele, sem
+                # nenhum emoji hardcoded aqui. Só um grupo expandido por vez
+                # (grupo_expandido guarda um único índice ou None), mesmo padrão
+                # de "estado num dict mutável + função de remontagem" já usado
+                # em cor_selecionada/montar_paleta acima.
+                grupo_expandido = {"indice": None}
+                coluna_grupos = ft.Column(spacing=18, scroll=ft.ScrollMode.AUTO, height=420, width=300)
+
+                def celula_emoji(emoji):
+                    return ft.Container(
+                        content=ft.Text(emoji, size=17),
+                        width=34,
+                        height=34,
+                        border_radius=8,
+                        alignment=ft.Alignment.CENTER,
+                        on_click=lambda ev, em=emoji: escolher_emoji_geral(em),
+                    )
+
+                def alternar_grupo(indice):
+                    grupo_expandido["indice"] = None if grupo_expandido["indice"] == indice else indice
+                    montar_grupos()
+                    page.update()
+
+                def construir_grupo(indice, dados):
+                    expandido = grupo_expandido["indice"] == indice
+
+                    linha_principais = ft.Row(
+                        spacing=6, run_spacing=6, wrap=True,
+                        controls=[celula_emoji(emoji) for emoji in dados["principais"]] + [
+                            ft.Container(
+                                content=ft.Icon(
+                                    ft.Icons.REMOVE if expandido else ft.Icons.ADD,
+                                    size=16, color="#888780",
+                                ),
+                                width=34, height=34, border_radius=8,
+                                alignment=ft.Alignment.CENTER,
+                                tooltip="Recolher" if expandido else "Mais emojis deste grupo",
+                                on_click=lambda ev, i=indice: alternar_grupo(i),
+                            )
+                        ],
+                    )
+
+                    conteudo = [linha_principais]
+                    if expandido:
+                        conteudo.append(
+                            ft.Container(
+                                padding=ft.Padding(0, 10, 0, 0),
+                                content=ft.Row(
+                                    spacing=6, run_spacing=6, wrap=True,
+                                    controls=[celula_emoji(emoji) for emoji in dados["adicionais"]],
+                                ),
+                            )
+                        )
+
+                    # Contorno fino com o nome do grupo integrado à borda, no
+                    # mesmo espírito visual do label flutuante dos campos do
+                    # Sino (ex.: "Categoria") -- Stack com clip NONE para o
+                    # rótulo poder "recortar" a linha superior sem ser cortado.
+                    caixa = ft.Container(
+                        border=ft.Border.all(1, "#E5E4DE"),
+                        border_radius=8,
+                        padding=ft.Padding(12, 16, 12, 12),
+                        content=ft.Column(spacing=0, controls=conteudo),
+                    )
+                    rotulo = ft.Container(
+                        content=ft.Text(dados["nome"], size=11, color="#888780"),
+                        bgcolor="white",
+                        padding=ft.Padding(4, 0, 4, 0),
+                        left=10,
+                        top=-8,
+                    )
+                    return ft.Container(
+                        margin=ft.Margin(0, 6, 0, 0),
+                        content=ft.Stack(controls=[caixa, rotulo], clip_behavior=ft.ClipBehavior.NONE),
+                    )
+
+                def montar_grupos():
+                    coluna_grupos.controls.clear()
+                    for indice, dados in enumerate(GRUPOS_EMOJI_CATEGORIA):
+                        coluna_grupos.controls.append(construir_grupo(indice, dados))
+
+                montar_grupos()
+
+                dialogo_emoji = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Escolher emoji"),
+                    content=coluna_grupos,
+                    actions=[
+                        ft.TextButton(content="Fechar", on_click=lambda ev: page.pop_dialog()),
+                    ],
+                )
+                page.show_dialog(dialogo_emoji)
+
+            botao_mais_emojis = ft.TextButton(
+                content=ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, size=16, color="#1D9E75"),
+                        ft.Text("Mais emojis", size=12, color="#1D9E75"),
+                    ],
+                    spacing=4,
+                    tight=True,
+                ),
+                on_click=abrir_seletor_emoji_geral,
+            )
+
+            # RF18/5.13 (Fase 3.11; revisado pós-Bloco 1): paleta já existente em
+            # database.py -- nenhuma cor nova é inventada aqui. Cores já usadas
+            # por OUTRA categoria deste usuário deixam de ser oferecidas como
+            # opção (em vez de aparecerem esmaecidas/desabilitadas), para não dar
+            # a impressão de disponibilidade -- a regra de unicidade em si
+            # continua vivendo inteiramente no db.py, isto é só a apresentação.
             categorias_do_usuario = database.listar_categorias(usuario_atual["id"])
             cores_em_uso = {
                 c["cor"] for c in categorias_do_usuario
@@ -1917,8 +2157,17 @@ def main(page: ft.Page):
 
             def montar_paleta():
                 linha_cores.controls.clear()
-                for cor in database.PALETA_CORES_CATEGORIAS:
-                    em_uso = cor in cores_em_uso
+                cores_disponiveis = [
+                    cor for cor in database.PALETA_CORES_CATEGORIAS
+                    if cor not in cores_em_uso
+                ]
+                # Caso de borda (diagnóstico prévio): a cor já pertencente à
+                # categoria em edição deve continuar visível e selecionável mesmo
+                # se, por uma futura revisão de PALETA_CORES_CATEGORIAS, ela não
+                # fizer mais parte da paleta vigente.
+                if cor_selecionada["valor"] and cor_selecionada["valor"] not in cores_disponiveis:
+                    cores_disponiveis.append(cor_selecionada["valor"])
+                for cor in cores_disponiveis:
                     selecionada = cor_selecionada["valor"] == cor
                     linha_cores.controls.append(
                         ft.Container(
@@ -1926,10 +2175,8 @@ def main(page: ft.Page):
                             height=28,
                             border_radius=14,
                             bgcolor=cor,
-                            opacity=0.25 if em_uso else 1.0,
                             border=ft.Border.all(2, "#0B1410") if selecionada else None,
-                            tooltip="Já em uso por outra categoria sua" if em_uso else None,
-                            on_click=None if em_uso else (lambda e, c=cor: selecionar_cor(c)),
+                            on_click=lambda e, c=cor: selecionar_cor(c),
                         )
                     )
 
@@ -1946,6 +2193,22 @@ def main(page: ft.Page):
                     erro.value = "Digite um nome para a categoria."
                     page.update()
                     return
+
+                # Segunda barreira do limite de 30 categorias -- só para
+                # CRIAÇÃO (cat is None); nunca bloqueia a edição de uma
+                # categoria já existente, mesmo com o limite atingido. Cobre o
+                # caso do limite ter sido alcançado por outra via entre a
+                # abertura do diálogo e o clique em Salvar.
+                if not cat:
+                    total_categorias = len(database.listar_categorias(usuario_atual["id"]))
+                    if total_categorias >= database.LIMITE_CATEGORIAS_POR_USUARIO:
+                        erro.value = (
+                            f"Você atingiu o limite máximo de "
+                            f"{database.LIMITE_CATEGORIAS_POR_USUARIO} categorias."
+                        )
+                        page.update()
+                        return
+
                 icone = campo_icone.value.strip() if campo_icone.value else None
                 cor = cor_selecionada["valor"]
 
@@ -1958,7 +2221,13 @@ def main(page: ft.Page):
                     if "cor" in str(erro_valor):
                         erro.value = "Essa cor já está em uso por outra categoria sua. Escolha outra."
                     else:
-                        erro.value = "Limite de 30 categorias atingido. Exclua uma categoria existente para criar uma nova."
+                        # Defesa técnica de database.py (limite ou paleta
+                        # esgotada fora do fluxo normal da UI) -- mesma
+                        # mensagem apresentada ao usuário, para consistência.
+                        erro.value = (
+                            f"Você atingiu o limite máximo de "
+                            f"{database.LIMITE_CATEGORIAS_POR_USUARIO} categorias."
+                        )
                     page.update()
                     return
 
@@ -1973,6 +2242,7 @@ def main(page: ft.Page):
                         campo_nome,
                         campo_icone,
                         bloco_sugestoes_emoji,
+                        botao_mais_emojis,
                         ft.Text("Cor", size=12, color="#888780"),
                         linha_cores,
                         erro,
@@ -1987,10 +2257,26 @@ def main(page: ft.Page):
             )
             page.show_dialog(dialogo)
 
+        def mostrar_erro_exclusao_categoria(cat):
+            dialogo_erro = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Não foi possível excluir"),
+                content=ft.Text(f"Não foi possível excluir '{cat['nome']}'."),
+                actions=[
+                    ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                              on_click=lambda e: page.pop_dialog()),
+                ],
+            )
+            page.show_dialog(dialogo_erro)
+
         def confirmar_exclusao(cat):
             def excluir(e):
-                database.excluir_categoria(usuario_atual["id"], cat["id"])
                 page.pop_dialog()
+                try:
+                    database.excluir_categoria(usuario_atual["id"], cat["id"])
+                except Exception:
+                    mostrar_erro_exclusao_categoria(cat)
+                    return
                 atualizar_lista()
 
             dialogo = ft.AlertDialog(
@@ -2007,6 +2293,32 @@ def main(page: ft.Page):
             )
             page.show_dialog(dialogo)
 
+        def mostrar_limite_categorias():
+            dialogo_limite = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Limite atingido"),
+                content=ft.Text(
+                    f"Você atingiu o limite máximo de "
+                    f"{database.LIMITE_CATEGORIAS_POR_USUARIO} categorias."
+                ),
+                actions=[
+                    ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                              on_click=lambda e: page.pop_dialog()),
+                ],
+            )
+            page.show_dialog(dialogo_limite)
+
+        def ao_clicar_nova_categoria(e):
+            # Primeira barreira do limite de 30 categorias (5.11): checa ANTES
+            # de abrir o formulário -- o usuário não chega a ver a grade de
+            # cores nem qualquer menção a "cor indisponível" neste caso, só a
+            # mensagem de limite (ver também a segunda barreira em salvar()).
+            total_categorias = len(database.listar_categorias(usuario_atual["id"]))
+            if total_categorias >= database.LIMITE_CATEGORIAS_POR_USUARIO:
+                mostrar_limite_categorias()
+                return
+            abrir_dialogo_categoria(None)
+
         cabecalho = ft.Container(
             bgcolor="#0B1410",
             padding=ft.Padding(20, 40, 20, 20),
@@ -2015,7 +2327,7 @@ def main(page: ft.Page):
                 controls=[
                     ft.Text("Categorias", size=20, weight=ft.FontWeight.BOLD, color="white"),
                     ft.IconButton(icon=ft.Icons.ADD_CIRCLE, icon_color="#39D67C", icon_size=28,
-                                  on_click=lambda e: abrir_dialogo_categoria(None)),
+                                  on_click=ao_clicar_nova_categoria),
                 ],
             ),
         )

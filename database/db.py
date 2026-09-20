@@ -425,15 +425,45 @@ CATEGORIAS_PRE_CRIADAS = [
 ]
 
 # RF18/5.13: "paleta de até 30 cores... valores exatos não são fixados nesta
-# ERS como decisão definitiva". Placeholder de implementação (30 hex
-# distintos, começando pelas cores já usadas na interface hoje).
+# ERS como decisão definitiva". 30 posições FIXAS, em progressão de matiz
+# (azuis -> índigos -> violetas/roxos -> rosas -> vermelhos/corais -> laranjas
+# -> amarelos -> verdes -> turquesas -> ciano) -- revisão visual da usuária
+# pós-Bloco 1. A ORDEM É A FONTE DE VERDADE da apresentação visual: o
+# seletor de cores (montar_paleta() em backend/main.py) só filtra cores já
+# em uso, nunca reordena -- uma cor liberada por edição/exclusão de
+# categoria volta a aparecer exatamente nesta mesma posição, nunca no
+# início/fim da lista renderizada. As 11 cores de CORES_CATEGORIAS_PRE_CRIADAS
+# (abaixo) são um subconjunto desta lista -- existe uma única paleta oficial
+# de 30 cores, e as categorias pré-criadas usam 11 delas.
 PALETA_CORES_CATEGORIAS = [
-    "#1D9E75", "#39D67C", "#0B1410", "#E0A030", "#A32D2D",
-    "#2D6FA3", "#7A3DA3", "#3DA37E", "#C9820A", "#5B5FC7",
-    "#D6397C", "#397CD6", "#8AA33D", "#A3673D", "#3DA3A0",
-    "#C74A6E", "#6E4AC7", "#4AC76E", "#C7A44A", "#4A7EC7",
-    "#C74A4A", "#4AC7B8", "#B84AC7", "#7EC74A", "#C77E4A",
-    "#4A5FC7", "#C74AA4", "#A4C74A", "#4AA4C7", "#8A4AC7",
+    "#64B5F6", "#1976D2", "#0277BD", "#3F51B5", "#5C6BC0",
+    "#A990D8", "#7E57C2", "#8E24AA", "#CE93D8", "#C2185B",
+    "#EC407A", "#F48FB1", "#E53935", "#EF5350", "#F3756A",
+    "#EF9A9A", "#FF7043", "#FFAB91", "#F57C00", "#FFA000",
+    "#FFD54F", "#FBC02D", "#AFB42B", "#96E199", "#43A047",
+    "#00897B", "#80CBC4", "#77E3D3", "#0097A7", "#00ACC1",
+]
+
+# Cor de cada uma das 11 categorias pré-criadas (5.11/5.13), definida
+# EXPLICITAMENTE por categoria -- mesma ordem de CATEGORIAS_PRE_CRIADAS.
+# Cada valor aqui é uma das 30 cores de PALETA_CORES_CATEGORIAS (não uma cor
+# externa), mas a ASSOCIAÇÃO categoria->cor é deliberadamente desacoplada da
+# posição de cada HEX na paleta (que existe só para a ordem visual do
+# seletor). Reordenar a paleta acima nunca muda estas associações nem afeta
+# categorias já existentes no banco -- só rege a cor atribuída a usuários
+# novos via inicializar_categorias_padrao().
+CORES_CATEGORIAS_PRE_CRIADAS = [
+    "#96E199",  # Casa
+    "#FFD54F",  # Automóvel
+    "#FFAB91",  # Lazer
+    "#64B5F6",  # Faculdade
+    "#CE93D8",  # Academia
+    "#80CBC4",  # Saúde
+    "#A990D8",  # Cartão de crédito
+    "#F48FB1",  # Beleza
+    "#F3756A",  # Streaming
+    "#77E3D3",  # Creche
+    "#EF9A9A",  # Outro
 ]
 
 LIMITE_CATEGORIAS_POR_USUARIO = 30  # 5.11, contando as pré-criadas
@@ -537,7 +567,7 @@ def inicializar_categorias_padrao(usuario_id):
             for indice, (nome, icone) in enumerate(CATEGORIAS_PRE_CRIADAS):
                 cursor.execute(
                     "INSERT INTO categorias (usuario_id, nome, icone, cor) VALUES (?, ?, ?, ?)",
-                    (usuario_id, nome, icone, PALETA_CORES_CATEGORIAS[indice]),
+                    (usuario_id, nome, icone, CORES_CATEGORIAS_PRE_CRIADAS[indice]),
                 )
                 ids_criados.append(cursor.lastrowid)
             cursor.execute("COMMIT;")
@@ -1611,8 +1641,11 @@ def excluir_categoria(usuario_id, categoria_id):
     """
     Exclui uma categoria do usuário informado (RF14/5.11). Contas
     associadas NÃO são excluídas: passam a ficar sem categoria
-    (`categoria_id = NULL`). A cor da categoria excluída volta a ficar
-    disponível automaticamente (5.13) -- basta a linha deixar de existir.
+    (`categoria_id = NULL`). Séries recorrentes associadas também ficam
+    sem categoria, para que ocorrências futuras geradas por elas
+    (`gerar_ocorrencias_sob_demanda`) não voltem a herdar a categoria
+    excluída. A cor da categoria excluída volta a ficar disponível
+    automaticamente (5.13) -- basta a linha deixar de existir.
 
     Isolamento entre usuários: só exclui se `categoria_id` pertencer a
     `usuario_id` -- retorna False caso contrário. Operação transacional.
@@ -1633,6 +1666,7 @@ def excluir_categoria(usuario_id, categoria_id):
         try:
             cursor.execute("BEGIN;")
             cursor.execute("UPDATE contas SET categoria_id = NULL WHERE categoria_id = ?", (categoria_id,))
+            cursor.execute("UPDATE series_recorrencia SET categoria_id = NULL WHERE categoria_id = ?", (categoria_id,))
             cursor.execute("DELETE FROM categorias WHERE id = ?", (categoria_id,))
             cursor.execute("COMMIT;")
         except Exception:
