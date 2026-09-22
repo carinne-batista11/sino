@@ -419,6 +419,13 @@ def main(page: ft.Page):
         campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330, color="#0B1410")
         campo_senha = ft.TextField(label="Senha", hint_text="********", password=True,
                                     can_reveal_password=True, width=330, color="#0B1410")
+        # RF15: aceite dos Termos de Uso/Política de Privacidade, exigido só no
+        # Cadastro (mesmo padrão de visibilidade de campo_nome -- alternado em
+        # alternar_modo, resetado a cada troca de modo).
+        campo_aceite_termos = ft.Checkbox(
+            label="Li e aceito os Termos de Uso e a Política de Privacidade.",
+            value=False, visible=False, width=330,
+        )
         mensagem = ft.Text(value="", color="#1D9E75")
 
         def ao_clicar_botao_principal(e):
@@ -430,8 +437,16 @@ def main(page: ft.Page):
                 if not nome or not email or not senha:
                     mensagem.value = "Preencha nome, e-mail e senha."
                     mensagem.color = "#A32D2D"
+                elif not campo_aceite_termos.value:
+                    # RF15: aceite é obrigatório para prosseguir -- criar_usuario
+                    # nem chega a ser chamada sem ele.
+                    mensagem.value = (
+                        "Você precisa aceitar os Termos de Uso e a Política de "
+                        "Privacidade para criar sua conta."
+                    )
+                    mensagem.color = "#A32D2D"
                 else:
-                    sucesso, texto = database.criar_usuario(nome, email, senha)
+                    sucesso, texto = database.criar_usuario(nome, email, senha, aceite_termos=True)
                     mensagem.value = texto
                     mensagem.color = "#1D9E75" if sucesso else "#A32D2D"
                     if sucesso:
@@ -480,16 +495,19 @@ def main(page: ft.Page):
             campo_nome.value = ""
             campo_email.value = ""
             campo_senha.value = ""
+            campo_aceite_termos.value = False
             if modo_cadastro[0]:
                 titulo.value = "Crie sua conta"
                 subtitulo.value = "Leva menos de um minuto"
                 campo_nome.visible = True
+                campo_aceite_termos.visible = True
                 botao_principal.content = "Criar conta"
                 texto_alternar.content = "Já tem conta? Entrar"
             else:
                 titulo.value = "Bem-vindo de volta"
                 subtitulo.value = "Suas contas, sob controle."
                 campo_nome.visible = False
+                campo_aceite_termos.visible = False
                 botao_principal.content = "Entrar"
                 texto_alternar.content = "Não tem conta? Criar conta"
             mensagem.value = ""
@@ -509,6 +527,7 @@ def main(page: ft.Page):
                     campo_nome,
                     campo_email,
                     campo_senha,
+                    campo_aceite_termos,
                     ft.Container(height=8),
                     botao_principal,
                     mensagem,

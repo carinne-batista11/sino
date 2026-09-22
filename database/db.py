@@ -374,7 +374,15 @@ def _gerar_hash_senha(senha):
     return hashlib.sha256(senha.encode("utf-8")).hexdigest()
 
 
-def criar_usuario(nome, email, senha):
+def criar_usuario(nome, email, senha, aceite_termos=False):
+    """
+    RF15: `termos_aceitos_em` só é gravado quando `aceite_termos` é True --
+    representa o aceite explícito e real do usuário no cadastro (nunca um
+    carimbo automático). Sem aceite, nenhuma conta é criada.
+    """
+    if not aceite_termos:
+        return False, "É necessário aceitar os Termos de Uso e a Política de Privacidade."
+
     conexao = conectar()
     cursor = conexao.cursor()
     senha_hash = _gerar_hash_senha(senha)
