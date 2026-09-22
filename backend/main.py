@@ -689,10 +689,12 @@ def main(page: ft.Page):
             ano_mes_atual = f"{mes_atual[0]:04d}-{mes_atual[1]:02d}"
             mostrar_tela_todas_contas(ano_mes_atual)
 
+        titulo_contas = ft.Text("Suas contas", size=15, weight=ft.FontWeight.BOLD, color="#0B1410")
+
         cabecalho_contas = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
-                ft.Text("Suas contas", size=15, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                titulo_contas,
                 ft.Container(
                     content=ft.Text("Ver todas", size=13, color="#1D9E75"),
                     on_click=ao_clicar_ver_todas,
@@ -2214,6 +2216,10 @@ def main(page: ft.Page):
 
         def atualizar_dados():
             texto_mes.value = f"{MESES_PT[mes_atual[1] - 1]} {mes_atual[0]}"
+            # RF05 (5.15): título da lista acompanha o mês selecionado no
+            # seletor -- "Suas contas de setembro" -- sem alterar texto_mes
+            # (seletor continua "Setembro 2026", tela separada).
+            titulo_contas.value = f"Suas contas de {MESES_PT[mes_atual[1] - 1].lower()}"
             ano_mes = f"{mes_atual[0]:04d}-{mes_atual[1]:02d}"
 
             garantir_ocorrencias_geradas(ano_mes)
