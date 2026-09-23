@@ -5,6 +5,7 @@ database.py — Camada de banco de dados do Sino (v2)
 import sqlite3
 import hashlib
 import os
+import secrets
 import shutil
 from datetime import date, datetime, timedelta
 from calendar import monthrange
@@ -370,8 +371,69 @@ def validar_migracao_v5(caminho_banco=None):
     return resultado
 
 
+# RNF05: PBKDF2-HMAC-SHA256 (stdlib, sem dependência nova) com salt aleatório
+# individual por usuário. Parâmetros nomeados em vez de números mágicos --
+# qualquer mudança futura de custo do hash fica visível e centralizada aqui.
+PBKDF2_ALGORITMO = "pbkdf2_sha256"
+PBKDF2_ITERACOES = 200_000
+PBKDF2_TAMANHO_SALT_BYTES = 16
+
+
+def _derivar_pbkdf2(senha, salt_hex, iteracoes):
+    salt = bytes.fromhex(salt_hex)
+    return hashlib.pbkdf2_hmac("sha256", senha.encode("utf-8"), salt, iteracoes).hex()
+
+
 def _gerar_hash_senha(senha):
+    """
+    RNF05: gera o valor armazenado em `usuarios.senha_hash` no formato novo,
+    autodescritivo -- "pbkdf2_sha256$iteracoes$salt$hash" -- para que
+    algoritmo e custo fiquem registrados junto do próprio hash, sem exigir
+    coluna extra (sem alteração de schema). Salt gerado com `secrets`
+    (criptograficamente seguro), único a cada chamada.
+    """
+    salt_hex = secrets.token_hex(PBKDF2_TAMANHO_SALT_BYTES)
+    hash_hex = _derivar_pbkdf2(senha, salt_hex, PBKDF2_ITERACOES)
+    return f"{PBKDF2_ALGORITMO}${PBKDF2_ITERACOES}${salt_hex}${hash_hex}"
+
+
+def _gerar_hash_senha_legado(senha):
+    # Formato pré-RNF05 (sha256 puro, sem salt) -- mantido só para permitir
+    # que contas já cadastradas nesse formato ainda autentiquem; nunca usado
+    # para gerar hash novo.
     return hashlib.sha256(senha.encode("utf-8")).hexdigest()
+
+
+def _verificar_senha(senha, senha_hash_armazenada):
+    """
+    RNF05: compara `senha` contra o valor armazenado, reconhecendo tanto o
+    formato novo (`pbkdf2_sha256$...`) quanto o legado (sha256 puro, sem
+    "$"). Qualquer valor armazenado corrompido ou em formato inesperado
+    resulta em False -- nunca lança exceção, para que o login falhe de
+    forma controlada em vez de quebrar. Comparação sempre feita com
+    `secrets.compare_digest` (resistente a timing attack), nos dois
+    formatos.
+    """
+    if not senha_hash_armazenada:
+        return False
+
+    if "$" in senha_hash_armazenada:
+        partes = senha_hash_armazenada.split("$")
+        if len(partes) != 4:
+            return False
+        algoritmo, iteracoes_str, salt_hex, hash_esperado = partes
+        if algoritmo != PBKDF2_ALGORITMO:
+            return False
+        try:
+            iteracoes = int(iteracoes_str)
+            hash_calculado = _derivar_pbkdf2(senha, salt_hex, iteracoes)
+        except (ValueError, TypeError):
+            return False
+        return secrets.compare_digest(hash_calculado, hash_esperado)
+
+    # Formato legado -- sem salt.
+    hash_calculado = _gerar_hash_senha_legado(senha)
+    return secrets.compare_digest(hash_calculado, senha_hash_armazenada)
 
 
 def criar_usuario(nome, email, senha, aceite_termos=False):
@@ -401,18 +463,39 @@ def criar_usuario(nome, email, senha, aceite_termos=False):
 
 
 def verificar_login(email, senha):
+    """
+    RNF05: busca o usuário só por e-mail (a senha não entra mais na consulta
+    SQL, pois o hash depende de um salt por usuário) e valida via
+    `_verificar_senha`, que reconhece formato novo e legado. Quando a conta
+    autentica com sucesso e ainda está no formato legado (sha256 sem salt),
+    o hash é substituído pelo formato novo nesse mesmo momento -- nunca
+    antes da senha ser confirmada, e nunca para contas que não fizerem
+    login (não precisamos conhecer a senha delas para isso). Contrato de
+    retorno inalterado: dict (id/nome/email) ou None.
+    """
     conexao = conectar()
     cursor = conexao.cursor()
-    senha_hash = _gerar_hash_senha(senha)
     cursor.execute(
-        "SELECT id, nome, email FROM usuarios WHERE email = ? AND senha_hash = ?",
-        (email, senha_hash),
+        "SELECT id, nome, email, senha_hash FROM usuarios WHERE email = ?",
+        (email,),
     )
     resultado = cursor.fetchone()
-    conexao.close()
     if resultado is None:
+        conexao.close()
         return None
-    return {"id": resultado[0], "nome": resultado[1], "email": resultado[2]}
+
+    usuario_id, nome, email_encontrado, senha_hash_armazenada = resultado
+    if not _verificar_senha(senha, senha_hash_armazenada):
+        conexao.close()
+        return None
+
+    if "$" not in senha_hash_armazenada:
+        novo_hash = _gerar_hash_senha(senha)
+        cursor.execute("UPDATE usuarios SET senha_hash = ? WHERE id = ?", (novo_hash, usuario_id))
+        conexao.commit()
+
+    conexao.close()
+    return {"id": usuario_id, "nome": nome, "email": email_encontrado}
 
 
 # RF14/5.11: catálogo pré-criado, disponível "desde o primeiro acesso... não é
