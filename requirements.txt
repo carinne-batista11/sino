@@ -1,0 +1,12 @@
+# Dependências de execução do Sino (aplicativo desktop).
+# Ambiente de referência: Python 3.11.
+#
+# O restante do código usa apenas a biblioteca padrão do Python
+# (sqlite3, hashlib, secrets, datetime...). As dependências transitivas
+# (httpx, msgpack, oauthlib, repath, rich) são resolvidas pelo pip a partir
+# dos pacotes abaixo.
+#
+# flet-desktop é o cliente usado por ft.run() no desktop; flet e
+# flet-desktop precisam estar exatamente na mesma versão.
+flet==0.86.5
+flet-desktop==0.86.5
