@@ -7,3 +7,6 @@ __pycache__/
 *.pyc
 
 database/backups/
+
+# Ambiente virtual do Python (criado localmente, ver README)
+.venv/
