@@ -1388,7 +1388,9 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     nome/valor/categoria são copiados literalmente para as ocorrências
     afetadas e para o "modelo" da série (`series_recorrencia`), para que
     ocorrências futuras ainda não geradas já nasçam com o novo padrão
-    (9.3).
+    (9.3). Só campos realmente alterados em relação à ocorrência
+    selecionada são propagados: um campo informado com o mesmo valor que
+    ela já tem é ignorado (correção v6.0, Etapa 0).
 
     data_vencimento redefine a âncora da série a partir desta ocorrência
     (9.3): a ocorrência selecionada recebe exatamente a data informada, e
@@ -1423,12 +1425,33 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     """
     conexao_leitura = conectar()
     cursor_leitura = conexao_leitura.cursor()
-    cursor_leitura.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+    cursor_leitura.execute(
+        "SELECT serie_id, data_vencimento, nome, valor, categoria_id FROM contas WHERE id = ?",
+        (conta_id,),
+    )
     linha = cursor_leitura.fetchone()
     if linha is None:
         conexao_leitura.close()
         return False
-    serie_id, data_referencia = linha
+    serie_id, data_referencia, nome_atual, valor_atual, categoria_id_atual = linha
+
+    # Correção v6.0 (Etapa 0): só propaga o que o usuário realmente alterou
+    # em relação à ocorrência selecionada. Um campo repetido com o mesmo
+    # valor é tratado como "não alterar": a data repetida não redefine a
+    # âncora (5.2, "sem arrasto" -- ex.: 28/02 numa série de âncora 31), e
+    # nome/valor/categoria repetidos não sobrescrevem ocorrências futuras
+    # que tenham valores próprios (editadas individualmente).
+    if nome == nome_atual:
+        nome = None
+    if valor == valor_atual:
+        valor = None
+    if data_vencimento == data_referencia:
+        data_vencimento = None
+    if remover_categoria and categoria_id_atual is None:
+        remover_categoria = False
+    if not remover_categoria and categoria_id == categoria_id_atual:
+        categoria_id = None
+
     if serie_id is None:
         conexao_leitura.close()
         return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor,

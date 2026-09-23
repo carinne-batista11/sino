@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import flet as ft
 import db as database
+import cores
 
 MESES_PT = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -328,6 +329,31 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
     return " ".join(frases)
 
 
+def campos_alterados_edicao(nome_original, nome_novo, valor_original, valor_novo,
+                            data_original, data_nova, categoria_original, categoria_nova):
+    """RF20/5.6 (correção v6.0, Etapa 0): argumentos para
+    `database.editar_conta_ocorrencia`/`editar_conta_serie` contendo SOMENTE
+    os campos que o usuário realmente alterou -- um campo não alterado nunca
+    é enviado, para não redefinir a âncora da série nem sobrescrever
+    ocorrências futuras com valores próprios. `data_original`/`data_nova`
+    são objetos `date`; categoria `None` = sem categoria (vira
+    `remover_categoria=True` quando ela foi removida). Dicionário vazio
+    quando nada propagável mudou."""
+    campos = {}
+    if nome_novo != nome_original:
+        campos["nome"] = nome_novo
+    if valor_novo != valor_original:
+        campos["valor"] = valor_novo
+    if data_nova != data_original:
+        campos["data_vencimento"] = data_nova.isoformat()
+    if categoria_nova != categoria_original:
+        if categoria_nova is None:
+            campos["remover_categoria"] = True
+        else:
+            campos["categoria_id"] = categoria_nova
+    return campos
+
+
 def parse_valor(texto):
     texto = (texto or "").strip().replace("R$", "").strip()
     if not texto:
@@ -351,7 +377,7 @@ def main(page: ft.Page):
 
     page.title = "Sino"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.bgcolor = "#F4F4F1"
+    page.bgcolor = cores.fundo_pagina
     page.window.width = 380
     page.window.height = 760
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
@@ -365,7 +391,7 @@ def main(page: ft.Page):
     def barra_navegacao(aba_ativa):
         def item(nome_aba, icone, rotulo, on_click):
             ativa = aba_ativa == nome_aba
-            cor = "#1D9E75" if ativa else "#888780"
+            cor = cores.nav_ativo if ativa else cores.nav_inativo
             return ft.Container(
                 content=ft.Column(
                     controls=[
@@ -382,8 +408,8 @@ def main(page: ft.Page):
             )
 
         return ft.Container(
-            bgcolor="white",
-            border=ft.Border(top=ft.BorderSide(1, "#E5E4DE")),
+            bgcolor=cores.fundo_card,
+            border=ft.Border(top=ft.BorderSide(1, cores.borda_suave)),
             content=ft.Row(
                 controls=[
                     item("inicio", ft.Icons.HOME, "Início", lambda e: mostrar_tela_principal()),
@@ -403,22 +429,22 @@ def main(page: ft.Page):
         modo_cadastro = [False]
 
         logo = ft.Container(
-            content=ft.Text("$ino", size=28, weight=ft.FontWeight.BOLD, color="#39D67C"),
-            bgcolor="#0B1410",
+            content=ft.Text("$ino", size=28, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
+            bgcolor=cores.fundo_marca,
             width=80,
             height=80,
             border_radius=40,
             alignment=ft.Alignment.CENTER,
         )
 
-        titulo = ft.Text("Bem-vindo de volta", size=20, weight=ft.FontWeight.BOLD, color="#0B1410")
-        subtitulo = ft.Text("Suas contas, sob controle.", size=13, color="#888780")
+        titulo = ft.Text("Bem-vindo de volta", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
+        subtitulo = ft.Text("Suas contas, sob controle.", size=13, color=cores.texto_secundario)
 
         campo_nome = ft.TextField(label="Nome completo", hint_text="Seu nome", width=330, visible=False,
-                                   color="#0B1410")
-        campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330, color="#0B1410")
+                                   color=cores.texto_principal)
+        campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330, color=cores.texto_principal)
         campo_senha = ft.TextField(label="Senha", hint_text="********", password=True,
-                                    can_reveal_password=True, width=330, color="#0B1410")
+                                    can_reveal_password=True, width=330, color=cores.texto_principal)
         # RF15: aceite dos Termos de Uso/Política de Privacidade, exigido só no
         # Cadastro (mesmo padrão de visibilidade de campo_nome -- alternado em
         # alternar_modo, resetado a cada troca de modo).
@@ -426,7 +452,7 @@ def main(page: ft.Page):
             label="Li e aceito os Termos de Uso e a Política de Privacidade.",
             value=False, visible=False, width=330,
         )
-        mensagem = ft.Text(value="", color="#1D9E75")
+        mensagem = ft.Text(value="", color=cores.texto_sucesso)
 
         def ao_clicar_botao_principal(e):
             email = campo_email.value.strip() if campo_email.value else ""
@@ -436,7 +462,7 @@ def main(page: ft.Page):
                 nome = campo_nome.value.strip() if campo_nome.value else ""
                 if not nome or not email or not senha:
                     mensagem.value = "Preencha nome, e-mail e senha."
-                    mensagem.color = "#A32D2D"
+                    mensagem.color = cores.texto_erro
                 elif not campo_aceite_termos.value:
                     # RF15: aceite é obrigatório para prosseguir -- criar_usuario
                     # nem chega a ser chamada sem ele.
@@ -444,11 +470,11 @@ def main(page: ft.Page):
                         "Você precisa aceitar os Termos de Uso e a Política de "
                         "Privacidade para criar sua conta."
                     )
-                    mensagem.color = "#A32D2D"
+                    mensagem.color = cores.texto_erro
                 else:
                     sucesso, texto = database.criar_usuario(nome, email, senha, aceite_termos=True)
                     mensagem.value = texto
-                    mensagem.color = "#1D9E75" if sucesso else "#A32D2D"
+                    mensagem.color = cores.texto_sucesso if sucesso else cores.texto_erro
                     if sucesso:
                         # criar_usuario não retorna o id do novo usuário; buscamos via
                         # verificar_login (mesmas credenciais, já validadas) para poder
@@ -463,12 +489,12 @@ def main(page: ft.Page):
                                 pass
                         alternar_modo(None)
                         mensagem.value = "Conta criada com sucesso! Faça login para continuar."
-                        mensagem.color = "#1D9E75"
+                        mensagem.color = cores.texto_sucesso
                         page.update()
             else:
                 if not email or not senha:
                     mensagem.value = "Preencha e-mail e senha."
-                    mensagem.color = "#A32D2D"
+                    mensagem.color = cores.texto_erro
                 else:
                     usuario = database.verificar_login(email, senha)
                     if usuario:
@@ -478,15 +504,15 @@ def main(page: ft.Page):
                         return
                     else:
                         mensagem.value = "E-mail ou senha incorretos."
-                        mensagem.color = "#A32D2D"
+                        mensagem.color = cores.texto_erro
 
             page.update()
 
         botao_principal = ft.Button(
             content="Entrar",
             width=330,
-            bgcolor="#1D9E75",
-            color="white",
+            bgcolor=cores.acao_primaria,
+            color=cores.texto_sobre_acao,
             on_click=ao_clicar_botao_principal,
         )
 
@@ -549,20 +575,20 @@ def main(page: ft.Page):
         mes_atual = [hoje.year, hoje.month]
 
         avatar = ft.Container(
-            content=ft.Text("$", size=18, weight=ft.FontWeight.BOLD, color="#39D67C"),
-            bgcolor="#0B1410",
+            content=ft.Text("$", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
+            bgcolor=cores.fundo_marca,
             width=40,
             height=40,
             border_radius=20,
             alignment=ft.Alignment.CENTER,
         )
 
-        nome_usuario = ft.Text(usuario_atual["nome"] or "", size=16, weight=ft.FontWeight.BOLD, color="#0B1410")
+        nome_usuario = ft.Text(usuario_atual["nome"] or "", size=16, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
 
         sino = ft.Stack(
             controls=[
-                ft.Icon(ft.Icons.NOTIFICATIONS_NONE, size=24, color="#0B1410"),
-                ft.Container(width=8, height=8, bgcolor="#A32D2D", border_radius=4, right=0, top=0),
+                ft.Icon(ft.Icons.NOTIFICATIONS_NONE, size=24, color=cores.texto_principal),
+                ft.Container(width=8, height=8, bgcolor=cores.indicador_notificacao, border_radius=4, right=0, top=0),
             ],
             width=28,
             height=28,
@@ -577,7 +603,7 @@ def main(page: ft.Page):
                         ft.Container(width=10),
                         ft.Column(
                             controls=[
-                                ft.Text("Olá,", size=13, color="#888780"),
+                                ft.Text("Olá,", size=13, color=cores.texto_secundario),
                                 nome_usuario,
                             ],
                             spacing=0,
@@ -588,7 +614,7 @@ def main(page: ft.Page):
             ],
         )
 
-        texto_mes = ft.Text("", size=14, weight=ft.FontWeight.BOLD, color="#0B1410")
+        texto_mes = ft.Text("", size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
 
         def mudar_mes(delta):
             mes_atual[1] += delta
@@ -609,9 +635,9 @@ def main(page: ft.Page):
             ],
         )
 
-        valor_total = ft.Text("R$ 0,00", size=26, weight=ft.FontWeight.BOLD, color="white")
-        valor_pago = ft.Text("pago R$ 0,00", size=12, color="#39D67C")
-        valor_pendente = ft.Text("pendente R$ 0,00", size=12, color="#E0A030")
+        valor_total = ft.Text("R$ 0,00", size=26, weight=ft.FontWeight.BOLD, color=cores.texto_card_total)
+        valor_pago = ft.Text("pago R$ 0,00", size=12, color=cores.total_pago)
+        valor_pendente = ft.Text("pendente R$ 0,00", size=12, color=cores.total_pendente)
 
         filtro_total = {"valor": "todas"}
         OPCOES_FILTRO_TOTAL = (("todas", "Todas"), ("pendentes", "Pendentes"), ("pagas", "Pagas"))
@@ -624,9 +650,9 @@ def main(page: ft.Page):
             ativo = filtro_total["valor"] == valor
             return ft.Container(
                 content=ft.Text(rotulo, size=10, weight=ft.FontWeight.BOLD,
-                                 color="#0B1410" if ativo else "#888780"),
-                bgcolor="#39D67C" if ativo else "transparent",
-                border=None if ativo else ft.Border.all(1, "#3A413B"),
+                                 color=cores.filtro_ativo_texto if ativo else cores.filtro_inativo_texto),
+                bgcolor=cores.filtro_ativo_fundo if ativo else "transparent",
+                border=None if ativo else ft.Border.all(1, cores.filtro_inativo_borda),
                 border_radius=12,
                 padding=ft.Padding(8, 4, 8, 4),
                 on_click=lambda e: selecionar_filtro_total(valor),
@@ -635,7 +661,7 @@ def main(page: ft.Page):
         linha_filtro_total = ft.Row(spacing=4, controls=[])
 
         card_total = ft.Container(
-            bgcolor="#0B1410",
+            bgcolor=cores.fundo_card_total,
             border_radius=16,
             padding=16,
             content=ft.Column(
@@ -643,7 +669,7 @@ def main(page: ft.Page):
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Text("Total do mês", size=12, color="#888780"),
+                            ft.Text("Total do mês", size=12, color=cores.texto_secundario_card_total),
                             linha_filtro_total,
                         ],
                     ),
@@ -652,8 +678,8 @@ def main(page: ft.Page):
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Row(controls=[ft.Icon(ft.Icons.CHECK_CIRCLE, size=14, color="#39D67C"), valor_pago]),
-                            ft.Row(controls=[ft.Icon(ft.Icons.SCHEDULE, size=14, color="#E0A030"), valor_pendente]),
+                            ft.Row(controls=[ft.Icon(ft.Icons.CHECK_CIRCLE, size=14, color=cores.total_pago), valor_pago]),
+                            ft.Row(controls=[ft.Icon(ft.Icons.SCHEDULE, size=14, color=cores.total_pendente), valor_pendente]),
                         ],
                     ),
                 ],
@@ -670,7 +696,7 @@ def main(page: ft.Page):
             # busca TODAS as atrasadas do usuário via database.listar_contas_atrasadas,
             # sem depender do mês selecionado aqui.
             if atrasadas:
-                bloco_atrasadas.bgcolor = "#FBE4E4"
+                bloco_atrasadas.bgcolor = cores.alerta_atraso_fundo
                 bloco_atrasadas.border_radius = 10
                 bloco_atrasadas.padding = 12
                 bloco_atrasadas.content = ft.Row(
@@ -678,15 +704,15 @@ def main(page: ft.Page):
                     controls=[
                         ft.Row(
                             controls=[
-                                ft.Icon(ft.Icons.ERROR_OUTLINE, size=18, color="#A32D2D"),
+                                ft.Icon(ft.Icons.ERROR_OUTLINE, size=18, color=cores.alerta_atraso_texto),
                                 ft.Container(width=8),
                                 ft.Text("Você possui contas em atraso!", size=13,
-                                         weight=ft.FontWeight.BOLD, color="#A32D2D"),
+                                         weight=ft.FontWeight.BOLD, color=cores.alerta_atraso_texto),
                             ],
                         ),
                         ft.Container(
                             content=ft.Text("Ver essas contas", size=12, weight=ft.FontWeight.BOLD,
-                                             color="#A32D2D"),
+                                             color=cores.alerta_atraso_texto),
                             on_click=lambda e: mostrar_tela_atrasadas(),
                         ),
                     ],
@@ -697,10 +723,10 @@ def main(page: ft.Page):
                 bloco_atrasadas.padding = ft.Padding(0, 4, 0, 4)
                 bloco_atrasadas.content = ft.Row(
                     controls=[
-                        ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=16, color="#1D9E75"),
+                        ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=16, color=cores.texto_sucesso),
                         ft.Container(width=6),
                         ft.Text("Suas contas estão em dia!", size=13,
-                                 weight=ft.FontWeight.BOLD, color="#1D9E75"),
+                                 weight=ft.FontWeight.BOLD, color=cores.texto_sucesso),
                     ],
                 )
 
@@ -708,14 +734,14 @@ def main(page: ft.Page):
             ano_mes_atual = f"{mes_atual[0]:04d}-{mes_atual[1]:02d}"
             mostrar_tela_todas_contas(ano_mes_atual)
 
-        titulo_contas = ft.Text("Suas contas", size=15, weight=ft.FontWeight.BOLD, color="#0B1410")
+        titulo_contas = ft.Text("Suas contas", size=15, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
 
         cabecalho_contas = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
                 titulo_contas,
                 ft.Container(
-                    content=ft.Text("Ver todas", size=13, color="#1D9E75"),
+                    content=ft.Text("Ver todas", size=13, color=cores.acao_primaria),
                     on_click=ao_clicar_ver_todas,
                 ),
             ],
@@ -788,15 +814,15 @@ def main(page: ft.Page):
                 # texto/ações alinhados à esquerda, sem esticar o conteúdo
                 # interno (Row/Text) -- só a borda externa passa a ir até o fim.
                 caixa = ft.Container(
-                    border=ft.Border.all(1, "#0B1410"),
+                    border=ft.Border.all(1, cores.borda_campo),
                     border_radius=8,
                     padding=ft.Padding(12, 14, 12, 10),
                     alignment=ft.Alignment.TOP_LEFT,
                     content=ft.Column(spacing=8, controls=controles),
                 )
                 rotulo_flutuante = ft.Container(
-                    content=ft.Text(rotulo, size=12, color="#0B1410"),
-                    bgcolor="#F4F4F1",
+                    content=ft.Text(rotulo, size=12, color=cores.texto_principal),
+                    bgcolor=cores.fundo_pagina,
                     padding=ft.Padding(4, 0, 4, 0),
                     left=10,
                     top=-8,
@@ -814,9 +840,9 @@ def main(page: ft.Page):
                 # (texto de recorrência longo, por exemplo), o conteúdo passa a
                 # quebrar em nova linha em vez de cortar texto ou estourar a
                 # largura -- nunca altera o texto em si.
-                controles = [ft.Text(texto_info, size=14, color="#0B1410")]
+                controles = [ft.Text(texto_info, size=14, color=cores.texto_principal)]
                 for acao in acoes:
-                    controles.append(ft.Container(width=1, height=18, bgcolor="#E5E4DE"))
+                    controles.append(ft.Container(width=1, height=18, bgcolor=cores.divisor))
                     controles.append(acao)
                 return ft.Row(wrap=True, spacing=10, run_spacing=6, controls=controles)
 
@@ -893,7 +919,7 @@ def main(page: ft.Page):
                             title=ft.Text("Data inválida"),
                             content=ft.Text("A data de pagamento não pode ser no futuro."),
                             actions=[
-                                ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                                ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                           on_click=lambda e: page.pop_dialog()),
                             ],
                         )
@@ -1076,9 +1102,9 @@ def main(page: ft.Page):
                         linha.controls.append(
                             ft.Container(
                                 content=ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD,
-                                                 color="white" if ativo else "#0B1410"),
-                                bgcolor="#1D9E75" if ativo else "white",
-                                border=None if ativo else ft.Border.all(1, "#E5E4DE"),
+                                                 color=cores.chip_ativo_texto if ativo else cores.chip_inativo_texto),
+                                bgcolor=cores.chip_ativo_fundo if ativo else cores.chip_inativo_fundo,
+                                border=None if ativo else ft.Border.all(1, cores.borda_suave),
                                 border_radius=10,
                                 padding=ft.Padding(0, 12, 0, 12),
                                 alignment=ft.Alignment.CENTER,
@@ -1102,13 +1128,13 @@ def main(page: ft.Page):
                 dias_delta = (data_venc - date.today()).days
 
                 if conta["status"] == "pago":
-                    cor_status, rotulo_status = "#1D9E75", "Pago"
+                    cor_status, rotulo_status = cores.status_pago, "Pago"
                 elif conta["status"] == "atrasado":
-                    cor_status, rotulo_status = "#A32D2D", "Atrasado"
+                    cor_status, rotulo_status = cores.status_atrasado, "Atrasado"
                 elif dias_delta == 0:
-                    cor_status, rotulo_status = "#C9820A", "A vencer"
+                    cor_status, rotulo_status = cores.status_a_vencer, "A vencer"
                 else:
-                    cor_status, rotulo_status = "#888780", "Pendente"
+                    cor_status, rotulo_status = cores.status_pendente, "Pendente"
 
                 # UX: Detalhes é predominantemente informativo -- a única ação de
                 # status que continua aqui é "Marcar como paga" (pendente/atrasado ->
@@ -1144,10 +1170,10 @@ def main(page: ft.Page):
                             else f"Parcela {posicao}"
                         )
 
-                def linha_detalhe(rotulo, valor, cor_valor="#0B1410"):
+                def linha_detalhe(rotulo, valor, cor_valor=cores.texto_principal):
                     return ft.Column(
                         controls=[
-                            ft.Text(rotulo, size=12, color="#888780"),
+                            ft.Text(rotulo, size=12, color=cores.texto_secundario),
                             ft.Text(valor, size=16, weight=ft.FontWeight.BOLD, color=cor_valor),
                         ],
                         spacing=2,
@@ -1179,7 +1205,7 @@ def main(page: ft.Page):
                     linhas_cartao.append(linha_detalhe("Parcela", parcela_texto))
 
                 cartao_detalhes = ft.Container(
-                    bgcolor="white",
+                    bgcolor=cores.fundo_card,
                     border_radius=12,
                     padding=16,
                     content=ft.Column(spacing=16, controls=linhas_cartao),
@@ -1188,9 +1214,9 @@ def main(page: ft.Page):
                 cabecalho = ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
                                       on_click=lambda e: mostrar_tela_principal()),
-                        ft.Text("Detalhes da conta", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                        ft.Text("Detalhes da conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                         ft.Container(width=40),
                     ],
                 )
@@ -1205,8 +1231,8 @@ def main(page: ft.Page):
                     controles_acao.append(
                         ft.Button(
                             content="Marcar como paga",
-                            bgcolor="#39D67C",
-                            color="white",
+                            bgcolor=cores.acao_pagamento,
+                            color=cores.texto_sobre_acao,
                             on_click=marcar_como_paga_detalhes,
                         ),
                     )
@@ -1220,15 +1246,15 @@ def main(page: ft.Page):
                                 ft.Container(height=8),
                                 ft.Button(
                                     content="Editar",
-                                    bgcolor="#1D9E75",
-                                    color="white",
+                                    bgcolor=cores.acao_primaria,
+                                    color=cores.texto_sobre_acao,
                                     on_click=lambda e: mostrar_formulario_edicao(),
                                 ),
                                 ft.Container(height=8),
                                 ft.Button(
                                     content="Excluir",
-                                    bgcolor="#A32D2D",
-                                    color="white",
+                                    bgcolor=cores.acao_destrutiva,
+                                    color=cores.texto_sobre_acao,
                                     on_click=lambda e: confirmar_exclusao_conta(),
                                 ),
                             ],
@@ -1249,7 +1275,7 @@ def main(page: ft.Page):
                     title=ft.Text("Não foi possível excluir"),
                     content=ft.Text(f"Não foi possível excluir '{conta['nome']}'."),
                     actions=[
-                        ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                        ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                   on_click=lambda e: page.pop_dialog()),
                     ],
                 )
@@ -1270,7 +1296,7 @@ def main(page: ft.Page):
                     content=ft.Text(f"Deseja realmente excluir a conta '{conta['nome']}'?"),
                     actions=[
                         ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                        ft.Button(content="Excluir", bgcolor="#A32D2D", color="white", on_click=excluir),
+                        ft.Button(content="Excluir", bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao, on_click=excluir),
                     ],
                 )
                 page.show_dialog(dialogo)
@@ -1295,7 +1321,7 @@ def main(page: ft.Page):
                 acoes = [
                     ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
                     ft.TextButton(content="Somente este mês", on_click=excluir_somente_este_mes),
-                    ft.Button(content="Este mês em diante", bgcolor="#A32D2D", color="white",
+                    ft.Button(content="Este mês em diante", bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao,
                               on_click=excluir_este_mes_em_diante),
                 ]
 
@@ -1323,15 +1349,15 @@ def main(page: ft.Page):
                 # "Nova conta" e em "Alterar frequência" (D5): o término fica visível e
                 # disponível por padrão; só quando o usuário ativa explicitamente é que
                 # a recorrência passa a ser sem término.
-                sem_termino_transf = ft.Switch(value=False, active_color="#1D9E75")
+                sem_termino_transf = ft.Switch(value=False, active_color=cores.acao_primaria)
                 ano_atual_transf = date.today().year
                 campo_mes_termino_transf = ft.Dropdown(
-                    label="Mês", color="#0B1410", expand=True,
+                    label="Mês", color=cores.texto_principal, expand=True,
                     value=str(date.today().month),
                     options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
                 )
                 campo_ano_termino_transf = ft.Dropdown(
-                    label="Ano", color="#0B1410", expand=True,
+                    label="Ano", color=cores.texto_principal, expand=True,
                     value=str(ano_atual_transf),
                     options=[ft.dropdown.Option(key=str(a), text=str(a))
                              for a in range(ano_atual_transf, ano_atual_transf + 11)],
@@ -1339,7 +1365,7 @@ def main(page: ft.Page):
                 linha_termino_transf = ft.Row(
                     spacing=8, controls=[campo_mes_termino_transf, campo_ano_termino_transf], visible=True,
                 )
-                erro_transf = ft.Text(value="", color="#A32D2D", size=12)
+                erro_transf = ft.Text(value="", color=cores.texto_erro, size=12)
 
                 def ao_mudar_sem_termino_transf(e):
                     linha_termino_transf.visible = not sem_termino_transf.value
@@ -1376,7 +1402,7 @@ def main(page: ft.Page):
 
                 dialogo = ft.AlertDialog(
                     modal=True,
-                    bgcolor="white",
+                    bgcolor=cores.fundo_dialogo,
                     title=ft.Text("Transformar em recorrente"),
                     content=ft.Column(
                         tight=True,
@@ -1390,7 +1416,7 @@ def main(page: ft.Page):
                             ft.Row(
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                                 controls=[
-                                    ft.Text("Sem data de término", size=13, color="#0B1410"),
+                                    ft.Text("Sem data de término", size=13, color=cores.texto_principal),
                                     sem_termino_transf,
                                 ],
                             ),
@@ -1400,7 +1426,7 @@ def main(page: ft.Page):
                     ),
                     actions=[
                         ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                        ft.Button(content="Transformar", bgcolor="#1D9E75", color="white",
+                        ft.Button(content="Transformar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                   on_click=confirmar_transformacao),
                     ],
                 )
@@ -1420,15 +1446,15 @@ def main(page: ft.Page):
                 nova_frequencia = {"valor": "mensal"}
                 linha_frequencia_alt = construir_seletor_frequencia(nova_frequencia)
 
-                sem_termino_alt = ft.Switch(value=False, active_color="#1D9E75")
+                sem_termino_alt = ft.Switch(value=False, active_color=cores.acao_primaria)
                 ano_atual_alt = date.today().year
                 campo_mes_termino_alt = ft.Dropdown(
-                    label="Mês", color="#0B1410", expand=True,
+                    label="Mês", color=cores.texto_principal, expand=True,
                     value=str(date.today().month),
                     options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
                 )
                 campo_ano_termino_alt = ft.Dropdown(
-                    label="Ano", color="#0B1410", expand=True,
+                    label="Ano", color=cores.texto_principal, expand=True,
                     value=str(ano_atual_alt),
                     options=[ft.dropdown.Option(key=str(a), text=str(a))
                              for a in range(ano_atual_alt, ano_atual_alt + 11)],
@@ -1436,7 +1462,7 @@ def main(page: ft.Page):
                 linha_termino_alt = ft.Row(
                     spacing=8, controls=[campo_mes_termino_alt, campo_ano_termino_alt], visible=True,
                 )
-                erro_freq = ft.Text(value="", color="#A32D2D", size=12)
+                erro_freq = ft.Text(value="", color=cores.texto_erro, size=12)
 
                 def ao_mudar_sem_termino_alt(e):
                     linha_termino_alt.visible = not sem_termino_alt.value
@@ -1514,7 +1540,7 @@ def main(page: ft.Page):
                             ft.Row(
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                                 controls=[
-                                    ft.Text("Sem data de término", size=13, color="#0B1410"),
+                                    ft.Text("Sem data de término", size=13, color=cores.texto_principal),
                                     sem_termino_alt,
                                 ],
                             ),
@@ -1524,7 +1550,7 @@ def main(page: ft.Page):
                     ),
                     actions=[
                         ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                        ft.Button(content="Confirmar", bgcolor="#1D9E75", color="white",
+                        ft.Button(content="Confirmar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                   on_click=confirmar_alteracao),
                     ],
                 )
@@ -1537,7 +1563,7 @@ def main(page: ft.Page):
                 # própria referência e de hoje, o que preservar (regra fechada
                 # em D7: nunca apaga o que já aconteceu, nem a ocorrência
                 # selecionada).
-                erro_encerramento = ft.Text(value="", color="#A32D2D", size=12)
+                erro_encerramento = ft.Text(value="", color=cores.texto_erro, size=12)
                 # Vencimento pendente (RF07, já existente): mesma razão dos
                 # outros dois diálogos -- referência calculada a partir do que
                 # está sendo editado nesta sessão, não do valor ainda salvo.
@@ -1600,7 +1626,7 @@ def main(page: ft.Page):
                     ),
                     actions=[
                         ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                        ft.Button(content="Encerrar recorrência", bgcolor="#A32D2D", color="white",
+                        ft.Button(content="Encerrar recorrência", bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao,
                                   on_click=confirmar_encerramento),
                     ],
                 )
@@ -1620,18 +1646,18 @@ def main(page: ft.Page):
                 vencimento_pendente["valor"] = data_venc_atual
 
                 campo_nome_edit = ft.TextField(
-                    label="Nome da conta", value=conta["nome"], color="#0B1410",
+                    label="Nome da conta", value=conta["nome"], color=cores.texto_principal,
                 )
                 campo_valor_edit = ft.TextField(
                     label="Valor",
                     value=f"{conta['valor']:.2f}".replace(".", ","),
                     keyboard_type=ft.KeyboardType.NUMBER,
-                    color="#0B1410",
+                    color=cores.texto_principal,
                 )
                 campo_data_edit = ft.TextField(
                     label="Data de vencimento",
                     value=data_venc_atual.strftime("%d/%m/%Y"),
-                    read_only=True, expand=True, color="#0B1410",
+                    read_only=True, expand=True, color=cores.texto_principal,
                 )
                 # RF07/5.11: categoria agora editável -- mesmo Dropdown/opções de
                 # Nova Conta (montar_opcoes_categoria, promovida a main()),
@@ -1641,7 +1667,7 @@ def main(page: ft.Page):
                 campo_categoria_edit = ft.Dropdown(
                     label="Categoria",
                     value=str(categoria_id_original) if categoria_id_original is not None else "",
-                    options=montar_opcoes_categoria(), color="#0B1410",
+                    options=montar_opcoes_categoria(), color=cores.texto_principal,
                     expand=True,
                 )
                 ultima_categoria_valida_edit = {"valor": campo_categoria_edit.value}
@@ -1734,8 +1760,8 @@ def main(page: ft.Page):
                     # -- nunca uma segunda lógica de detecção só para a cor.
                     tem_alteracao = ha_alteracao_pendente()
                     botao_salvar.disabled = not tem_alteracao
-                    botao_salvar.bgcolor = "#1D9E75" if tem_alteracao else "#E5E4DE"
-                    botao_salvar.color = "white" if tem_alteracao else "#888780"
+                    botao_salvar.bgcolor = cores.acao_primaria if tem_alteracao else cores.botao_desabilitado_fundo
+                    botao_salvar.color = cores.texto_sobre_acao if tem_alteracao else cores.botao_desabilitado_texto
                     page.update()
 
                 # Registra a função real no gatilho compartilhado com
@@ -1767,7 +1793,7 @@ def main(page: ft.Page):
                 campo_valor_edit.on_change = lambda e: atualizar_estado_botao_salvar()
 
 
-                erro_edit = ft.Text(value="", color="#A32D2D", size=12)
+                erro_edit = ft.Text(value="", color=cores.texto_erro, size=12)
 
                 def aplicar_status_pendente():
                     # Status pertence exclusivamente à ocorrência (5.9/5.1) --
@@ -1860,14 +1886,13 @@ def main(page: ft.Page):
 
                     nova_data = data_selecionada["valor"]
 
-                    # RF07/5.11: "" no Dropdown = Sem categoria. remover_categoria
-                    # avisa explicitamente o db.py quando é para limpar
-                    # categoria_id (None sozinho significaria "não mexer" --
-                    # mesma ambiguidade que motivou o parâmetro novo).
+                    # RF07/5.11: "" no Dropdown = Sem categoria. Quando a
+                    # categoria é removida, campos_alterados_edicao() envia
+                    # remover_categoria=True ao db.py (None sozinho
+                    # significaria "não mexer").
                     categoria_id_novo = (
                         int(campo_categoria_edit.value) if campo_categoria_edit.value else None
                     )
-                    remover_categoria = campo_categoria_edit.value == ""
 
                     # RF20/5.6 (+ RF07 + Status): frase em linguagem natural
                     # descrevendo só os campos realmente alterados -- comparada
@@ -1903,12 +1928,15 @@ def main(page: ft.Page):
                     # Vencimento/Categoria entram nesta checagem -- de propósito, não
                     # volte a juntar as duas perguntas numa só (importante também para
                     # quando Recorrência virar rascunho: a mesma distinção vai valer).
-                    ha_alteracao_propagavel = (
-                        nome != conta["nome"]
-                        or valor != conta["valor"]
-                        or nova_data != data_venc_atual
-                        or categoria_id_novo != categoria_id_original
+                    # Correção v6.0 (Etapa 0): só os campos realmente alterados
+                    # seguem para o db.py -- um campo não alterado (sobretudo a
+                    # data) nunca é reenviado, para não redefinir a âncora da
+                    # série nem sobrescrever ocorrências futuras.
+                    campos_alterados = campos_alterados_edicao(
+                        conta["nome"], nome, conta["valor"], valor,
+                        data_venc_atual, nova_data, categoria_id_original, categoria_id_novo,
                     )
+                    ha_alteracao_propagavel = bool(campos_alterados)
 
                     if conta.get("serie_id") is not None and serie_ativa and ha_alteracao_propagavel:
                         # RF20 (5.6): só pergunta o escopo quando existe algo
@@ -1918,9 +1946,7 @@ def main(page: ft.Page):
                         # (removida na Fase 2.6); a nova data pode cair em
                         # qualquer mês/ano. Série já removida (RF29) cai direto no
                         # ramo de baixo, como conta avulsa.
-                        mostrar_dialogo_escopo_edicao(
-                            nome, valor, nova_data, categoria_id_novo, remover_categoria, mensagem_alteracao,
-                        )
+                        mostrar_dialogo_escopo_edicao(campos_alterados, mensagem_alteracao)
                     else:
                         if ha_alteracao_propagavel:
                             # Só grava Nome/Valor/Vencimento/Categoria quando algo
@@ -1929,11 +1955,7 @@ def main(page: ft.Page):
                             # (e, numa série ativa, não deve marcar
                             # editado_individualmente=1 à toa só por causa de
                             # Status, que nunca é uma edição desses campos).
-                            database.editar_conta_ocorrencia(
-                                conta["id"], nome=nome, valor=valor,
-                                data_vencimento=nova_data.isoformat(),
-                                categoria_id=categoria_id_novo, remover_categoria=remover_categoria,
-                            )
+                            database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
                         aplicar_status_pendente()
                         if not aplicar_recorrencia_pendente():
                             erro_edit.value = "Não foi possível aplicar a alteração de recorrência."
@@ -1956,7 +1978,7 @@ def main(page: ft.Page):
                         page.pop_dialog()
                         mostrar_tela_principal()
 
-                    acao_entendi = ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                    acao_entendi = ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                               on_click=fechar_confirmacao)
 
                     if dialogo_alvo is not None:
@@ -1974,14 +1996,9 @@ def main(page: ft.Page):
                             )
                         )
 
-                def mostrar_dialogo_escopo_edicao(nome, valor, nova_data, categoria_id_novo,
-                                                   remover_categoria, mensagem_alteracao):
+                def mostrar_dialogo_escopo_edicao(campos_alterados, mensagem_alteracao):
                     def aplicar_somente_esta(e):
-                        sucesso = database.editar_conta_ocorrencia(
-                            conta["id"], nome=nome, valor=valor,
-                            data_vencimento=nova_data.isoformat(),
-                            categoria_id=categoria_id_novo, remover_categoria=remover_categoria,
-                        )
+                        sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
                         if not sucesso:
                             page.pop_dialog()
                             erro_edit.value = "Não foi possível salvar esta alteração."
@@ -1996,11 +2013,7 @@ def main(page: ft.Page):
                         mostrar_confirmacao_edicao(mensagem_alteracao, dialogo_alvo=dialogo)
 
                     def aplicar_este_mes_em_diante(e):
-                        sucesso = database.editar_conta_serie(
-                            conta["id"], nome=nome, valor=valor,
-                            data_vencimento=nova_data.isoformat(),
-                            categoria_id=categoria_id_novo, remover_categoria=remover_categoria,
-                        )
+                        sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
                         if not sucesso:
                             page.pop_dialog()
                             erro_edit.value = (
@@ -2026,7 +2039,7 @@ def main(page: ft.Page):
                         ),
                         actions=[
                             ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                            ft.Button(content="Somente este mês", bgcolor="#1D9E75", color="white",
+                            ft.Button(content="Somente este mês", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                       on_click=aplicar_somente_esta),
                             ft.TextButton(content="Este mês em diante", on_click=aplicar_este_mes_em_diante),
                         ],
@@ -2036,9 +2049,9 @@ def main(page: ft.Page):
                 cabecalho_edicao = ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
                                       on_click=lambda e: mostrar_visualizacao()),
-                        ft.Text("Editar conta", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                        ft.Text("Editar conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                         ft.Container(width=40),
                     ],
                 )
@@ -2059,16 +2072,16 @@ def main(page: ft.Page):
                 # cabeçalho já usa, preservado sem nenhuma mudança.
                 botao_cancelar_edicao = ft.Button(
                     content="Cancelar",
-                    bgcolor="white",
-                    color="#0B1410",
-                    style=ft.ButtonStyle(side=ft.BorderSide(1, "#E5E4DE")),
+                    bgcolor=cores.botao_secundario_fundo,
+                    color=cores.botao_secundario_texto,
+                    style=ft.ButtonStyle(side=ft.BorderSide(1, cores.borda_suave)),
                     width=110,
                     on_click=lambda e: mostrar_visualizacao(),
                 )
                 botao_salvar = ft.Button(
                     content="Salvar alterações",
-                    bgcolor="#E5E4DE",
-                    color="#888780",
+                    bgcolor=cores.botao_desabilitado_fundo,
+                    color=cores.botao_desabilitado_texto,
                     disabled=True,
                     width=180,
                     on_click=salvar_edicao,
@@ -2086,7 +2099,7 @@ def main(page: ft.Page):
                                 campo_valor_edit,
                                 ft.Row(controls=[
                                     campo_data_edit,
-                                    ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color="#1D9E75",
+                                    ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color=cores.acao_primaria,
                                                   on_click=abrir_seletor_data),
                                 ]),
                                 campo_categoria_edit,
@@ -2113,16 +2126,16 @@ def main(page: ft.Page):
             dias_delta = (data_venc - date.today()).days
 
             if conta["status"] == "pago":
-                cor, rotulo_status = "#1D9E75", "Pago"
+                cor, rotulo_status = cores.status_pago, "Pago"
                 frase = None
             elif conta["status"] == "atrasado":
-                cor, rotulo_status = "#A32D2D", "Atrasado"
+                cor, rotulo_status = cores.status_atrasado, "Atrasado"
                 frase = frase_vencimento_passado(abs(dias_delta))
             elif dias_delta == 0:
-                cor, rotulo_status = "#C9820A", "A vencer"
+                cor, rotulo_status = cores.status_a_vencer, "A vencer"
                 frase = frase_vencimento_futuro(dias_delta)
             else:
-                cor, rotulo_status = "#888780", "Pendente"
+                cor, rotulo_status = cores.status_pendente, "Pendente"
                 frase = frase_vencimento_futuro(dias_delta)
 
             partes_subtitulo = [p for p in (nome_categoria, frase) if p]
@@ -2141,15 +2154,15 @@ def main(page: ft.Page):
             controles_linha = [
                 ft.Column(
                     controls=[
-                        ft.Text(conta["nome"], size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
-                        ft.Text(subtitulo, size=12, color="#888780"),
+                        ft.Text(conta["nome"], size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                        ft.Text(subtitulo, size=12, color=cores.texto_secundario),
                     ],
                     spacing=2,
                 ),
                 ft.Column(
                     controls=[
                         ft.Text(formatar_moeda(conta["valor"]), size=14, weight=ft.FontWeight.BOLD,
-                                 color="#0B1410"),
+                                 color=cores.texto_principal),
                         ft.Text(rotulo_status, size=12, color=cor),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.END,
@@ -2182,7 +2195,7 @@ def main(page: ft.Page):
 
                     icone_pagamento = ft.IconButton(
                         icon=ft.Icons.CHECK_CIRCLE,
-                        icon_color="#39D67C",
+                        icon_color=cores.controle_pago,
                         icon_size=22,
                         tooltip="Marcar como pendente",
                         on_click=marcar_como_pendente_rapido,
@@ -2194,7 +2207,7 @@ def main(page: ft.Page):
 
                     icone_pagamento = ft.IconButton(
                         icon=ft.Icons.CHECK_CIRCLE_OUTLINE,
-                        icon_color="#888780",
+                        icon_color=cores.controle_pendente,
                         icon_size=22,
                         tooltip="Marcar como paga",
                         on_click=marcar_como_paga_rapido,
@@ -2204,7 +2217,7 @@ def main(page: ft.Page):
                 )
 
             return ft.Container(
-                bgcolor="white",
+                bgcolor=cores.fundo_card,
                 border_radius=10,
                 padding=12,
                 border=ft.Border(left=ft.BorderSide(4, cor)),
@@ -2267,18 +2280,18 @@ def main(page: ft.Page):
             proximas = database.listar_contas_proximas(usuario_atual["id"], dias=7)
             if proximas:
                 total_proximas = sum(c["valor"] for c in proximas)
-                banner_semana.bgcolor = "#FDF1D6"
+                banner_semana.bgcolor = cores.aviso_fundo
                 banner_semana.border_radius = 10
                 banner_semana.padding = 12
                 banner_semana.content = ft.Row(
                     controls=[
-                        ft.Icon(ft.Icons.WARNING_AMBER, size=18, color="#B8860B"),
+                        ft.Icon(ft.Icons.WARNING_AMBER, size=18, color=cores.aviso_icone),
                         ft.Container(width=8),
                         ft.Column(
                             controls=[
                                 ft.Text(frase_resumo_proximas(len(proximas)), size=13,
-                                         weight=ft.FontWeight.BOLD, color="#7A5B00"),
-                                ft.Text(f"Total de {formatar_moeda(total_proximas)}", size=12, color="#7A5B00"),
+                                         weight=ft.FontWeight.BOLD, color=cores.aviso_texto),
+                                ft.Text(f"Total de {formatar_moeda(total_proximas)}", size=12, color=cores.aviso_texto),
                             ],
                             spacing=0,
                         ),
@@ -2299,7 +2312,7 @@ def main(page: ft.Page):
             if not contas_ordenadas:
                 lista_contas.controls.append(
                     ft.Container(
-                        content=ft.Text("Nenhuma conta cadastrada ainda.", color="#888780", size=13),
+                        content=ft.Text("Nenhuma conta cadastrada ainda.", color=cores.texto_secundario, size=13),
                         padding=16,
                     )
                 )
@@ -2355,7 +2368,7 @@ def main(page: ft.Page):
                 if not contas_do_mes_ordenadas:
                     lista_completa.controls.append(
                         ft.Container(
-                            content=ft.Text("Nenhuma conta cadastrada neste mês.", color="#888780", size=13),
+                            content=ft.Text("Nenhuma conta cadastrada neste mês.", color=cores.texto_secundario, size=13),
                             padding=16,
                         )
                     )
@@ -2366,7 +2379,7 @@ def main(page: ft.Page):
                     lista_completa.controls.append(
                         ft.Container(
                             content=ft.Text("Nenhuma conta encontrada com os filtros selecionados.",
-                                             color="#888780", size=13),
+                                             color=cores.texto_secundario, size=13),
                             padding=16,
                         )
                     )
@@ -2398,9 +2411,9 @@ def main(page: ft.Page):
                 ativo = filtro_ver_todas["status"] == valor
                 return ft.Container(
                     content=ft.Text(rotulo, size=10, weight=ft.FontWeight.BOLD,
-                                     color="#0B1410" if ativo else "#888780"),
-                    bgcolor="#39D67C" if ativo else "transparent",
-                    border=None if ativo else ft.Border.all(1, "#3A413B"),
+                                     color=cores.filtro_ativo_texto if ativo else cores.filtro_inativo_texto),
+                    bgcolor=cores.filtro_ativo_fundo if ativo else "transparent",
+                    border=None if ativo else ft.Border.all(1, cores.filtro_inativo_borda),
                     border_radius=12,
                     padding=ft.Padding(8, 4, 8, 4),
                     on_click=lambda e, v=valor: selecionar_filtro_status_ver_todas(v),
@@ -2414,10 +2427,10 @@ def main(page: ft.Page):
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
                                       on_click=lambda e: mostrar_tela_principal()),
                         ft.Text(f"{MESES_PT[mes - 1]} {ano}", size=18, weight=ft.FontWeight.BOLD,
-                                color="#0B1410"),
+                                color=cores.texto_principal),
                         ft.Container(width=40),
                     ],
                 ),
@@ -2456,7 +2469,7 @@ def main(page: ft.Page):
             if not atrasadas_todas:
                 lista_atrasadas_tela.controls.append(
                     ft.Container(
-                        content=ft.Text("Nenhuma conta atrasada.", color="#888780", size=13),
+                        content=ft.Text("Nenhuma conta atrasada.", color=cores.texto_secundario, size=13),
                         padding=16,
                     )
                 )
@@ -2471,9 +2484,9 @@ def main(page: ft.Page):
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
                                       on_click=lambda e: mostrar_tela_principal()),
-                        ft.Text("Contas em atraso", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                        ft.Text("Contas em atraso", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                         ft.Container(width=40),
                     ],
                 ),
@@ -2488,8 +2501,8 @@ def main(page: ft.Page):
             page.update()
 
         fab = ft.Container(
-            content=ft.Icon(ft.Icons.ADD, color="white", size=26),
-            bgcolor="#1D9E75",
+            content=ft.Icon(ft.Icons.ADD, color=cores.texto_sobre_acao, size=26),
+            bgcolor=cores.acao_primaria,
             width=52,
             height=52,
             border_radius=26,
@@ -2554,7 +2567,7 @@ def main(page: ft.Page):
         campo_nome = ft.TextField(label="Nome da categoria", value=cat["nome"] if cat else "", width=280)
         campo_icone = ft.TextField(label="Ícone (emoji, opcional)",
                                     value=cat["icone"] if cat else "", width=280)
-        erro = ft.Text(value="", color="#A32D2D", size=12)
+        erro = ft.Text(value="", color=cores.texto_erro, size=12)
 
         # RF18/5.12 (Fase D4): sugestões de emoji contextuais ao nome digitado.
         # emoji_sugerido_selecionado rastreia qual sugestão foi clicada (mesmo
@@ -2567,7 +2580,7 @@ def main(page: ft.Page):
             spacing=6,
             visible=False,
             controls=[
-                ft.Text("Sugestões", size=12, color="#888780"),
+                ft.Text("Sugestões", size=12, color=cores.texto_secundario),
                 linha_sugestoes_emoji,
             ],
         )
@@ -2584,9 +2597,9 @@ def main(page: ft.Page):
                         width=36,
                         height=36,
                         border_radius=18,
-                        bgcolor="#F5F4F0",
+                        bgcolor=cores.fundo_sugestao_emoji,
                         alignment=ft.Alignment.CENTER,
-                        border=ft.Border.all(2, "#1D9E75") if selecionado else None,
+                        border=ft.Border.all(2, cores.borda_selecao) if selecionado else None,
                         on_click=lambda e, em=emoji: selecionar_emoji_sugerido(em),
                     )
                 )
@@ -2653,7 +2666,7 @@ def main(page: ft.Page):
                         ft.Container(
                             content=ft.Icon(
                                 ft.Icons.REMOVE if expandido else ft.Icons.ADD,
-                                size=16, color="#888780",
+                                size=16, color=cores.texto_secundario,
                             ),
                             width=34, height=34, border_radius=8,
                             alignment=ft.Alignment.CENTER,
@@ -2680,14 +2693,14 @@ def main(page: ft.Page):
                 # Sino (ex.: "Categoria") -- Stack com clip NONE para o
                 # rótulo poder "recortar" a linha superior sem ser cortado.
                 caixa = ft.Container(
-                    border=ft.Border.all(1, "#E5E4DE"),
+                    border=ft.Border.all(1, cores.borda_suave),
                     border_radius=8,
                     padding=ft.Padding(12, 16, 12, 12),
                     content=ft.Column(spacing=0, controls=conteudo),
                 )
                 rotulo = ft.Container(
-                    content=ft.Text(dados["nome"], size=11, color="#888780"),
-                    bgcolor="white",
+                    content=ft.Text(dados["nome"], size=11, color=cores.texto_secundario),
+                    bgcolor=cores.fundo_dialogo,
                     padding=ft.Padding(4, 0, 4, 0),
                     left=10,
                     top=-8,
@@ -2717,8 +2730,8 @@ def main(page: ft.Page):
         botao_mais_emojis = ft.TextButton(
             content=ft.Row(
                 controls=[
-                    ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, size=16, color="#1D9E75"),
-                    ft.Text("Mais emojis", size=12, color="#1D9E75"),
+                    ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, size=16, color=cores.acao_primaria),
+                    ft.Text("Mais emojis", size=12, color=cores.acao_primaria),
                 ],
                 spacing=4,
                 tight=True,
@@ -2761,7 +2774,7 @@ def main(page: ft.Page):
                         height=28,
                         border_radius=14,
                         bgcolor=cor,
-                        border=ft.Border.all(2, "#0B1410") if selecionada else None,
+                        border=ft.Border.all(2, cores.borda_selecao_cor) if selecionada else None,
                         on_click=lambda e, c=cor: selecionar_cor(c),
                     )
                 )
@@ -2836,7 +2849,7 @@ def main(page: ft.Page):
                     campo_icone,
                     bloco_sugestoes_emoji,
                     botao_mais_emojis,
-                    ft.Text("Cor", size=12, color="#888780"),
+                    ft.Text("Cor", size=12, color=cores.texto_secundario),
                     linha_cores,
                     erro,
                 ],
@@ -2845,7 +2858,7 @@ def main(page: ft.Page):
             ),
             actions=[
                 ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                ft.Button(content="Salvar", bgcolor="#1D9E75", color="white", on_click=salvar),
+                ft.Button(content="Salvar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao, on_click=salvar),
             ],
         )
         page.show_dialog(dialogo)
@@ -2859,14 +2872,14 @@ def main(page: ft.Page):
                 f"{database.LIMITE_CATEGORIAS_POR_USUARIO} categorias."
             ),
             actions=[
-                ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                           on_click=lambda e: page.pop_dialog()),
             ],
         )
         page.show_dialog(dialogo_limite)
 
     def ponto_cor_categoria(cor):
-        return ft.Container(width=10, height=10, border_radius=5, bgcolor=cor or "#E5E4DE")
+        return ft.Container(width=10, height=10, border_radius=5, bgcolor=cor or cores.categoria_sem_cor)
 
     # RF04/RF07 (5.11) + "+ Nova categoria": função reutilizável para montar
     # as opções do seletor de categoria de uma conta -- usada tanto por Nova
@@ -2889,7 +2902,7 @@ def main(page: ft.Page):
             + [
                 ft.dropdown.Option(
                     key=SENTINELA_NOVA_CATEGORIA, text="+ Nova categoria",
-                    leading_icon=ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, color="#1D9E75", size=16),
+                    leading_icon=ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, color=cores.acao_primaria, size=16),
                 )
             ]
         )
@@ -2926,7 +2939,7 @@ def main(page: ft.Page):
                 lista.controls.append(
                     ft.Container(
                         content=ft.Text("Nenhuma categoria ainda. Toque em '+' para criar.",
-                                         color="#888780", size=13),
+                                         color=cores.texto_secundario, size=13),
                         padding=16,
                     )
                 )
@@ -2937,7 +2950,7 @@ def main(page: ft.Page):
 
         def linha_categoria(cat):
             return ft.Container(
-                bgcolor="white",
+                bgcolor=cores.fundo_card,
                 border_radius=12,
                 padding=12,
                 content=ft.Row(
@@ -2947,8 +2960,8 @@ def main(page: ft.Page):
                             controls=[
                                 ft.Container(
                                     content=ft.Text(cat["icone"] or cat["nome"][0].upper(),
-                                                     size=16, color="white"),
-                                    bgcolor=cat["cor"] or "#1D9E75",
+                                                     size=16, color=cores.texto_sobre_cor_categoria),
+                                    bgcolor=cat["cor"] or cores.categoria_cor_padrao,
                                     width=36,
                                     height=36,
                                     border_radius=18,
@@ -2961,7 +2974,7 @@ def main(page: ft.Page):
                         ft.Row(
                             controls=[
                                 ft.IconButton(
-                                    icon=ft.Icons.ADD, icon_size=18, icon_color="#1D9E75",
+                                    icon=ft.Icons.ADD, icon_size=18, icon_color=cores.acao_primaria,
                                     tooltip="Nova conta nesta categoria",
                                     on_click=lambda e, c=cat: mostrar_tela_nova_conta(
                                         categoria_pre_selecionada=c["id"]),
@@ -2969,7 +2982,7 @@ def main(page: ft.Page):
                                 ft.IconButton(icon=ft.Icons.EDIT, icon_size=18,
                                               on_click=lambda e, c=cat: abrir_dialogo_categoria(
                                                   c, ao_salvar=lambda categoria_id: atualizar_lista())),
-                                ft.IconButton(icon=ft.Icons.DELETE, icon_size=18, icon_color="#A32D2D",
+                                ft.IconButton(icon=ft.Icons.DELETE, icon_size=18, icon_color=cores.acao_destrutiva,
                                               on_click=lambda e, c=cat: confirmar_exclusao(c)),
                             ]
                         ),
@@ -2983,7 +2996,7 @@ def main(page: ft.Page):
                 title=ft.Text("Não foi possível excluir"),
                 content=ft.Text(f"Não foi possível excluir '{cat['nome']}'."),
                 actions=[
-                    ft.Button(content="Entendi", bgcolor="#1D9E75", color="white",
+                    ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                               on_click=lambda e: page.pop_dialog()),
                 ],
             )
@@ -3008,7 +3021,7 @@ def main(page: ft.Page):
                 ),
                 actions=[
                     ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog()),
-                    ft.Button(content="Excluir", bgcolor="#A32D2D", color="white", on_click=excluir),
+                    ft.Button(content="Excluir", bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao, on_click=excluir),
                 ],
             )
             page.show_dialog(dialogo)
@@ -3020,13 +3033,13 @@ def main(page: ft.Page):
             abrir_criacao_categoria(ao_salvar=lambda categoria_id: atualizar_lista())
 
         cabecalho = ft.Container(
-            bgcolor="#0B1410",
+            bgcolor=cores.fundo_cabecalho_destaque,
             padding=ft.Padding(20, 40, 20, 20),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 controls=[
-                    ft.Text("Categorias", size=20, weight=ft.FontWeight.BOLD, color="white"),
-                    ft.IconButton(icon=ft.Icons.ADD_CIRCLE, icon_color="#39D67C", icon_size=28,
+                    ft.Text("Categorias", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_sobre_destaque),
+                    ft.IconButton(icon=ft.Icons.ADD_CIRCLE, icon_color=cores.acento_sobre_destaque, icon_size=28,
                                   on_click=ao_clicar_nova_categoria),
                 ],
             ),
@@ -3051,13 +3064,13 @@ def main(page: ft.Page):
         data_selecionada = {"valor": None}
 
         campo_nome = ft.TextField(
-            label="Nome da conta", hint_text="Ex: Aluguel, Internet...", color="#0B1410",
+            label="Nome da conta", hint_text="Ex: Aluguel, Internet...", color=cores.texto_principal,
         )
         campo_valor = ft.TextField(
-            label="Valor", hint_text="R$ 0,00", keyboard_type=ft.KeyboardType.NUMBER, color="#0B1410",
+            label="Valor", hint_text="R$ 0,00", keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
         )
         campo_data = ft.TextField(
-            label="Data de vencimento", hint_text="dd/mm/aaaa", read_only=True, expand=True, color="#0B1410",
+            label="Data de vencimento", hint_text="dd/mm/aaaa", read_only=True, expand=True, color=cores.texto_principal,
         )
 
         def ao_escolher_data(e):
@@ -3079,7 +3092,7 @@ def main(page: ft.Page):
         campo_categoria = ft.Dropdown(
             label="Categoria",
             value=str(categoria_pre_selecionada) if categoria_pre_selecionada else "",
-            options=montar_opcoes_categoria(), color="#0B1410",
+            options=montar_opcoes_categoria(), color=cores.texto_principal,
         )
         ultima_categoria_valida = {"valor": campo_categoria.value}
 
@@ -3113,23 +3126,23 @@ def main(page: ft.Page):
         # RF10/5.18: término opcional, escolhido pelo usuário -- "Sem data de
         # término" começa DESATIVADO (o término fica visível por padrão); quando
         # ativado, mostra o seletor visual de mês/ano (não mais campo de texto).
-        sem_termino = ft.Switch(value=False, active_color="#1D9E75")
+        sem_termino = ft.Switch(value=False, active_color=cores.acao_primaria)
 
         ano_atual = date.today().year
         campo_mes_termino = ft.Dropdown(
-            label="Mês", color="#0B1410", expand=True,
+            label="Mês", color=cores.texto_principal, expand=True,
             value=str(date.today().month),
             options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
         )
         campo_ano_termino = ft.Dropdown(
-            label="Ano", color="#0B1410", expand=True,
+            label="Ano", color=cores.texto_principal, expand=True,
             value=str(ano_atual),
             options=[ft.dropdown.Option(key=str(a), text=str(a)) for a in range(ano_atual, ano_atual + 11)],
         )
         linha_termino = ft.Row(spacing=8, controls=[campo_mes_termino, campo_ano_termino], visible=False)
 
         cartao_termino = ft.Container(
-            bgcolor="white",
+            bgcolor=cores.fundo_card,
             border_radius=12,
             padding=14,
             visible=False,
@@ -3139,7 +3152,7 @@ def main(page: ft.Page):
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Text("Sem data de término", size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                            ft.Text("Sem data de término", size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                             sem_termino,
                         ],
                     ),
@@ -3162,9 +3175,9 @@ def main(page: ft.Page):
             ativo = tipo_selecionado["valor"] == valor
             return ft.Container(
                 content=ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD,
-                                 color="white" if ativo else "#0B1410"),
-                bgcolor="#1D9E75" if ativo else "white",
-                border=None if ativo else ft.Border.all(1, "#E5E4DE"),
+                                 color=cores.chip_ativo_texto if ativo else cores.chip_inativo_texto),
+                bgcolor=cores.chip_ativo_fundo if ativo else cores.chip_inativo_fundo,
+                border=None if ativo else ft.Border.all(1, cores.borda_suave),
                 border_radius=10,
                 padding=ft.Padding(0, 12, 0, 12),
                 alignment=ft.Alignment.CENTER,
@@ -3184,7 +3197,7 @@ def main(page: ft.Page):
 
         montar_chips_tipo()
 
-        erro = ft.Text(value="", color="#A32D2D", size=12)
+        erro = ft.Text(value="", color=cores.texto_erro, size=12)
 
         def salvar(e):
             nome = campo_nome.value.strip() if campo_nome.value else ""
@@ -3231,21 +3244,21 @@ def main(page: ft.Page):
         cabecalho = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
-                ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color="#0B1410",
+                ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
                               on_click=lambda e: mostrar_tela_principal()),
-                ft.Text("Nova conta", size=18, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                ft.Text("Nova conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                 ft.Container(width=40),
             ],
         )
 
         cartao_tipo = ft.Container(
-            bgcolor="white",
+            bgcolor=cores.fundo_card,
             border_radius=12,
             padding=14,
             content=ft.Column(
                 spacing=8,
                 controls=[
-                    ft.Text("Tipo de conta", size=14, weight=ft.FontWeight.BOLD, color="#0B1410"),
+                    ft.Text("Tipo de conta", size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                     linha_tipo,
                 ],
             ),
@@ -3266,7 +3279,7 @@ def main(page: ft.Page):
                             campo_valor,
                             ft.Row(controls=[
                                 campo_data,
-                                ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color="#1D9E75",
+                                ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color=cores.acao_primaria,
                                               on_click=abrir_seletor_data),
                             ]),
                             campo_categoria,
@@ -3278,8 +3291,8 @@ def main(page: ft.Page):
                             erro,
                             ft.Button(
                                 content="Salvar conta",
-                                bgcolor="#1D9E75",
-                                color="white",
+                                bgcolor=cores.acao_primaria,
+                                color=cores.texto_sobre_acao,
                                 on_click=salvar,
                             ),
                         ],
@@ -3293,4 +3306,5 @@ def main(page: ft.Page):
     mostrar_tela_login()
 
 
-ft.run(main)
+if __name__ == "__main__":
+    ft.run(main)
