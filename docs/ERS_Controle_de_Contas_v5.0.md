@@ -5,8 +5,8 @@
 **Autora:** Carinne Batista
 **Versão:** 5.0
 **Data original:** 28 de julho de 2025
-**Data desta revisão:** 1 de setembro de 2026 (última alteração pontual: 5 de setembro de 2026, decisão D7 — ver seção 14)
-**Status:** Especificação para revisão e aprovação — **nenhuma alteração de código, banco de dados ou interface foi realizada nesta etapa**
+**Data desta revisão:** 1 de setembro de 2026 (última alteração pontual: 5 de setembro de 2026, decisão D7; fechamento documental pós-implementação: 22 de setembro de 2026 — ver seção 14)
+**Status:** Implementação concluída e auditada. Auditoria final de rastreabilidade realizada em 22/09/2026, confrontando cada requisito com o código e o banco de dados reais — ver seção 14 ("Fechamento da v5.0 — Auditoria Final").
 
 ---
 
@@ -18,7 +18,7 @@ Esta versão representa uma **revisão estrutural completa** da ERS, motivada pr
 2. Corrigir uma limitação de modelagem de dados (`contas.serie_id` autorreferenciado) que impede excluir a primeira ocorrência de uma série, alterar a frequência de uma série ou representar séries sem término;
 3. Introduzir a **data efetiva de pagamento**, distinta da data de vencimento;
 4. Formalizar a identidade visual das categorias (emoji e cor), a lista de categorias pré-criadas e o limite de 30 categorias;
-5. Corrigir a redação do RF05, resolvendo a pendência registrada na v4.1 (não altera comportamento, apenas alinha a redação ao que já está implementado);
+5. Corrigir a redação do RF05, resolvendo a pendência registrada na v4.1 — **nota de fechamento (22/09/2026):** ao contrário do que se presumia nesta revisão original, o título dinâmico da Tela Principal não estava implementado antes desta ERS; a auditoria final identificou a lacuna e o comportamento foi efetivamente construído no fechamento desta versão (ver seções 5.15, 12 e 14);
 6. Substituir textos técnicos/artificiais da interface (contagem de dias, lista de atrasadas ocupando a Tela Principal) por linguagem natural e por um fluxo dedicado.
 
 Esta versão **não copia a v4.1 e acrescenta texto**: os requisitos foram reorganizados, redundâncias entre RF12/RF25 (Total do Mês / Contas atrasadas) e RF17 (resumo de 7 dias) foram eliminadas, e nenhum novo RF foi criado para funcionalidades que um RF existente já cobria (por exemplo, sugestões de emoji continuam sob o RF18, que já previa ícone pré-definido).
@@ -41,9 +41,9 @@ Esta revisão (**consolidação final**, 01/09/2026) fecha as decisões de produ
 | Documento | Especificação de Requisitos de Software (ERS) |
 | Versão | 5.0 |
 | Autora | Carinne Batista |
-| Data desta revisão | 01/09/2026 (última alteração pontual: 05/09/2026, decisão D7) |
+| Data desta revisão | 01/09/2026 (última alteração pontual: 05/09/2026, decisão D7; fechamento documental: 22/09/2026) |
 | Versão anterior | 4.1 (27/08/2026) |
-| Status desta versão | Em revisão — aguardando aprovação antes de qualquer implementação |
+| Status desta versão | Implementação concluída e auditada — ver seção 14 ("Fechamento da v5.0 — Auditoria Final") |
 
 O histórico completo de versões está na seção final deste documento.
 
@@ -175,9 +175,7 @@ Esta regra está fechada e não deve ser reaberta durante a implementação. A f
 
 ## 5.6 Escopo de edição de valor, nome ou data (RF20)
 
-Ao editar nome, valor ou data de vencimento de uma ocorrência que pertence a uma série, o sistema pergunta:
-
-**"Aplicar alteração a:"**
+Ao editar nome, valor ou data de vencimento de uma ocorrência que pertence a uma série, o sistema pergunta ao usuário como aplicar a alteração — por exemplo, com a pergunta **"Aplicar alteração a:"** (o texto exato da interface é uma decisão de UX, não uma exigência literal deste requisito, desde que a intenção fique clara para o usuário) — oferecendo duas opções:
 
 * **Somente este mês** — altera apenas a ocorrência selecionada. Continua sendo a opção pré-selecionada por padrão.
 * **Este mês em diante** — altera a ocorrência selecionada e as ocorrências futuras da série (`data_vencimento >= ocorrência selecionada`).
@@ -196,9 +194,7 @@ A mensagem deve refletir os campos realmente alterados (pode ser só valor, só 
 
 ## 5.7 Excluir ocorrência de uma série (RF08)
 
-Ao excluir uma conta que pertence a uma série, o sistema pergunta:
-
-**"O que você deseja excluir?"**
+Ao excluir uma conta que pertence a uma série, o sistema pergunta ao usuário o que excluir — por exemplo, com a pergunta **"O que você deseja excluir?"** (o texto exato da interface é uma decisão de UX, não uma exigência literal deste requisito, desde que a intenção fique clara para o usuário) — oferecendo três opções:
 
 * **Somente este mês** — exclui apenas a ocorrência selecionada.
 * **Este mês em diante** — exclui a ocorrência selecionada e as ocorrências futuras da série. Ocorrências anteriores permanecem no histórico.
@@ -320,7 +316,11 @@ Mantém-se o princípio já estabelecido na v4.0/v4.1: contas atrasadas são ind
 
 ## 5.15 Contas do mês selecionado (RF05)
 
-Na Tela Principal e na tela "Ver todas as contas", quando um mês está selecionado, a listagem exibe as contas com vencimento naquele mês, com um título dinâmico — por exemplo, **"Suas contas de setembro"** — refletindo o mês selecionado. Isso corrige a redação do RF05 da v4.1 (que dizia "listar todas as contas do usuário logado"), alinhando o texto do requisito ao comportamento já implementado, sem alterar esse comportamento.
+Na Tela Principal e na tela "Ver todas as contas", quando um mês está selecionado, a listagem exibe as contas com vencimento naquele mês.
+
+Na Tela Principal, o cabeçalho da lista de contas é dinâmico e reflete o mês selecionado — **"Suas contas de setembro"**. Este comportamento foi implementado no fechamento desta versão (22/09/2026): antes, o cabeçalho era um texto estático ("Suas contas"), independente do mês selecionado no seletor logo acima. Na tela "Ver todas as contas", o título permanece no formato "{Mês} {Ano}" (ex.: "Setembro 2026"), já dinâmico desde antes desta correção e mantido sem alteração — por decisão de produto, a mudança desta versão ficou restrita ao cabeçalho da Tela Principal.
+
+Isso corrige a redação do RF05 da v4.1 (que dizia "listar todas as contas do usuário logado"), alinhando o texto do requisito ao comportamento agora efetivamente implementado.
 
 ## 5.16 Total do mês (RF12) — mantido sem alteração
 
@@ -532,13 +532,13 @@ A migração deve preservar integralmente os dados atuais (RNF08). Proposta:
 4. Remover a restrição de chave estrangeira autorreferenciada em `contas.serie_id` e recriá-la apontando para `series_recorrencia(id)`.
 5. Remover as colunas `contas.conta_fixa` e `contas.repetir_ate` após a migração (decisão fechada — seção 9.2): toda a informação de recorrência passa a residir em `series_recorrencia`, e uma ocorrência é identificada como parte de uma série por `serie_id IS NOT NULL`.
 
-Esta migração não deve ser executada nesta etapa; fica registrada aqui como o desenho de referência para quando a implementação for aprovada.
+**Nota de fechamento (22/09/2026):** esta migração foi executada (backup pré-migração registrado em `database/backups/`); a auditoria final de rastreabilidade confirmou, contra o banco real, ausência de `contas.conta_fixa`/`contas.repetir_ate`, presença de `data_pagamento`/`editado_individualmente`/`categorias.cor`, e zero órfãos/violações de chave estrangeira (RNF08 atendido). Os passos acima permanecem registrados como o desenho de referência efetivamente seguido, não como uma migração ainda pendente.
 
 ---
 
 # 10. Casos de Teste
 
-Todos os casos abaixo estão **especificados, ainda não implementados**, exceto onde indicado que o comportamento já existe hoje e deve apenas ser preservado.
+Todos os casos abaixo foram **especificados nesta revisão e confirmados como implementados e validados na auditoria final de fechamento (22/09/2026, ver seção 14)**, exceto os que dependem de funcionalidades explicitamente fora do escopo da v5.0 (gráficos financeiros, RF21–RF23 — nenhum caso desta tabela depende deles). Casos marcados como "preservado"/equivalentes a versões anteriores já existiam e apenas foram confirmados como mantidos.
 
 | ID | Descrição | Resultado Esperado | Equivalente v4.1 |
 |---|---|---|---|
@@ -607,6 +607,8 @@ A v5.0 é considerada atendida quando, para cada frente:
 * **Categorias:** o catálogo de 11 categorias pré-criadas existe desde o primeiro acesso; o limite de 30 é respeitado; cores nunca colidem entre categorias ativas do mesmo usuário; emoji e cor liberados são reutilizáveis; o seletor de categoria em Nova Conta/Edição reflete somente categorias existentes; o sistema informa quando não há cor disponível (CT17–CT22, CT38, CT39).
 * **UX de vencimento e atraso:** nenhuma mensagem de vencimento usa a forma "X dia(s)"; a Tela Principal usa banner + tela dedicada para atrasadas (CT25–CT30).
 * **RF05:** o título da lista de contas reflete o mês selecionado (CT31).
+* **RF15:** o cadastro exige aceite explícito dos Termos de Uso e da Política de Privacidade (checkbox obrigatório, exibido somente no modo Cadastro); sem esse aceite, a conta não é criada; o aceite só é registrado quando efetivamente fornecido pelo usuário.
+* **Segurança de senhas (RNF05):** senhas são armazenadas com PBKDF2-HMAC-SHA256 e salt aleatório individual por usuário, nunca em texto puro; hashes no formato legado (anteriores a esta correção) continuam autenticando normalmente e são automaticamente atualizados para o novo formato logo após o primeiro login correto, sem exigir ação do usuário. Validado tanto por testes dedicados quanto pela coexistência real dos dois formatos no banco em uso.
 * **Migração:** nenhuma conta, categoria ou usuário existente é perdido ao migrar para a nova arquitetura de séries (RNF08).
 
 ---
@@ -618,7 +620,7 @@ Para cada RF da v4.1, o que ocorre nesta versão:
 | RF (v4.1) | Situação na v5.0 |
 |---|---|
 | RF01–RF04 | Permanecem inalterados. |
-| RF05 | Alterado (redação) — resolve a pendência registrada na v4.1 (seção "Ponto pendente para revisão de requisito"), sem mudança de comportamento. |
+| RF05 | Alterado (redação) — resolve a pendência registrada na v4.1. **Atendido.** O título dinâmico da Tela Principal ("Suas contas de {mês}") não existia antes desta versão (o cabeçalho era estático) e foi implementado no fechamento desta ERS; a tela "Ver todas as contas" manteve seu título já dinâmico ("{Mês} {Ano}"), sem alteração (ver seção 5.15). |
 | RF06 | Estendido — ganha data efetiva de pagamento. Depende de novo campo `data_pagamento` (não depende da nova arquitetura de séries). |
 | RF07 | Permanece inalterado. |
 | RF08 | Alterado — ganha a terceira opção "Cancelar" (já existente na prática como fechar o diálogo) formalizada, e passa a funcionar para a primeira ocorrência da série. **Depende da nova arquitetura de séries (seção 9).** |
@@ -628,7 +630,8 @@ Para cada RF da v4.1, o que ocorre nesta versão:
 | RF12 | Permanece inalterado. |
 | RF13 | Permanece inalterado. |
 | RF14 | Estendido — catálogo pré-criado e limite de 30. |
-| RF15, RF16 | Permanecem inalterados. |
+| RF15 | **Atendido** — implementado no fechamento desta versão. Apesar do rótulo "inalterado" herdado da v4.1, o requisito nunca teve interface de consentimento: `termos_aceitos_em` era preenchido automaticamente em todo cadastro, sem checkbox nem bloqueio. Agora o cadastro exige aceite explícito (checkbox obrigatório, cadastro bloqueado sem aceite, registro só quando efetivamente fornecido) — ver critério de aceitação correspondente em §11. Conteúdo jurídico, tela dedicada, versionamento e reconsentimento permanecem fora do escopo desta versão (observação para v6.0). |
+| RF16 | **Não aplicável à versão atual — condicionado à versão mobile.** O login por biometria é uma funcionalidade opcional e condicionada à execução do Sino em dispositivo móvel compatível. A versão atual do projeto não contempla distribuição mobile. Portanto, o RF16 não constitui pendência da ERS v5.0 e deverá ser reavaliado caso uma versão mobile do aplicativo seja desenvolvida. |
 | RF17 | Alterado (linguagem e plural/singular). |
 | RF18 | Estendido — formaliza sugestões de emoji (já previstas conceitualmente) e adiciona cor. |
 | RF19 | Permanece inalterado. |
@@ -648,7 +651,7 @@ Para cada RF da v4.1, o que ocorre nesta versão:
 
 | Etapa | Depende de | Observação |
 |---|---|---|
-| 1. Revisão e aprovação desta ERS | — | Etapa atual. Nenhum código alterado até aprovação. |
+| 1. Revisão e aprovação desta ERS | — | Concluída. |
 | 2. Migração de arquitetura (`series_recorrencia`, `data_pagamento`, `categorias.cor`) | Etapa 1 | Pré-requisito de RF08, RF10, RF27, RF28, RF29. Deve seguir o plano da seção 9.5 e respeitar RNF08. |
 | 3. Recorrência mensal/anual sem arrasto e sem término obrigatório (RF10) | Etapa 2 | Inclui geração incremental (seção 9.4). |
 | 4. Ações granulares sobre séries: exclusão (RF08), alteração de frequência (RF27), transformar em recorrente (RF28), encerrar recorrência (RF29, revisão D7) | Etapa 2 | Depende da nova arquitetura já estar disponível. |
@@ -657,7 +660,11 @@ Para cada RF da v4.1, o que ocorre nesta versão:
 | 7. UX: banner de atrasadas + tela dedicada (RF25), mensagens naturais (RF11/RF17), título dinâmico (RF05), seletor visual de término (RF10), indicação de posição adaptada ao tipo de série (RF26) | Etapas 3–6 | Majoritariamente mudanças de interface sobre dados já existentes ou já migrados. |
 | 8. Testes | Etapas 2–7 | Cobrir a tabela da seção 10. |
 
-Itens já entregues antes desta ERS (RF01–04, RF07, RF09, RF12, RF13, RF15, RF19, CRUD básico de categorias) permanecem como estão e não fazem parte deste plano.
+**Nota de fechamento (22/09/2026):** todas as etapas acima (1–8) estão concluídas. A auditoria final de rastreabilidade (seção 14) confirmou, requisito a requisito, que o código e o banco de dados reais correspondem ao planejado nesta tabela.
+
+Itens já entregues antes desta ERS (RF01–04, RF07, RF09, RF12, RF13, RF19, CRUD básico de categorias) permanecem como estão e não fazem parte deste plano.
+
+RF05 e RF15, apesar de rotulados como "inalterado"/"já entregue" em revisões anteriores desta ERS, exigiram implementação real no fechamento desta versão: o comportamento descrito no texto do requisito não correspondia ao código até a auditoria final de rastreabilidade (22/09/2026, ver seção 14). Essa divergência entre rótulo histórico e comportamento real foi identificada e corrigida nesse fechamento — ver seção 12 para o estado final de cada um.
 
 ---
 
@@ -690,6 +697,21 @@ Os pontos abaixo são **decisões de implementação** (não de produto) e não 
 * Gatilho técnico exato da geração sob demanda (seção 9.4) — síncrono na consulta, ou geração antecipada de um bloco maior;
 * Paleta definitiva de cores (códigos hex/RGB) e ajustes finos de nomes/emojis das categorias pré-criadas (seções 5.12, 5.13) — explicitamente deferidos para a etapa de implementação/UX por decisão já tomada, não é um ponto pendente de aprovação de produto.
 
+## Fechamento da v5.0 — Auditoria Final (22/09/2026)
+
+Após a implementação, foi realizada uma auditoria final confrontando cada requisito da v5.0 (Regras de Negócio §5.1–§5.20, Requisitos Funcionais RF01–RF29, Requisitos Não Funcionais RNF01–RNF08) diretamente com o código (`backend/main.py`, `database/db.py`) e com o schema/dados reais de `database/sino.db` — não apenas com os rótulos históricos de rastreabilidade desta ERS, que em alguns pontos não refletiam o estado real do código. As divergências encontradas foram corrigidas nesta revisão documental. Resumo do fechamento:
+
+* **RF05** — implementado (título dinâmico da Tela Principal). Ver seção 5.15 e rastreabilidade (seção 12).
+* **RF15** — implementado (aceite obrigatório dos Termos de Uso/Política de Privacidade no cadastro). Ver rastreabilidade (seção 12) e critério de aceitação (seção 11). Conteúdo jurídico completo, tela dedicada, versionamento do texto aceito e reconsentimento **não fazem parte desta versão** — permanecem como observação para uma futura ERS v6.0.
+* **RF16** — **não aplicável à versão atual, condicionado à versão mobile.** O login por biometria é uma funcionalidade opcional e condicionada à execução do Sino em dispositivo móvel compatível. A versão atual do projeto não contempla distribuição mobile. Portanto, o RF16 não constitui pendência da ERS v5.0 e deverá ser reavaliado caso uma versão mobile do aplicativo seja desenvolvida — sem presumir, desde já, que ele fará parte de uma eventual ERS v6.0.
+* **RF21–RF23** (gráficos financeiros) — confirmados como não implementados, permanecendo **explicitamente fora do escopo da v5.0** (ver seção 3, Escopo). Esta ausência não impede o fechamento desta versão.
+* **RNF05** — **atendido.** Senhas passaram a ser armazenadas com PBKDF2-HMAC-SHA256 e salt aleatório individual por usuário (nunca em texto puro), com compatibilidade para hashes no formato legado (anteriores a esta correção) e rehash automático para o formato novo logo após o primeiro login correto de cada conta, sem exigir nenhuma ação do usuário nem migração manual dos dados existentes. Ver critério de aceitação correspondente em seção 11, dada a relevância deste ponto para a segurança do sistema.
+* **RNF06** (operações comuns em até 2 segundos) — mantido como requisito, sem alteração de texto. Nenhuma evidência de violação foi encontrada na auditoria, mas **não foi realizado um benchmark formal** desta versão contra o critério de 2 segundos; a ausência de medição é registrada aqui como uma limitação da validação realizada, não como uma falha funcional comprovada.
+* **RNF07** (cópia de segurança local) — **atendido dentro do escopo restrito já existente.** O requisito, com redação genérica ("manter cópia de segurança local dos dados"), não define frequência, gatilho ou política de retenção. A implementação atual mantém um mecanismo de backup local acionado antes de migrações de schema (proteção da migração para a arquitetura de séries desta ERS). Uma rotina de backup periódico/automático, com política formal de frequência e retenção, não é exigida por este requisito na redação atual e fica registrada como observação para especificação futura (ERS v6.0), não como pendência desta versão.
+* **RF08/RF20** — os textos de diálogo citados nas seções 5.6/5.7 (por exemplo, "Aplicar alteração a:" e "O que você deseja excluir?") foram ajustados nesta revisão para deixar explícito que descrevem a intenção do diálogo, não uma exigência literal de texto de interface — mesmo tratamento já dado a emoji/cor de categorias (seções 5.12/5.13). O comportamento funcional (opções, escopo, proteção de histórico) já estava correto e não foi alterado.
+
+**Nenhum requisito novo foi criado nesta auditoria.** As correções acima são exclusivamente de rastreabilidade/redação, refletindo comportamento já implementado e validado manualmente antes desta revisão documental.
+
 ---
 
 # Histórico de Versões
@@ -702,3 +724,4 @@ Os pontos abaixo são **decisões de implementação** (não de produto) e não 
 | 4.0 | 21/08/2026 | Revisão baseada na implementação da Tela Nova Conta: filtro do Total do Mês, contas atrasadas vinculadas ao mês original, seção "Contas atrasadas", indicação de parcela. Seção de rastreabilidade introduzida. |
 | 4.1 | 27/08/2026 | Revisão documental: RF09 simplificado (remoção do filtro de proximidade), alinhamento textual do RF17, atualização da rastreabilidade, registro da pendência do RF05. |
 | 5.0 | 01/09/2026 | Revisão estrutural completa: recorrência única/mensal/anual sem arrasto, com término opcional (RF10); arquitetura de séries aprovada (`series_recorrencia`) para corrigir a limitação do `serie_id` autorreferenciado, habilitando exclusão da primeira ocorrência, alteração de frequência (RF27, novo) e remoção de recorrência (RF29, novo) sem excluir ocorrências; transformação de conta avulsa em recorrente (RF28, novo); data efetiva de pagamento (RF06 estendido); catálogo de 11 categorias pré-criadas e limite de 30 (RF14 estendido); emoji sugerido e cor exclusiva por categoria (RF18 estendido); banner de contas em atraso com tela dedicada substituindo a lista embutida (RF25); mensagens de vencimento em linguagem natural com singular/plural corretos (RF11/RF17); correção da redação do RF05, resolvendo a pendência da v4.1. **Consolidação final (mesma data):** fechadas as decisões de RF26 (Parcela X de Y para séries com término, Parcela X para séries sem término — seção 5.19), geração integral de séries com término sem cap de 12 meses (seção 5.3, corrige inconsistência C1 da auditoria), ajuste das ocorrências futuras ao alterar a frequência de uma série (RF27, seção 5.5), geração sob demanda ao navegar para períodos futuros de séries sem término (seção 5.20, substitui a ideia de rotina periódica), disponibilidade das categorias no seletor de conta (seção 5.11), e remoção de `conta_fixa`/`repetir_ate` de `contas` em favor da entidade de série (seção 9.2). **Segunda rodada da consolidação final (mesma data):** registrada a decisão de que edição individual de uma ocorrência ("Somente este mês") prevalece sobre ajuste mecânico futuro da série, incluindo alteração de frequência (RF27, seções 5.1 e 5.5); removida a falsa pendência sobre `data_pagamento` histórico pré-migração — não há dados de produção a tratar (seção 9.5). Seção 14 não lista mais nenhuma decisão de produto em aberto, apenas pontos de implementação. Nenhuma alteração de código, banco de dados ou interface foi realizada nesta etapa — esta versão é somente especificação. **Decisão D7 (05/09/2026):** revisão de RF29/§5.8 após validação manual — "Remover recorrência" passa a se chamar "Encerrar recorrência" e passa a remover ocorrências futuras ainda não realizadas a partir da ocorrência selecionada (o que a redação anterior proibia), preservando sempre o histórico já ocorrido, a ocorrência selecionada, e ocorrências futuras com informação histórica relevante (pagas, com data de pagamento, ou editadas individualmente). Ver seção 14 para o registro completo da decisão; nenhuma outra decisão (D1–D6) foi reaberta. |
+| 5.0 | 22/09/2026 | **Fechamento documental pós-implementação.** Auditoria final de rastreabilidade confrontando toda a ERS (Regras de Negócio, RFs, RNFs) com o código e o banco de dados reais. RF05 e RF15 corrigidos de "inalterado"/"já entregue" para "atendido", com a implementação real registrada (título dinâmico da Tela Principal e aceite obrigatório dos Termos de Uso/Política de Privacidade, respectivamente); RF16 registrado como "não aplicável à versão atual — condicionado à versão mobile"; RF21–RF23 confirmados fora do escopo da v5.0; RNF05 registrado como atendido (PBKDF2-HMAC-SHA256 com salt individual e migração automática de hashes legados); RNF07 documentado dentro do escopo restrito já existente (backup de proteção da migração, sem rotina periódica); RNF06 registrado sem benchmark formal, sem falha comprovada; textos de diálogo das seções 5.6/5.7 ajustados para não exigir frase literal. Ver seção 14 ("Fechamento da v5.0 — Auditoria Final") para o registro completo. Nenhum requisito novo foi criado nesta revisão. |
