@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/capasino_github.png" alt="Sino — Controle de contas pessoais" width="100%">
+</p>
+
 # 🔔 Sino
 
 **Controle de contas pessoais, simples e sem surpresas no fim do mês.**
