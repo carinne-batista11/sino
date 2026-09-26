@@ -6,7 +6,6 @@ import sqlite3
 import hashlib
 import os
 import secrets
-import shutil
 from datetime import date, datetime, timedelta
 from calendar import monthrange
 
@@ -21,16 +20,52 @@ def conectar():
 
 
 def criar_tabelas():
-    conexao = conectar()
-    cursor = conexao.cursor()
+    """
+    Cria o schema v6 (ERS v6.0, 9.2) em um banco novo. Em um banco que já
+    existe, `CREATE TABLE IF NOT EXISTS` não acrescenta colunas; por isso o
+    índice case-insensitive de e-mail e o `user_version` só são gravados
+    quando `usuarios` nasce nesta chamada. Um banco v5 existente permanece
+    intocado até `migrar_schema_v6()` ser executada (com backup).
 
+    Tudo roda em uma única transação (em modo legado, o sqlite3 do Python
+    faria autocommit de cada DDL): um banco novo nunca fica com as tabelas
+    criadas e sem o índice/`user_version`. `BEGIN` diferido: sobre um banco
+    existente, os `IF NOT EXISTS` só leem o schema e nada é gravado.
+    """
+    conexao = conectar()
+    conexao.isolation_level = None  # DDL em uma única transação explícita
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN;")
+        banco_novo = not _tabela_existe(cursor, "usuarios")
+        _criar_tabelas_v6(cursor, banco_novo)
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+
+def _reverter_transacao(conexao):
+    """ROLLBACK que nunca mascara a exceção original; close() descarta o resto."""
+    if conexao.in_transaction:
+        try:
+            conexao.execute("ROLLBACK;")
+        except sqlite3.Error:
+            pass
+
+
+def _criar_tabelas_v6(cursor, banco_novo):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE,
             senha_hash TEXT NOT NULL,
-            termos_aceitos_em TEXT NOT NULL
+            termos_aceitos_em TEXT NOT NULL,
+            email_verificado INTEGER NOT NULL DEFAULT 0 CHECK (email_verificado IN (0, 1)),
+            tema TEXT NOT NULL DEFAULT 'claro' CHECK (tema IN ('claro', 'escuro'))
         )
     """)
 
@@ -59,6 +94,7 @@ def criar_tabelas():
             data_termino TEXT,
             ativa INTEGER NOT NULL DEFAULT 1,
             horizonte_gerado_ate TEXT NOT NULL,
+            descricao TEXT,
 
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
             FOREIGN KEY (categoria_id) REFERENCES categorias(id),
@@ -80,6 +116,7 @@ def criar_tabelas():
             status TEXT NOT NULL DEFAULT 'pendente',
             data_pagamento TEXT,
             editado_individualmente INTEGER NOT NULL DEFAULT 0,
+            descricao TEXT,
 
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
             FOREIGN KEY (categoria_id) REFERENCES categorias(id),
@@ -96,23 +133,48 @@ def criar_tabelas():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_contas_serie ON contas(serie_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_series_usuario ON series_recorrencia(usuario_id);")
 
-    conexao.commit()
-    conexao.close()
+    if banco_novo:
+        cursor.execute(f"CREATE UNIQUE INDEX {INDICE_EMAIL_CI} ON usuarios(lower(email));")
+        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V6};")
 
 
-def criar_backup(caminho_banco=None):
+def criar_backup(caminho_banco=None, rotulo="v5"):
     """
-    Copia o arquivo do banco para database/backups/ com timestamp no nome,
-    antes de qualquer migração destrutiva de schema. Retorna o caminho do
+    Copia o banco para database/backups/ com timestamp no nome, antes de
+    qualquer migração de schema. Usa a API de backup do SQLite (cópia
+    consistente página a página, mesmo com outra conexão aberta) e nunca
+    sobrescreve um backup anterior do mesmo segundo. Retorna o caminho do
     backup criado, ou None se o arquivo do banco ainda não existir.
+
+    `rotulo` entra no nome do arquivo (`sino_pre_migracao_<rotulo>_...`);
+    o padrão "v5" mantém o nome usado por `migrar_schema_v5()`.
     """
     caminho_banco = caminho_banco or NOME_DO_BANCO
     if not os.path.exists(caminho_banco):
         return None
     os.makedirs(PASTA_BACKUPS, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    caminho_backup = os.path.join(PASTA_BACKUPS, f"sino_pre_migracao_v5_{timestamp}.db")
-    shutil.copy2(caminho_banco, caminho_backup)
+    base = os.path.join(PASTA_BACKUPS, f"sino_pre_migracao_{rotulo}_{timestamp}")
+    caminho_backup = f"{base}.db"
+    sufixo = 1
+    while os.path.exists(caminho_backup):
+        caminho_backup = f"{base}_{sufixo}.db"
+        sufixo += 1
+
+    try:
+        origem = sqlite3.connect(caminho_banco)
+        try:
+            destino = sqlite3.connect(caminho_backup)
+            try:
+                origem.backup(destino)
+            finally:
+                destino.close()
+        finally:
+            origem.close()
+    except BaseException:
+        if os.path.exists(caminho_backup):
+            os.remove(caminho_backup)  # nunca deixar um backup incompleto no disco
+        raise
     return caminho_backup
 
 
@@ -371,6 +433,442 @@ def validar_migracao_v5(caminho_banco=None):
     return resultado
 
 
+# ERS v6.0, 9.2: alterações aditivas de schema. Cada item é detectado
+# individualmente, para que a migração complete estados parciais e possa
+# ser executada repetidas vezes. Cada coluna leva a definição usada no
+# ALTER TABLE e o que `PRAGMA table_info` deve devolver para ela
+# (tipo, notnull, default) -- uma coluna homônima com outra definição não
+# é aceita como "já migrada".
+VERSAO_SCHEMA_V6 = 6
+INDICE_EMAIL_CI = "idx_usuarios_email_ci"
+COLUNAS_V6 = (
+    ("contas", "descricao", "TEXT", ("TEXT", 0, None)),
+    ("series_recorrencia", "descricao", "TEXT", ("TEXT", 0, None)),
+    ("usuarios", "email_verificado",
+     "INTEGER NOT NULL DEFAULT 0 CHECK (email_verificado IN (0, 1))", ("INTEGER", 1, "0")),
+    ("usuarios", "tema",
+     "TEXT NOT NULL DEFAULT 'claro' CHECK (tema IN ('claro', 'escuro'))", ("TEXT", 1, "'claro'")),
+)
+TABELAS_V5 = ("usuarios", "categorias", "series_recorrencia", "contas")
+# Colunas do schema v5.0. Um banco só é tratado como v5 se cada tabela tiver
+# exatamente estas colunas (mais as da v6 já presentes, em estado parcial);
+# um schema anterior (ex.: v4.1, com `conta_fixa`/`repetir_ate`) ou
+# desconhecido é recusado, nunca "migrado" só por não ser v6.
+COLUNAS_V5 = {
+    "usuarios": ("id", "nome", "email", "senha_hash", "termos_aceitos_em"),
+    "categorias": ("id", "usuario_id", "nome", "icone", "cor"),
+    "series_recorrencia": (
+        "id", "usuario_id", "nome", "valor", "categoria_id", "frequencia", "dia_ancora",
+        "mes_ancora", "data_inicio", "data_termino", "ativa", "horizonte_gerado_ate",
+    ),
+    "contas": (
+        "id", "usuario_id", "categoria_id", "serie_id", "nome", "valor", "data_vencimento",
+        "status", "data_pagamento", "editado_individualmente",
+    ),
+}
+# user_version que esta versão do app sabe tratar: 0 (bancos anteriores ao
+# controle de versão, validados estruturalmente como v5) e 6.
+VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6)
+
+
+class ColisaoDeEmailError(RuntimeError):
+    """
+    Há e-mails que só diferem em maiúsculas/minúsculas, o que impede o
+    índice UNIQUE por lower(email). `grupos_ids` lista os ids de cada grupo
+    em colisão; nenhum e-mail aparece na mensagem nem é modificado.
+    """
+
+    def __init__(self, grupos_ids):
+        self.grupos_ids = grupos_ids
+        descricao = "; ".join(", ".join(str(i) for i in grupo) for grupo in grupos_ids)
+        super().__init__(
+            "Migração v6 abortada: e-mails que colidem sem diferenciar maiúsculas "
+            f"de minúsculas (ids de usuários por grupo: {descricao}). Nenhuma alteração foi feita."
+        )
+
+
+class SchemaV6IncompativelError(RuntimeError):
+    """
+    Já existe um objeto com o nome de um item da v6 (coluna ou índice), mas
+    com definição diferente da esperada. A migração não o aceita como
+    migrado nem o substitui: `problemas` descreve cada divergência, e a
+    correção fica a cargo de uma intervenção manual.
+    """
+
+    def __init__(self, problemas):
+        self.problemas = problemas
+        super().__init__(
+            "Migração v6 abortada: schema incompatível ("
+            + "; ".join(problemas)
+            + "). Nenhuma alteração foi feita."
+        )
+
+
+class VersaoDeBancoNaoSuportadaError(RuntimeError):
+    """
+    `PRAGMA user_version` fora de VERSOES_SUPORTADAS -- em especial, um banco
+    de uma versão mais nova do Sino. Detectado antes de qualquer escrita:
+    nada é migrado, alterado ou copiado para backup.
+    """
+
+    def __init__(self, versao):
+        self.versao = versao
+        origem = "de uma versão mais nova do Sino" if versao > VERSAO_SCHEMA_V6 else "desconhecida"
+        super().__init__(
+            f"Banco com user_version = {versao} ({origem}); esta versão do Sino só abre "
+            f"bancos com user_version {' ou '.join(map(str, VERSOES_SUPORTADAS))}. "
+            "Nenhuma alteração foi feita."
+        )
+
+
+def _exigir_versao_suportada(cursor):
+    cursor.execute("PRAGMA user_version")
+    versao = cursor.fetchone()[0]
+    if versao not in VERSOES_SUPORTADAS:
+        raise VersaoDeBancoNaoSuportadaError(versao)
+    return versao
+
+
+def _divergencias_schema_v5(cursor):
+    """Tabelas cujas colunas não são exatamente as da v5 (+ as da v6 já presentes)."""
+    problemas = []
+    for tabela, colunas_v5 in COLUNAS_V5.items():
+        cursor.execute(f"PRAGMA table_info({tabela})")
+        existentes = {linha[1] for linha in cursor.fetchall()}
+        colunas_v6 = {coluna for t, coluna, _, _ in COLUNAS_V6 if t == tabela}
+        faltando = [c for c in colunas_v5 if c not in existentes]
+        desconhecidas = sorted(existentes - set(colunas_v5) - colunas_v6)
+        if faltando or desconhecidas:
+            problemas.append(
+                f"tabela {tabela} fora do schema v5 (faltando: {', '.join(faltando) or '-'}; "
+                f"desconhecidas: {', '.join(desconhecidas) or '-'})"
+            )
+    return problemas
+
+
+def _estado_coluna_v6(cursor, tabela, coluna, esperado):
+    """'ausente', 'valida' ou 'incompativel', pela definição em `PRAGMA table_info`."""
+    cursor.execute(f"PRAGMA table_info({tabela})")
+    for _, nome, tipo, notnull, default, _pk in cursor.fetchall():
+        if nome == coluna:
+            return "valida" if (tipo.upper(), notnull, default) == esperado else "incompativel"
+    return "ausente"
+
+
+def _estado_indice_email_ci(cursor):
+    """
+    'ausente', 'valido' ou 'incompativel'. Válido = índice UNIQUE, não
+    parcial, da tabela `usuarios`, com uma única chave, que é uma expressão
+    com colação BINARY, e que o planejador do SQLite reconhece como a
+    expressão lower(email): com `INDEXED BY`, a consulta
+    `WHERE lower(email) = ?` precisa ser uma busca (SEARCH) nesse índice. A
+    comparação é feita pelo próprio SQLite sobre a árvore da expressão, sem
+    depender da formatação do `CREATE INDEX` (espaços, maiúsculas etc.).
+    """
+    cursor.execute("SELECT type, tbl_name FROM sqlite_master WHERE name = ?", (INDICE_EMAIL_CI,))
+    objeto = cursor.fetchone()
+    if objeto is None:
+        return "ausente"
+    if objeto != ("index", "usuarios"):
+        return "incompativel"
+
+    cursor.execute("PRAGMA index_list(usuarios)")
+    # (seq, name, unique, origin, partial)
+    info = next((linha for linha in cursor.fetchall() if linha[1] == INDICE_EMAIL_CI), None)
+    if info is None or info[2] != 1 or info[4] != 0:
+        return "incompativel"
+
+    cursor.execute(f"PRAGMA index_xinfo({INDICE_EMAIL_CI})")
+    # (seqno, cid, name, desc, coll, key); cid -2 = expressão
+    chaves = [linha for linha in cursor.fetchall() if linha[5] == 1]
+    if len(chaves) != 1 or chaves[0][1] != -2 or chaves[0][4] != "BINARY":
+        return "incompativel"
+
+    try:
+        cursor.execute(
+            f"EXPLAIN QUERY PLAN SELECT id FROM usuarios INDEXED BY {INDICE_EMAIL_CI} "
+            "WHERE lower(email) = ?",
+            ("",),
+        )
+        plano = [linha[3] for linha in cursor.fetchall()]
+    except sqlite3.OperationalError:  # "no query solution": o índice não serve à consulta
+        return "incompativel"
+    busca_no_indice = any(
+        detalhe.startswith("SEARCH") and INDICE_EMAIL_CI in detalhe for detalhe in plano
+    )
+    return "valido" if busca_no_indice else "incompativel"
+
+
+def _colisoes_de_email(cursor):
+    cursor.execute(
+        """
+        SELECT GROUP_CONCAT(id) FROM usuarios
+        GROUP BY lower(email) HAVING COUNT(*) > 1
+        """
+    )
+    return sorted(sorted(int(i) for i in linha[0].split(",")) for linha in cursor.fetchall())
+
+
+def _contagens(cursor):
+    contagens = {}
+    for tabela in TABELAS_V5:
+        cursor.execute(f"SELECT COUNT(*) FROM {tabela}")
+        contagens[tabela] = cursor.fetchone()[0]
+    return contagens
+
+
+def _verificar_schema_v6(cursor):
+    resultado = {}
+    for tabela, coluna, _, esperado in COLUNAS_V6:
+        resultado[f"{tabela}.{coluna}"] = _estado_coluna_v6(cursor, tabela, coluna, esperado)
+
+    resultado["indice_email_ci"] = _estado_indice_email_ci(cursor)
+
+    cursor.execute("PRAGMA user_version")
+    resultado["user_version"] = cursor.fetchone()[0]
+
+    cursor.execute("PRAGMA integrity_check")
+    resultado["integridade"] = [linha[0] for linha in cursor.fetchall()]
+
+    cursor.execute("PRAGMA foreign_key_check")
+    resultado["violacoes_fk"] = cursor.fetchall()
+
+    resultado["ok"] = (
+        all(resultado[f"{tabela}.{coluna}"] == "valida" for tabela, coluna, _, _ in COLUNAS_V6)
+        and resultado["indice_email_ci"] == "valido"
+        and resultado["user_version"] == VERSAO_SCHEMA_V6
+        and resultado["integridade"] == ["ok"]
+        and not resultado["violacoes_fk"]
+    )
+    return resultado
+
+
+def _verificar_integridade_backup(caminho_backup):
+    try:
+        conexao = sqlite3.connect(caminho_backup)
+        try:
+            return conexao.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
+        finally:
+            conexao.close()
+    except sqlite3.DatabaseError:  # inclui "file is not a database"
+        return False
+
+
+def migrar_schema_v6(caminho_banco=None):
+    """
+    Migração de schema da v5.0 para a ERS v6.0 (seção 9.2). Totalmente
+    aditiva: nenhuma tabela é recriada e nenhum dado existente é alterado
+    (RNF08). `categoria_id = NULL` continua representando "Sem categoria".
+
+      * `contas.descricao` e `series_recorrencia.descricao` (TEXT, NULL);
+      * `usuarios.email_verificado` (0/1, padrão 0) e `usuarios.tema`
+        ('claro'/'escuro', padrão 'claro');
+      * índice UNIQUE `idx_usuarios_email_ci` em lower(email);
+      * `PRAGMA user_version = 6`.
+
+    Cada item é detectado individualmente: o que já existe com a definição
+    esperada é mantido e só o que falta é aplicado. Sem pendências, retorna
+    {"executado": False, "motivo": "já migrado"} sem criar backup. Um item
+    homônimo com definição diferente aborta com `SchemaV6IncompativelError`
+    (também quando todo o resto já estiver migrado).
+
+    Ordem, tudo dentro de `BEGIN IMMEDIATE` (nenhuma outra conexão grava a
+    partir daqui):
+      1. checagens sem escrita: `user_version` suportada
+         (`VersaoDeBancoNaoSuportadaError`), quatro tabelas com exatamente as
+         colunas da v5, itens da v6 incompatíveis (`SchemaV6IncompativelError`)
+         e colisões de e-mail sob lower(email) (`ColisaoDeEmailError`) --
+         falhas aqui abortam sem backup e sem alteração;
+      2. backup consistente, lido por outra conexão, com `integrity_check`;
+      3. alterações, com `user_version` por último;
+      4. validação de schema, integridade, FKs e contagens;
+      5. COMMIT -- o único ponto em que qualquer alteração, inclusive o
+         `user_version`, se torna visível.
+    Qualquer falha reverte tudo (ROLLBACK) e a conexão é sempre fechada; o
+    backup, se já tiver sido criado, permanece no disco.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+
+    conexao = sqlite3.connect(caminho_banco)
+    caminho_backup = None
+    try:
+        conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+
+        versao = _exigir_versao_suportada(cursor)
+
+        tabelas_ausentes = [t for t in TABELAS_V5 if not _tabela_existe(cursor, t)]
+        if tabelas_ausentes:
+            raise RuntimeError(
+                f"Schema v5 incompleto (tabelas ausentes: {', '.join(tabelas_ausentes)}); "
+                "migração v6 abortada."
+            )
+
+        problemas = _divergencias_schema_v5(cursor)
+        colunas_pendentes = []
+        for tabela, coluna, definicao, esperado in COLUNAS_V6:
+            estado = _estado_coluna_v6(cursor, tabela, coluna, esperado)
+            if estado == "ausente":
+                colunas_pendentes.append((tabela, coluna, definicao))
+            elif estado == "incompativel":
+                problemas.append(f"coluna {tabela}.{coluna} com definição diferente da esperada")
+        estado_indice = _estado_indice_email_ci(cursor)
+        if estado_indice == "incompativel":
+            problemas.append(f"objeto {INDICE_EMAIL_CI} diferente do índice UNIQUE em lower(email)")
+        if problemas:
+            raise SchemaV6IncompativelError(problemas)
+
+        indice_pendente = estado_indice == "ausente"
+        versao_pendente = versao < VERSAO_SCHEMA_V6
+
+        if not (colunas_pendentes or indice_pendente or versao_pendente):
+            cursor.execute("ROLLBACK;")
+            return {"executado": False, "motivo": "já migrado", "backup": None}
+
+        if indice_pendente:
+            colisoes = _colisoes_de_email(cursor)
+            if colisoes:
+                raise ColisaoDeEmailError(colisoes)
+
+        # Lido por outra conexão: o RESERVED lock deste BEGIN IMMEDIATE ainda
+        # permite leitura e garante que nada muda entre o backup e as alterações.
+        caminho_backup = criar_backup(caminho_banco, rotulo="v6")
+        if not _verificar_integridade_backup(caminho_backup):
+            raise RuntimeError(
+                f"Backup pré-migração v6 falhou no integrity_check ({caminho_backup}); "
+                "migração abortada."
+            )
+
+        contagens_antes = _contagens(cursor)
+
+        for tabela, coluna, definicao in colunas_pendentes:
+            cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao};")
+        if indice_pendente:
+            cursor.execute(f"CREATE UNIQUE INDEX {INDICE_EMAIL_CI} ON usuarios(lower(email));")
+        if versao_pendente:
+            cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V6};")
+
+        verificacao = _verificar_schema_v6(cursor)
+        if not verificacao["ok"] or _contagens(cursor) != contagens_antes:
+            raise RuntimeError("Validação pós-migração v6 falhou; alterações revertidas.")
+
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+    return {
+        "executado": True,
+        "backup": caminho_backup,
+        "colunas_adicionadas": [f"{tabela}.{coluna}" for tabela, coluna, _ in colunas_pendentes],
+        "indice_criado": indice_pendente,
+        "versao_atualizada": versao_pendente,
+    }
+
+
+def validar_migracao_v6(caminho_banco=None):
+    """
+    Checagens pós-migração v6 (definição das colunas novas, índice UNIQUE
+    por lower(email), user_version, integrity_check e FKs). Retorna um
+    dicionário com os resultados e a chave "ok"; só consulta o banco e não
+    cria o arquivo se ele não existir (FileNotFoundError).
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+    conexao = sqlite3.connect(caminho_banco)
+    try:
+        return _verificar_schema_v6(conexao.cursor())
+    finally:
+        conexao.close()
+
+
+class BancoNaoPreparadoError(RuntimeError):
+    """
+    O banco não passou em `validar_migracao_v6()` depois da preparação
+    (ex.: integridade ou FKs com problema em um banco já v6). `validacao`
+    guarda o resultado completo, que não contém dados pessoais.
+    """
+
+    def __init__(self, validacao):
+        self.validacao = validacao
+        falhas = [f"{tabela}.{coluna}" for tabela, coluna, _, _ in COLUNAS_V6
+                  if validacao.get(f"{tabela}.{coluna}") != "valida"]
+        if validacao.get("indice_email_ci") != "valido":
+            falhas.append("indice_email_ci")
+        if validacao.get("user_version") != VERSAO_SCHEMA_V6:
+            falhas.append("user_version")
+        if validacao.get("integridade") != ["ok"]:
+            falhas.append("integridade")
+        if validacao.get("violacoes_fk"):
+            falhas.append("violacoes_fk")
+        super().__init__(f"Banco não está pronto para a v6 (itens com problema: {', '.join(falhas)}).")
+
+
+def _banco_existente_vazio(caminho_banco):
+    """
+    Só leitura. Recusa `user_version` não suportada (VersaoDeBancoNaoSuportadaError)
+    e retorna True para um arquivo sem nenhum objeto de schema (ex.: 0 bytes).
+    """
+    conexao = sqlite3.connect(caminho_banco)
+    try:
+        cursor = conexao.cursor()
+        _exigir_versao_suportada(cursor)
+        cursor.execute("SELECT COUNT(*) FROM sqlite_master")
+        return cursor.fetchone()[0] == 0
+    finally:
+        conexao.close()
+
+
+def preparar_banco():
+    """
+    Garante, na inicialização do app, que `NOME_DO_BANCO` está pronto para a
+    v6, reutilizando `criar_tabelas()`, `migrar_schema_v6()` e
+    `validar_migracao_v6()`:
+
+      * `user_version` fora de VERSOES_SUPORTADAS (ex.: banco de uma versão
+        futura): `VersaoDeBancoNaoSuportadaError` antes de qualquer escrita;
+      * banco inexistente, ou arquivo sem nenhuma tabela: `criar_tabelas()`
+        gera o schema v6 direto, sem backup -> situação "criado";
+      * banco que já passa em `validar_migracao_v6()`: nada é gravado, nem
+        lock de escrita é pedido -> "atual";
+      * qualquer outro banco existente vai para `migrar_schema_v6()`, que
+        antes de qualquer escrita exige as quatro tabelas com exatamente as
+        colunas da v5 (+ itens da v6 compatíveis): um schema antigo ou
+        desconhecido é recusado; um v5 válido é migrado (backup, transação,
+        rollback) -> "migrado", ou "atual" se não havia nada a fazer.
+
+    `criar_tabelas()` nunca é chamada sobre um banco existente. Ao final, o
+    banco precisa passar em `validar_migracao_v6()`; caso contrário,
+    `BancoNaoPreparadoError`. Erros da migração (`ColisaoDeEmailError`,
+    `SchemaV6IncompativelError`, falhas de backup, `sqlite3.DatabaseError`
+    de arquivo inválido etc.) são propagados sem tratamento: nenhum reparo
+    silencioso, e quem chama decide como interromper o app.
+
+    Retorna {"situacao": "criado" | "migrado" | "atual", "migracao": dict | None}.
+    """
+    caminho_banco = NOME_DO_BANCO
+    migracao = None
+    if not os.path.exists(caminho_banco) or _banco_existente_vazio(caminho_banco):
+        criar_tabelas()
+        situacao = "criado"
+    elif validar_migracao_v6(caminho_banco)["ok"]:
+        return {"situacao": "atual", "migracao": None}
+    else:
+        migracao = migrar_schema_v6(caminho_banco)
+        situacao = "migrado" if migracao["executado"] else "atual"
+
+    validacao = validar_migracao_v6(caminho_banco)
+    if not validacao["ok"]:
+        raise BancoNaoPreparadoError(validacao)
+    return {"situacao": situacao, "migracao": migracao}
+
+
 # RNF05: PBKDF2-HMAC-SHA256 (stdlib, sem dependência nova) com salt aleatório
 # individual por usuário. Parâmetros nomeados em vez de números mágicos --
 # qualquer mudança futura de custo do hash fica visível e centralizada aqui.
@@ -441,6 +939,11 @@ def criar_usuario(nome, email, senha, aceite_termos=False):
     RF15: `termos_aceitos_em` só é gravado quando `aceite_termos` é True --
     representa o aceite explícito e real do usuário no cadastro (nunca um
     carimbo automático). Sem aceite, nenhuma conta é criada.
+
+    ERS v6.0: o e-mail é único sem diferenciar maiúsculas de minúsculas. A
+    consulta prévia por lower(email) mantém a regra também em bancos v5
+    ainda não migrados; em bancos v6, o índice `idx_usuarios_email_ci` a
+    garante na gravação. O e-mail é gravado como informado.
     """
     if not aceite_termos:
         return False, "É necessário aceitar os Termos de Uso e a Política de Privacidade."
@@ -450,6 +953,9 @@ def criar_usuario(nome, email, senha, aceite_termos=False):
     senha_hash = _gerar_hash_senha(senha)
     agora = date.today().isoformat()
     try:
+        cursor.execute("SELECT 1 FROM usuarios WHERE lower(email) = lower(?)", (email,))
+        if cursor.fetchone() is not None:
+            return False, "Já existe uma conta com esse e-mail."
         cursor.execute(
             "INSERT INTO usuarios (nome, email, senha_hash, termos_aceitos_em) VALUES (?, ?, ?, ?)",
             (nome, email, senha_hash, agora),
@@ -472,12 +978,22 @@ def verificar_login(email, senha):
     antes da senha ser confirmada, e nunca para contas que não fizerem
     login (não precisamos conhecer a senha delas para isso). Contrato de
     retorno inalterado: dict (id/nome/email) ou None.
+
+    ERS v6.0: a busca por e-mail não diferencia maiúsculas de minúsculas
+    (usa `idx_usuarios_email_ci` em bancos v6). `email_verificado` não
+    bloqueia o login. Em um banco v5 legado com e-mails que só diferem na
+    caixa, a correspondência exata tem prioridade.
     """
     conexao = conectar()
     cursor = conexao.cursor()
     cursor.execute(
-        "SELECT id, nome, email, senha_hash FROM usuarios WHERE email = ?",
-        (email,),
+        """
+        SELECT id, nome, email, senha_hash FROM usuarios
+        WHERE lower(email) = lower(?)
+        ORDER BY email = ? DESC, id
+        LIMIT 1
+        """,
+        (email, email),
     )
     resultado = cursor.fetchone()
     if resultado is None:

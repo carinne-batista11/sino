@@ -6,6 +6,7 @@ Tela de login/cadastro + tela de Categorias (CRUD).
 import os
 import re
 import sys
+import traceback
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "database"))
@@ -372,9 +373,52 @@ def parse_valor(texto):
     return valor if valor > 0 else None
 
 
-def main(page: ft.Page):
-    database.criar_tabelas()
+def preparar_banco_ou_exibir_erro(page):
+    """
+    ERS v6.0, Etapa 1: garante o banco pronto para a v6 antes de qualquer
+    tela que dependa dele (database.preparar_banco: cria, migra com backup
+    ou reconhece que já está atualizado). Em caso de falha, o traceback
+    completo vai para o terminal, a usuária vê só uma mensagem genérica e o
+    retorno False impede que o app siga para o login.
+    """
+    try:
+        resultado = database.preparar_banco()
+    except Exception:
+        print("Sino: falha ao preparar o banco de dados; o app não foi iniciado.", file=sys.stderr)
+        traceback.print_exc()
+        page.controls.clear()
+        page.add(
+            ft.Column(
+                controls=[
+                    ft.Icon(ft.Icons.ERROR_OUTLINE, color=cores.texto_erro, size=48),
+                    ft.Text(
+                        "Não foi possível abrir o Sino",
+                        size=20,
+                        weight=ft.FontWeight.BOLD,
+                        color=cores.texto_principal,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    ft.Text(
+                        "O Sino encontrou um problema ao preparar seus dados e foi interrompido "
+                        "para protegê-los. Nenhuma informação foi apagada. Os detalhes técnicos "
+                        "foram registrados no terminal.",
+                        size=14,
+                        color=cores.texto_secundario,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=12,
+            )
+        )
+        return False
 
+    if resultado["situacao"] == "migrado":
+        print(f"Sino: banco migrado para a v6. Backup pré-migração: {resultado['migracao']['backup']}")
+    return True
+
+
+def main(page: ft.Page):
     page.title = "Sino"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.bgcolor = cores.fundo_pagina
@@ -382,6 +426,9 @@ def main(page: ft.Page):
     page.window.height = 760
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.padding = 24
+
+    if not preparar_banco_ou_exibir_erro(page):
+        return
 
     usuario_atual = {"id": None, "nome": None}
 
