@@ -538,6 +538,59 @@ def filtrar_por_status(contas, filtro):
     return list(contas) if status is None else [c for c in contas if c["status"] == status]
 
 
+TEXTO_NAO_RECORRENTE = "Esta conta não é recorrente."
+
+
+def identificacao_categoria(categoria):
+    """
+    Etapa 4 (8.4): como a categoria identifica a conta em Detalhes. `None`
+    = "Sem categoria" (cinza, sem emoji nem substituto). Uma categoria sem
+    emoji ou sem cor mantém o próprio nome, com apresentação neutra.
+    """
+    if categoria is None:
+        return {"nome": "Sem categoria", "emoji": None, "cor": None, "sem_categoria": True}
+    return {"nome": categoria["nome"], "emoji": categoria.get("icone") or None,
+            "cor": categoria.get("cor") or None, "sem_categoria": False}
+
+
+def status_para_detalhes(conta, hoje):
+    """
+    Etapa 4 (8.4): status e ação de pagamento lado a lado em Detalhes.
+    Três status (Atrasado, Pendente, Pago); vencer hoje continua Pendente
+    ("Vence hoje" é informação de vencimento, `vence_hoje`).
+    """
+    vencimento = date.fromisoformat(conta["data_vencimento"])
+    if conta["status"] == "pago":
+        rotulo = "🟢 Pago"
+        if conta.get("data_pagamento"):
+            rotulo += f" em {date.fromisoformat(conta['data_pagamento']).strftime('%d/%m/%Y')}"
+        return {"status": "pago", "rotulo": rotulo, "acao": "Desmarcar como paga", "vence_hoje": False}
+    if conta["status"] == "atrasado":
+        return {"status": "atrasado", "rotulo": "🔴 Atrasado", "acao": "Marcar como paga", "vence_hoje": False}
+    return {"status": "pendente", "rotulo": "Pendente", "acao": "Marcar como paga",
+            "vence_hoje": vencimento == hoje}
+
+
+def status_ao_desmarcar(conta, hoje):
+    """Status de uma conta que volta a ficar em aberto: atrasada se o
+    vencimento real já passou, pendente caso contrário (5.10)."""
+    return "atrasado" if date.fromisoformat(conta["data_vencimento"]) < hoje else "pendente"
+
+
+def texto_recorrencia_detalhes(serie_ativa, info_serie):
+    """Frase de recorrência: série ativa -> frase contextual; conta única ou
+    série encerrada (tratada como avulsa, 5.8) -> TEXTO_NAO_RECORRENTE."""
+    if serie_ativa:
+        return frase_recorrencia(info_serie["frequencia"], info_serie["data_termino"])
+    return TEXTO_NAO_RECORRENTE
+
+
+def texto_parcela(parcela):
+    """(posição, total) -> "Parcela X de Y"; total None -> "Parcela X"."""
+    posicao, total = parcela
+    return f"Parcela {posicao} de {total}" if total is not None else f"Parcela {posicao}"
+
+
 def parse_valor(texto):
     texto = (texto or "").strip().replace("R$", "").strip()
     if not texto:
@@ -969,10 +1022,11 @@ def main(page: ft.Page):
         def abrir_detalhe_conta(conta, abrir_em_edicao=False):
             """
             Detalhes da conta; `abrir_em_edicao=True` (lápis da Tela
-            Principal, RF30) abre direto o formulário Editar. Nesse caminho,
-            Voltar/Cancelar e o "Entendi" depois de salvar retornam à Tela
-            Principal no mesmo mês selecionado; pelo caminho Detalhes ->
-            Editar, Voltar/Cancelar continuam retornando aos Detalhes.
+            Principal, RF30) abre direto o formulário Editar. Voltar dos
+            Detalhes, exclusão concluída e o "Entendi" depois de salvar
+            retornam à Tela Principal no mês de referência (`mes_atual`). No
+            formulário, Voltar/Cancelar retornam à Tela Principal (mesmo mês)
+            quando aberto pelo lápis, e aos Detalhes quando aberto por eles.
             """
             page.controls.clear()
             page.overlay.clear()
@@ -984,8 +1038,9 @@ def main(page: ft.Page):
                 else:
                     mostrar_visualizacao()
 
-            categorias_atuais = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
-            nome_categoria = categorias_atuais.get(conta.get("categoria_id")) or "Sem categoria"
+            lista_categorias = database.listar_categorias(usuario_atual["id"])
+            categorias_atuais = {c["id"]: c["nome"] for c in lista_categorias}
+            categoria_da_conta = next((c for c in lista_categorias if c["id"] == conta.get("categoria_id")), None)
 
             # Correção D1/D2 (auditoria pós-Fase 3): serie_id sozinho não basta --
             # uma série removida (RF29, ativa=0) continua com serie_id preenchido
@@ -1286,7 +1341,7 @@ def main(page: ft.Page):
                         ),
                     ]
                 else:
-                    texto_recorrencia = "Esta conta não possui recorrência."
+                    texto_recorrencia = TEXTO_NAO_RECORRENTE
                     acoes_recorrencia = [
                         ft.TextButton(
                             content="Transformar em recorrente",
@@ -1352,141 +1407,186 @@ def main(page: ft.Page):
                 return linha
 
             def mostrar_visualizacao():
+                # Etapa 4 (ERS 8.4, protótipo 13): identificação pela categoria
+                # (emoji e cor), status ao lado da ação de pagamento perto do
+                # topo, grade Valor/Vencimento/Categoria/Parcela, Recorrência,
+                # Descrição (só quando preenchida) e Editar/Excluir no rodapé.
                 page.overlay.clear()
-
+                hoje = date.today()
                 data_venc = date.fromisoformat(conta["data_vencimento"])
-                dias_delta = (data_venc - date.today()).days
+                status = status_para_detalhes(conta, hoje)
+                categoria = identificacao_categoria(categoria_da_conta)
 
-                if conta["status"] == "pago":
-                    cor_status, rotulo_status = cores.status_pago, "Pago"
-                elif conta["status"] == "atrasado":
-                    cor_status, rotulo_status = cores.status_atrasado, "Atrasado"
-                elif dias_delta == 0:
-                    cor_status, rotulo_status = cores.status_a_vencer, "A vencer"
-                else:
-                    cor_status, rotulo_status = cores.status_pendente, "Pendente"
-
-                # UX: Detalhes é predominantemente informativo -- a única ação de
-                # status que continua aqui é "Marcar como paga" (pendente/atrasado ->
-                # pago). Reverter de pago para pendente não tem mais ação nesta tela;
-                # as alterações de status ficam concentradas em Editar
-                # (mostrar_formulario_edicao: Pendente/Atrasado -> "Marcar como paga",
-                # Pago -> "Alterar data de pagamento"). database.marcar_conta_como_pendente
-                # continua existindo em database/db.py (RF06/5.10), só não tem mais
-                # nenhum ponto de UI que a chame nesta tela.
                 def marcar_como_paga_detalhes(e):
-                    # RF06/RF24: altera somente esta ocorrência. O escopo de série
-                    # (RF20, seção 5.2 do ERS) só se aplica a nome/valor/data — status
-                    # não tem variante "este mês em diante".
+                    # RF06/RF24: só esta ocorrência; status nunca tem escopo de série.
                     database.marcar_conta_como_paga(conta["id"])
                     conta["status"] = "pago"
-                    conta["data_pagamento"] = date.today().isoformat()
+                    conta["data_pagamento"] = hoje.isoformat()
                     mostrar_visualizacao()
 
-                # A tela de Detalhes é só consulta -- exibe "Pago em" quando houver,
-                # mas a ação de alterar essa data mora em Editar (mostrar_formulario_edicao).
-                pago_em_texto = None
-                if conta["status"] == "pago" and conta.get("data_pagamento"):
-                    pago_em_texto = date.fromisoformat(conta["data_pagamento"]).strftime("%d/%m/%Y")
+                def desmarcar_como_paga_detalhes(e):
+                    # 8.4/CT56: volta a ficar em aberto só esta ocorrência, sem
+                    # data de pagamento; pendente ou atrasada pelo vencimento real.
+                    database.marcar_conta_como_pendente(conta["id"])
+                    conta["status"] = status_ao_desmarcar(conta, hoje)
+                    conta["data_pagamento"] = None
+                    mostrar_visualizacao()
 
-                parcela_texto = None
-                if conta.get("serie_id") is not None:
-                    parcela = database.obter_parcela(conta["serie_id"], conta["id"])
-                    if parcela:
-                        posicao, total_ocorrencias = parcela
-                        parcela_texto = (
-                            f"Parcela {posicao} de {total_ocorrencias}"
-                            if total_ocorrencias is not None
-                            else f"Parcela {posicao}"
-                        )
-
-                def linha_detalhe(rotulo, valor, cor_valor=cores.texto_principal):
-                    return ft.Column(
-                        controls=[
-                            ft.Text(rotulo, size=12, color=cores.texto_secundario),
-                            ft.Text(valor, size=16, weight=ft.FontWeight.BOLD, color=cor_valor),
-                        ],
-                        spacing=2,
-                    )
-
-                # Frase contextual de recorrência (mesma lógica de Editar --
-                # mostrar_formulario_edicao -- reaproveitando frase_recorrencia() e
-                # info_serie/serie_ativa já calculados uma vez no topo de
-                # abrir_detalhe_conta). Avulsa e recorrência encerrada mostram o
-                # mesmo texto -- depois de encerrada, a conta é tratada como avulsa
-                # também aqui em Detalhes, igual já acontece em Editar. As ações
-                # continuam só em Editar; aqui é somente consulta.
-                if serie_ativa:
-                    recorrencia_texto = frase_recorrencia(info_serie["frequencia"], info_serie["data_termino"])
+                # --- Identificação (emoji e cor da categoria) ---------------
+                if categoria["sem_categoria"]:
+                    fundo_circulo = ft.Colors.with_opacity(0.18, cores.sem_categoria)
+                    cor_subtitulo = cores.sem_categoria
+                elif categoria["cor"]:
+                    fundo_circulo = ft.Colors.with_opacity(0.18, categoria["cor"])
+                    cor_subtitulo = cores.texto_secundario
                 else:
-                    recorrencia_texto = "Esta conta não possui recorrência."
-
-                linhas_cartao = [
-                    linha_detalhe("Nome", conta["nome"]),
-                    linha_detalhe("Valor", formatar_moeda(conta["valor"])),
-                    linha_detalhe("Vencimento", data_venc.strftime("%d/%m/%Y")),
-                    linha_detalhe("Categoria", nome_categoria),
-                    linha_detalhe("Status", rotulo_status, cor_valor=cor_status),
-                    linha_detalhe("Recorrência", recorrencia_texto),
-                ]
-                if pago_em_texto:
-                    linhas_cartao.append(linha_detalhe("Pago em", pago_em_texto))
-                if parcela_texto:
-                    linhas_cartao.append(linha_detalhe("Parcela", parcela_texto))
-
-                cartao_detalhes = ft.Container(
-                    bgcolor=cores.fundo_card,
-                    border_radius=12,
-                    padding=16,
-                    content=ft.Column(spacing=16, controls=linhas_cartao),
+                    fundo_circulo = cores.categoria_sem_cor
+                    cor_subtitulo = cores.texto_secundario
+                circulo = ft.Container(
+                    width=64, height=64, border_radius=32, bgcolor=fundo_circulo,
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Text(categoria["emoji"], size=30) if categoria["emoji"] else None,
                 )
-
-                cabecalho = ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                identificacao = ft.Row(
+                    spacing=16,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
-                                      on_click=lambda e: mostrar_tela_principal()),
-                        ft.Text("Detalhes da conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
-                        ft.Container(width=40),
+                        circulo,
+                        ft.Column(
+                            expand=True, spacing=2,
+                            controls=[
+                                ft.Text(conta["nome"], size=22, weight=ft.FontWeight.BOLD,
+                                        color=cores.texto_principal),
+                                ft.Text(categoria["nome"], size=14, color=cor_subtitulo),
+                            ],
+                        ),
                     ],
                 )
 
-                controles_acao = [
-                    cabecalho,
-                    ft.Container(height=20),
-                    cartao_detalhes,
-                    ft.Container(height=16),
-                ]
-                if conta["status"] != "pago":
-                    controles_acao.append(
-                        ft.Button(
-                            content="Marcar como paga",
-                            bgcolor=cores.acao_pagamento,
-                            color=cores.texto_sobre_acao,
-                            on_click=marcar_como_paga_detalhes,
+                # --- Status ao lado da ação de pagamento (quebra em janela estreita)
+                cor_status = {"pago": cores.status_pago, "atrasado": cores.status_atrasado,
+                              "pendente": cores.status_pendente}[status["status"]]
+                chip_status = ft.Container(
+                    bgcolor=ft.Colors.with_opacity(0.12, cor_status),
+                    border_radius=10,
+                    padding=ft.Padding(14, 10, 14, 10),
+                    content=ft.Text(status["rotulo"], size=14, weight=ft.FontWeight.BOLD, color=cor_status),
+                )
+                if status["status"] == "pago":
+                    botao_pagamento = ft.OutlinedButton(
+                        content=status["acao"], icon=ft.Icons.UNDO, on_click=desmarcar_como_paga_detalhes,
+                    )
+                else:
+                    botao_pagamento = ft.Button(
+                        content=status["acao"], icon=ft.Icons.CHECK,
+                        bgcolor=cores.acao_pagamento, color=cores.texto_sobre_acao,
+                        on_click=marcar_como_paga_detalhes,
+                    )
+                linha_status = ft.Row(
+                    wrap=True, spacing=10, run_spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[chip_status, botao_pagamento],
+                )
+
+                # --- Grade de informações ----------------------------------
+                def celula(icone, cor_icone, rotulo, valor, complemento=None, cor_valor=cores.texto_principal,
+                           largura_total=False):
+                    textos = [
+                        ft.Text(rotulo, size=12, color=cores.texto_secundario),
+                        ft.Text(valor, size=17, weight=ft.FontWeight.BOLD, color=cor_valor),
+                    ]
+                    if complemento:
+                        textos.append(ft.Text(complemento, size=12, color=cores.texto_secundario))
+                    return ft.Container(
+                        col={"xs": 12} if largura_total else {"xs": 12, "sm": 6},
+                        bgcolor=cores.fundo_card,
+                        border=ft.Border.all(1, cores.borda_suave),
+                        border_radius=12,
+                        padding=14,
+                        content=ft.Row(
+                            spacing=14,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Container(
+                                    width=44, height=44, border_radius=22,
+                                    bgcolor=ft.Colors.with_opacity(0.12, cor_icone),
+                                    alignment=ft.Alignment.CENTER,
+                                    content=ft.Icon(icone, size=22, color=cor_icone),
+                                ),
+                                ft.Column(expand=True, spacing=2, controls=textos),
+                            ],
                         ),
                     )
 
+                celulas = [
+                    celula(ft.Icons.PAYMENTS_OUTLINED, cores.status_pago, "Valor", formatar_moeda(conta["valor"])),
+                    celula(ft.Icons.CALENDAR_MONTH, cores.acao_primaria, "Vencimento", data_venc.strftime("%d/%m/%Y"),
+                           complemento="Vence hoje" if status["vence_hoje"] else None),
+                ]
+                parcela_texto = None
+                if serie_ativa:
+                    parcela = database.obter_parcela(conta["serie_id"], conta["id"])
+                    if parcela:
+                        parcela_texto = texto_parcela(parcela)
+                celulas.append(
+                    celula(ft.Icons.FOLDER_OUTLINED, cores.texto_secundario, "Categoria", categoria["nome"],
+                           cor_valor=cores.sem_categoria if categoria["sem_categoria"] else cores.texto_principal,
+                           largura_total=parcela_texto is None)
+                )
+                if parcela_texto:
+                    celulas.append(celula(ft.Icons.LAYERS_OUTLINED, cores.status_a_vencer, "Parcela", parcela_texto))
+                celulas.append(
+                    celula(ft.Icons.REPEAT, cores.status_pago, "Recorrência",
+                           texto_recorrencia_detalhes(serie_ativa, info_serie), largura_total=True)
+                )
+                if conta.get("descricao"):
+                    # 5.22: completa, com as quebras de linha; ausente quando vazia.
+                    celulas.append(ft.Container(
+                        col={"xs": 12},
+                        bgcolor=cores.fundo_card,
+                        border=ft.Border.all(1, cores.borda_suave),
+                        border_radius=12,
+                        padding=14,
+                        content=ft.Column(spacing=6, controls=[
+                            ft.Text("Descrição", size=12, color=cores.texto_secundario),
+                            ft.Text(conta["descricao"], size=14, color=cores.texto_principal),
+                        ]),
+                    ))
+                grade = ft.ResponsiveRow(spacing=12, run_spacing=12, controls=celulas)
+
+                # --- Rodapé: Editar e Excluir, menores, iguais e centralizados
+                botoes_rodape = ft.Row(
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=16,
+                    controls=[
+                        ft.Button(content="Editar", icon=ft.Icons.EDIT_OUTLINED, width=140,
+                                  bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                                  on_click=lambda e: mostrar_formulario_edicao()),
+                        ft.Button(content="Excluir", icon=ft.Icons.DELETE_OUTLINE, width=140,
+                                  bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao,
+                                  on_click=lambda e: confirmar_exclusao_conta()),
+                    ],
+                )
+
+                cabecalho = ft.Row(controls=[
+                    ft.TextButton(content="Voltar", icon=ft.Icons.ARROW_BACK,
+                                  on_click=lambda e: mostrar_tela_principal(tuple(mes_atual))),
+                ])
+
                 area_corpo.controls = [
                     ft.Container(
-                        padding=ft.Padding(20, 40, 20, 24),
+                        padding=ft.Padding(20, 32, 20, 24),
                         content=ft.Column(
+                            data="tela_detalhes",  # identificação da tela (testes)
                             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                            controls=controles_acao + [
-                                ft.Container(height=8),
-                                ft.Button(
-                                    content="Editar",
-                                    bgcolor=cores.acao_primaria,
-                                    color=cores.texto_sobre_acao,
-                                    on_click=lambda e: mostrar_formulario_edicao(),
-                                ),
-                                ft.Container(height=8),
-                                ft.Button(
-                                    content="Excluir",
-                                    bgcolor=cores.acao_destrutiva,
-                                    color=cores.texto_sobre_acao,
-                                    on_click=lambda e: confirmar_exclusao_conta(),
-                                ),
+                            spacing=16,
+                            controls=[
+                                cabecalho,
+                                identificacao,
+                                linha_status,
+                                grade,
+                                ft.Divider(color=cores.divisor),
+                                botoes_rodape,
                             ],
                         ),
                     ),
@@ -1516,7 +1616,7 @@ def main(page: ft.Page):
                     sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
                     if sucesso:
-                        mostrar_tela_principal()
+                        mostrar_tela_principal(tuple(mes_atual))
                     else:
                         mostrar_erro_exclusao()
 
@@ -1536,7 +1636,7 @@ def main(page: ft.Page):
                     sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
                     if sucesso:
-                        mostrar_tela_principal()
+                        mostrar_tela_principal(tuple(mes_atual))
                     else:
                         mostrar_erro_exclusao()
 
@@ -1544,7 +1644,7 @@ def main(page: ft.Page):
                     sucesso = database.excluir_conta_serie(conta["id"])
                     page.pop_dialog()
                     if sucesso:
-                        mostrar_tela_principal()
+                        mostrar_tela_principal(tuple(mes_atual))
                     else:
                         mostrar_erro_exclusao()
 
@@ -2241,7 +2341,7 @@ def main(page: ft.Page):
                     # (conta avulsa ou série encerrada, `dialogo_alvo=None`).
                     def fechar_confirmacao(e):
                         page.pop_dialog()
-                        mostrar_tela_principal(tuple(mes_atual) if abrir_em_edicao else None)
+                        mostrar_tela_principal(tuple(mes_atual))
 
                     acao_entendi = ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                               on_click=fechar_confirmacao)
@@ -2420,10 +2520,9 @@ def main(page: ft.Page):
             elif conta["status"] == "atrasado":
                 cor, rotulo_status = cores.status_atrasado, "Atrasado"
                 frase = frase_vencimento_passado(abs(dias_delta))
-            elif dias_delta == 0:
-                cor, rotulo_status = cores.status_a_vencer, "A vencer"
-                frase = frase_vencimento_futuro(dias_delta)
             else:
+                # Três status (Atrasado, Pendente, Pago): vencer hoje continua
+                # Pendente -- "vence hoje" é só a mensagem de vencimento (5.17).
                 cor, rotulo_status = cores.status_pendente, "Pendente"
                 frase = frase_vencimento_futuro(dias_delta)
 

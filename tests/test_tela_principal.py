@@ -105,6 +105,10 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         campos["Senha"].value = "senha1234"
         self.clicar(next(b for b in self.controles(ft.Button) if b.content == "Entrar"))
 
+    def na_tela_de_detalhes(self):
+        """Identificação específica da tela de Detalhes (`data="tela_detalhes"`)."""
+        return any(getattr(c, "data", None) == "tela_detalhes" for c in self.controles())
+
     def icones(self, dica):
         return [b for b in self.controles(ft.IconButton) if b.tooltip == dica]
 
@@ -161,7 +165,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.assertIn("pendente R$ 10,00", self.textos())
         self.assertIn("Outubro 2026", self.textos())  # continua no mês
         self.assertNotIn("Editar conta", self.textos())
-        self.assertNotIn("Detalhes da conta", self.textos())
+        self.assertFalse(self.na_tela_de_detalhes())
 
     def test_lapis_e_pagamento_tem_as_mesmas_dimensoes(self):
         self.criar_contas_de_outubro(1)
@@ -172,6 +176,59 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         caixas = [c for c in self.controles(ft.Container) if c.content in (lapis, pagamento)]
         self.assertEqual({c.width for c in caixas}, {40})
 
+    # ---------------------------------------------------------------- vence hoje
+    def linha_da_conta(self, nome):
+        return next(c for c in self.controles(ft.Container)
+                    if c.on_click is not None and isinstance(c.content, ft.Row) and c.border is not None
+                    and any(isinstance(t, ft.Text) and t.value == nome for t in percorrer(c)))
+
+    def textos_da_linha(self, nome):
+        return [t.value for t in percorrer(self.linha_da_conta(nome)) if isinstance(t, ft.Text)]
+
+    def test_vence_hoje_e_pendente_em_todas_as_listas(self):
+        # hoje = 15/09/2026
+        db.criar_conta_unica(self.usuario_id, "Hoje", 30.0, "2026-09-15", categoria_id=self.criar_categoria(self.usuario_id))
+        db.criar_conta_unica(self.usuario_id, "Amanhã", 20.0, "2026-09-16")
+        db.criar_conta_unica(self.usuario_id, "Ontem", 10.0, "2026-09-14")
+        self.entrar()
+
+        # Tela Principal
+        self.assertNotIn("A vencer", self.textos())
+        self.assertEqual(self.textos_da_linha("Hoje"), ["Hoje", "Casa · vence hoje", "R$ 30,00", "Pendente"])
+        self.assertEqual(self.textos_da_linha("Amanhã")[1:], ["vence amanhã", "R$ 20,00", "Pendente"])
+        self.assertEqual(self.textos_da_linha("Ontem")[1:], ["venceu ontem", "R$ 10,00", "Atrasado"])
+
+        # pagamento rápido continua funcionando na conta que vence hoje
+        pagar = next(b for b in percorrer(self.linha_da_conta("Hoje"))
+                     if isinstance(b, ft.IconButton) and b.tooltip == "Marcar como paga")
+        self.clicar(pagar)
+        self.assertEqual(self.textos_da_linha("Hoje")[-1], "Pago")
+        self.assertEqual(self.valor_do_total(), "R$ 60,00")
+        pagar = next(b for b in percorrer(self.linha_da_conta("Hoje"))
+                     if isinstance(b, ft.IconButton) and b.tooltip == "Marcar como pendente")
+        self.clicar(pagar)
+        self.assertEqual(self.textos_da_linha("Hoje")[-1], "Pendente")
+
+        # Ver status: "Pendentes" inclui a que vence hoje; "Atrasadas" não
+        self.abrir_ver_status()
+        self.assertNotIn("A vencer", self.textos())
+        self.assertEqual(self.textos_da_linha("Hoje")[-1], "Pendente")
+        for filtro, esperadas in (("Pendentes", {"Hoje", "Amanhã"}), ("Atrasadas", {"Ontem"})):
+            self.clicar(next(c for c in self.controles(ft.Container)
+                             if isinstance(c.content, ft.Text) and c.content.value == filtro and c.on_click))
+            nomes = {t.value for linha in self.linhas_ver_status() for t in percorrer(linha)
+                     if isinstance(t, ft.Text) and t.value in ("Hoje", "Amanhã", "Ontem")}
+            self.assertEqual(nomes, esperadas, filtro)
+
+        # Contas em atraso: só a atrasada, sem "A vencer"
+        self.clicar(next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.ARROW_BACK))
+        self.clicar(next(c for c in self.controles(ft.Container)
+                         if isinstance(c.content, ft.Text) and c.content.value == "Ver essas contas"))
+        self.assertIn("Contas em atraso", self.textos())
+        self.assertNotIn("A vencer", self.textos())
+        self.assertNotIn("Hoje", self.textos())
+        self.assertEqual(self.textos_da_linha("Ontem")[-1], "Atrasado")
+
     # ---------------------------------------------------------------- lápis
     def test_lapis_abre_editar_direto(self):
         self.criar_contas_de_outubro(1)
@@ -179,7 +236,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.ir_para_outubro()
         self.clicar(self.icones("Editar conta")[0])
         self.assertIn("Editar conta", self.textos())
-        self.assertNotIn("Detalhes da conta", self.textos())
+        self.assertFalse(self.na_tela_de_detalhes())
 
     def test_cancelar_e_voltar_pelo_lapis_retornam_ao_mesmo_mes(self):
         self.criar_contas_de_outubro(1)
@@ -236,12 +293,12 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
                      if c.on_click is not None and isinstance(c.content, ft.Row) and c.border is not None)
 
         self.clicar(linha)
-        self.assertIn("Detalhes da conta", self.textos())
+        self.assertTrue(self.na_tela_de_detalhes())
 
         self.clicar(self.botao("Editar"))
         self.assertIn("Editar conta", self.textos())
         self.clicar(self.botao("Cancelar"))
-        self.assertIn("Detalhes da conta", self.textos())
+        self.assertTrue(self.na_tela_de_detalhes())
         self.assertNotIn("Editar conta", self.textos())
 
     # ---------------------------------------------------------------- Ver status

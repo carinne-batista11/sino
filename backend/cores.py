@@ -87,6 +87,8 @@ PALETAS = {
 
         # Categorias sem cor definida (a paleta oficial fica em db.py)
         "categoria_sem_cor": "#E5E4DE",
+        # "Sem categoria" (conta sem categoria): cinza, sem emoji -- ERS 8.4/5.25
+        "sem_categoria": "#888780",
         "categoria_cor_padrao": "#1D9E75",
     },
 }
