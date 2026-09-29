@@ -32,11 +32,12 @@ def conectar():
 
 def criar_tabelas():
     """
-    Cria o schema v6 (ERS v6.0, 9.2) em um banco novo. Em um banco que já
-    existe, `CREATE TABLE IF NOT EXISTS` não acrescenta colunas; por isso o
-    índice case-insensitive de e-mail e o `user_version` só são gravados
-    quando `usuarios` nasce nesta chamada. Um banco v5 existente permanece
-    intocado até `migrar_schema_v6()` ser executada (com backup).
+    Cria o schema atual (v7: ERS v6.0, 9.2, mais a posição lógica das
+    ocorrências da Etapa 2b) em um banco novo. Em um banco que já existe,
+    `CREATE TABLE IF NOT EXISTS` não acrescenta colunas; por isso os índices
+    de e-mail e de posição e o `user_version` só são gravados quando
+    `usuarios` nasce nesta chamada. Um banco v5/v6 existente permanece
+    intocado até `migrar_schema_v6()`/`migrar_schema_v7()` (com backup).
 
     Tudo roda em uma única transação (em modo legado, o sqlite3 do Python
     faria autocommit de cada DDL): um banco novo nunca fica com as tabelas
@@ -106,6 +107,7 @@ def _criar_tabelas_v6(cursor, banco_novo):
             ativa INTEGER NOT NULL DEFAULT 1,
             horizonte_gerado_ate TEXT NOT NULL,
             descricao TEXT,
+            posicao_ancora INTEGER,
 
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
             FOREIGN KEY (categoria_id) REFERENCES categorias(id),
@@ -128,6 +130,8 @@ def _criar_tabelas_v6(cursor, banco_novo):
             data_pagamento TEXT,
             editado_individualmente INTEGER NOT NULL DEFAULT 0,
             descricao TEXT,
+            posicao INTEGER,
+            data_prevista TEXT,
 
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
             FOREIGN KEY (categoria_id) REFERENCES categorias(id),
@@ -146,7 +150,8 @@ def _criar_tabelas_v6(cursor, banco_novo):
 
     if banco_novo:
         cursor.execute(f"CREATE UNIQUE INDEX {INDICE_EMAIL_CI} ON usuarios(lower(email));")
-        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V6};")
+        cursor.execute(f"CREATE UNIQUE INDEX {INDICE_POSICAO} ON contas(serie_id, posicao);")
+        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_ATUAL};")
 
 
 def criar_backup(caminho_banco=None, rotulo="v5"):
@@ -477,9 +482,21 @@ COLUNAS_V5 = {
         "status", "data_pagamento", "editado_individualmente",
     ),
 }
+# Etapa 2b (v7): posição lógica das ocorrências de uma série, independente
+# do vencimento real -- `contas.posicao` (escopo, parcela), `contas.data_prevista`
+# (a vaga da grade que a ocorrência ocupa) e `series_recorrencia.posicao_ancora`
+# (posição onde a grade atual foi ancorada). Mesmo formato de COLUNAS_V6.
+VERSAO_SCHEMA_V7 = 7
+VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V7
+INDICE_POSICAO = "idx_contas_serie_posicao"
+COLUNAS_V7 = (
+    ("contas", "posicao", "INTEGER", ("INTEGER", 0, None)),
+    ("contas", "data_prevista", "TEXT", ("TEXT", 0, None)),
+    ("series_recorrencia", "posicao_ancora", "INTEGER", ("INTEGER", 0, None)),
+)
 # user_version que esta versão do app sabe tratar: 0 (bancos anteriores ao
-# controle de versão, validados estruturalmente como v5) e 6.
-VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6)
+# controle de versão, validados estruturalmente como v5), 6 e 7.
+VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7)
 
 
 class ColisaoDeEmailError(RuntimeError):
@@ -515,6 +532,40 @@ class SchemaV6IncompativelError(RuntimeError):
         )
 
 
+class SchemaV7IncompativelError(RuntimeError):
+    """
+    O banco não está no estado que a migração v7 aceita: item da v7 com
+    definição diferente, itens da v7 presentes num banco ainda marcado
+    como v6 (estado parcial desconhecido) ou v6 incompleto. Nada é alterado.
+    """
+
+    def __init__(self, problemas):
+        self.problemas = problemas
+        super().__init__(
+            "Migração v7 abortada: schema incompatível ("
+            + "; ".join(problemas)
+            + "). Nenhuma alteração foi feita."
+        )
+
+
+class VagasNaoInferiveisError(RuntimeError):
+    """
+    D3 (Etapa 2b): há ocorrências editadas individualmente cuja vaga
+    original na série não pode ser reconstruída com segurança a partir dos
+    dados v6. A migração v7 é recusada antes de qualquer escrita e sem
+    backup. `diagnostico` lista (conta_id, serie_id, motivo), sem dados
+    pessoais.
+    """
+
+    def __init__(self, diagnostico):
+        self.diagnostico = diagnostico
+        itens = "; ".join(f"conta {c} (série {s}): {m}" for c, s, m in diagnostico)
+        super().__init__(
+            "Migração v7 recusada: vaga não inferível para "
+            f"{len(diagnostico)} ocorrência(s) editada(s) -- {itens}. Nenhuma alteração foi feita."
+        )
+
+
 class VersaoDeBancoNaoSuportadaError(RuntimeError):
     """
     `PRAGMA user_version` fora de VERSOES_SUPORTADAS -- em especial, um banco
@@ -524,7 +575,7 @@ class VersaoDeBancoNaoSuportadaError(RuntimeError):
 
     def __init__(self, versao):
         self.versao = versao
-        origem = "de uma versão mais nova do Sino" if versao > VERSAO_SCHEMA_V6 else "desconhecida"
+        origem = "de uma versão mais nova do Sino" if versao > VERSAO_SCHEMA_ATUAL else "desconhecida"
         super().__init__(
             f"Banco com user_version = {versao} ({origem}); esta versão do Sino só abre "
             f"bancos com user_version {' ou '.join(map(str, VERSOES_SUPORTADAS))}. "
@@ -541,12 +592,12 @@ def _exigir_versao_suportada(cursor):
 
 
 def _divergencias_schema_v5(cursor):
-    """Tabelas cujas colunas não são exatamente as da v5 (+ as da v6 já presentes)."""
+    """Tabelas cujas colunas não são exatamente as da v5 (+ as da v6/v7 já presentes)."""
     problemas = []
     for tabela, colunas_v5 in COLUNAS_V5.items():
         cursor.execute(f"PRAGMA table_info({tabela})")
         existentes = {linha[1] for linha in cursor.fetchall()}
-        colunas_v6 = {coluna for t, coluna, _, _ in COLUNAS_V6 if t == tabela}
+        colunas_v6 = {coluna for t, coluna, _, _ in COLUNAS_V6 + COLUNAS_V7 if t == tabela}
         faltando = [c for c in colunas_v5 if c not in existentes]
         desconhecidas = sorted(existentes - set(colunas_v5) - colunas_v6)
         if faltando or desconhecidas:
@@ -647,7 +698,7 @@ def _verificar_schema_v6(cursor):
     resultado["ok"] = (
         all(resultado[f"{tabela}.{coluna}"] == "valida" for tabela, coluna, _, _ in COLUNAS_V6)
         and resultado["indice_email_ci"] == "valido"
-        and resultado["user_version"] == VERSAO_SCHEMA_V6
+        and resultado["user_version"] in (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7)
         and resultado["integridade"] == ["ok"]
         and not resultado["violacoes_fk"]
     )
@@ -801,24 +852,288 @@ def validar_migracao_v6(caminho_banco=None):
 
 class BancoNaoPreparadoError(RuntimeError):
     """
-    O banco não passou em `validar_migracao_v6()` depois da preparação
-    (ex.: integridade ou FKs com problema em um banco já v6). `validacao`
-    guarda o resultado completo, que não contém dados pessoais.
+    O banco não passou na validação depois da preparação (ex.: integridade
+    ou FKs com problema), ou um banco v6 não pôde seguir para a v7 por não
+    estar íntegro. `validacao` guarda o resultado completo, que não contém
+    dados pessoais.
     """
 
     def __init__(self, validacao):
         self.validacao = validacao
-        falhas = [f"{tabela}.{coluna}" for tabela, coluna, _, _ in COLUNAS_V6
+        v7 = "indice_posicao" in validacao
+        colunas = COLUNAS_V6 + (COLUNAS_V7 if v7 else ())
+        falhas = [f"{tabela}.{coluna}" for tabela, coluna, _, _ in colunas
                   if validacao.get(f"{tabela}.{coluna}") != "valida"]
         if validacao.get("indice_email_ci") != "valido":
             falhas.append("indice_email_ci")
-        if validacao.get("user_version") != VERSAO_SCHEMA_V6:
+        if v7 and validacao.get("indice_posicao") != "valido":
+            falhas.append("indice_posicao")
+        versoes_aceitas = (VERSAO_SCHEMA_ATUAL,) if v7 else (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7)
+        if validacao.get("user_version") not in versoes_aceitas:
             falhas.append("user_version")
         if validacao.get("integridade") != ["ok"]:
             falhas.append("integridade")
         if validacao.get("violacoes_fk"):
             falhas.append("violacoes_fk")
-        super().__init__(f"Banco não está pronto para a v6 (itens com problema: {', '.join(falhas)}).")
+        for chave in ("ocorrencias_sem_posicao", "series_sem_posicao_ancora", "colunas_fora_do_schema"):
+            if validacao.get(chave):
+                falhas.append(chave)
+        super().__init__(f"Banco não está pronto (itens com problema: {', '.join(falhas)}).")
+
+
+def _estado_indice_posicao(cursor):
+    """'ausente', 'valido' ou 'incompativel': UNIQUE, não parcial, em contas(serie_id, posicao)."""
+    cursor.execute("SELECT type, tbl_name FROM sqlite_master WHERE name = ?", (INDICE_POSICAO,))
+    objeto = cursor.fetchone()
+    if objeto is None:
+        return "ausente"
+    if objeto != ("index", "contas"):
+        return "incompativel"
+    cursor.execute("PRAGMA index_list(contas)")
+    info = next((linha for linha in cursor.fetchall() if linha[1] == INDICE_POSICAO), None)
+    if info is None or info[2] != 1 or info[4] != 0:
+        return "incompativel"
+    cursor.execute(f"PRAGMA index_info({INDICE_POSICAO})")
+    colunas = [linha[2] for linha in sorted(cursor.fetchall())]
+    return "valido" if colunas == ["serie_id", "posicao"] else "incompativel"
+
+
+def _verificar_schema_v7(cursor):
+    """Checagens da v6 + colunas/índice da v7, posições preenchidas, nenhuma
+    coluna fora do schema conhecido (M1) e user_version 7."""
+    resultado = _verificar_schema_v6(cursor)
+    resultado["colunas_fora_do_schema"] = _divergencias_schema_v5(cursor)
+    for tabela, coluna, _, esperado in COLUNAS_V7:
+        resultado[f"{tabela}.{coluna}"] = _estado_coluna_v6(cursor, tabela, coluna, esperado)
+    resultado["indice_posicao"] = _estado_indice_posicao(cursor)
+    colunas_v7_validas = all(resultado[f"{t}.{c}"] == "valida" for t, c, _, _ in COLUNAS_V7)
+    if colunas_v7_validas:
+        cursor.execute(
+            "SELECT COUNT(*) FROM contas WHERE serie_id IS NOT NULL "
+            "AND (posicao IS NULL OR data_prevista IS NULL)"
+        )
+        resultado["ocorrencias_sem_posicao"] = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM series_recorrencia WHERE posicao_ancora IS NULL")
+        resultado["series_sem_posicao_ancora"] = cursor.fetchone()[0]
+    resultado["ok"] = (
+        resultado["ok"]
+        and colunas_v7_validas
+        and resultado["indice_posicao"] == "valido"
+        and resultado["user_version"] == VERSAO_SCHEMA_V7
+        and resultado.get("ocorrencias_sem_posicao") == 0
+        and resultado.get("series_sem_posicao_ancora") == 0
+        and not resultado["colunas_fora_do_schema"]
+    )
+    return resultado
+
+
+def validar_schema_atual(caminho_banco=None):
+    """
+    Checagens do schema atual (v7): tudo o que `validar_migracao_v6()`
+    verifica, mais as colunas e o índice da posição lógica, nenhuma
+    ocorrência de série sem posição/vaga, nenhuma coluna fora do schema
+    conhecido e `user_version = 7`. Só consulta
+    o banco (FileNotFoundError se não existir).
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+    conexao = sqlite3.connect(caminho_banco)
+    try:
+        return _verificar_schema_v7(conexao.cursor())
+    finally:
+        conexao.close()
+
+
+def _classificar_vagas(cursor):
+    """
+    D3 (Etapa 2b): classifica, só lendo, a vaga de cada ocorrência de série
+    para o preenchimento de `data_prevista`:
+
+      * não editada individualmente -> EXATA: o vencimento dela só é
+        gravado pela geração ou pela reorganização da série, que também
+        definem a vaga;
+      * editada, na competência de uma vaga da grade atual (de
+        `data_inicio` até o horizonte) e sozinha nessa competência ->
+        PROVÁVEL (a competência da vaga é a do vencimento);
+      * qualquer outra editada -> NÃO INFERÍVEL.
+
+    Retorna (ids_provaveis, diagnostico) -- diagnostico com
+    (conta_id, serie_id, motivo) das não inferíveis.
+    """
+    provaveis, diagnostico = [], []
+    cursor.execute(
+        "SELECT id, frequencia, data_inicio, horizonte_gerado_ate FROM series_recorrencia ORDER BY id"
+    )
+    for serie_id, frequencia, inicio, horizonte in cursor.fetchall():
+        if horizonte >= inicio:
+            grade = {d[:7] for d in _gerar_datas_ocorrencias(frequencia, inicio, horizonte[:7])}
+        else:
+            grade = {inicio[:7]}
+        cursor.execute(
+            "SELECT id, data_vencimento, editado_individualmente FROM contas WHERE serie_id = ? ORDER BY id",
+            (serie_id,),
+        )
+        ocorrencias = cursor.fetchall()
+        por_competencia = {}
+        for _, vencimento, _ in ocorrencias:
+            por_competencia[vencimento[:7]] = por_competencia.get(vencimento[:7], 0) + 1
+        for conta_id, vencimento, editado in ocorrencias:
+            if not editado:
+                continue
+            if vencimento < inicio:
+                diagnostico.append((conta_id, serie_id, "anterior à âncora atual (grade antiga desconhecida)"))
+            elif vencimento[:7] not in grade:
+                diagnostico.append((conta_id, serie_id, "fora das competências da grade atual"))
+            elif por_competencia[vencimento[:7]] > 1:
+                diagnostico.append((conta_id, serie_id, "competência compartilhada com outra ocorrência"))
+            else:
+                provaveis.append(conta_id)
+    return provaveis, diagnostico
+
+
+def _dados_v6(cursor):
+    """Todas as linhas das quatro tabelas com as colunas v5+v6 (para provar RNF08)."""
+    dados = {}
+    for tabela, colunas in COLUNAS_V5.items():
+        colunas = list(colunas) + [c for t, c, _, _ in COLUNAS_V6 if t == tabela]
+        cursor.execute(f"SELECT {', '.join(colunas)} FROM {tabela} ORDER BY id")
+        dados[tabela] = cursor.fetchall()
+    return dados
+
+
+def migrar_schema_v7(caminho_banco=None):
+    """
+    Migração v6 -> v7 (Etapa 2b): posição lógica das ocorrências. Aditiva
+    (RNF08): nenhuma coluna existente é alterada.
+
+      * `contas.posicao` e `contas.data_prevista`, preenchidas para cada
+        série na ordem (vencimento, id), com `data_prevista = vencimento`;
+      * `series_recorrencia.posicao_ancora = 1` (0 numa série sem
+        ocorrências) -- seguro: a ordem do segmento é a mesma do preenchimento;
+      * índice UNIQUE `idx_contas_serie_posicao`;
+      * `PRAGMA user_version = 7`.
+
+    Tudo dentro de `BEGIN IMMEDIATE`. Antes de qualquer escrita e sem
+    backup, recusa: `user_version` não suportada ou anterior à 6
+    (`SchemaV7IncompativelError` -- a v6 vem antes, por `migrar_schema_v6`),
+    colunas fora do schema, itens v6 ausentes/incompatíveis, itens v7 já
+    presentes num banco ainda v6 (estado parcial desconhecido), banco v6 que
+    não passa na própria validação (`BancoNaoPreparadoError`) e ocorrências
+    editadas cuja vaga não é inferível (`VagasNaoInferiveisError`, D3).
+    Banco já v7 e íntegro: {"executado": False, "motivo": "já migrado"},
+    sem backup. Depois: backup com integrity_check, alterações, validação
+    (schema, posições, contagens e dados v6 idênticos) e COMMIT. Qualquer
+    falha reverte tudo; o backup, se já criado, permanece no disco.
+
+    Retorna {"executado": True, "backup": caminho, "ocorrencias_provaveis":
+    [ids das editadas cuja vaga foi inferida pela competência]}.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+
+    conexao = sqlite3.connect(caminho_banco)
+    caminho_backup = None
+    try:
+        conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+
+        versao = _exigir_versao_suportada(cursor)
+        if versao < VERSAO_SCHEMA_V6:
+            raise SchemaV7IncompativelError(
+                [f"user_version {versao}: o banco precisa passar pela migração v6 antes da v7"]
+            )
+        tabelas_ausentes = [t for t in TABELAS_V5 if not _tabela_existe(cursor, t)]
+        if tabelas_ausentes:
+            raise SchemaV7IncompativelError([f"tabelas ausentes: {', '.join(tabelas_ausentes)}"])
+
+        problemas = _divergencias_schema_v5(cursor)
+        for tabela, coluna, _, esperado in COLUNAS_V6:
+            if _estado_coluna_v6(cursor, tabela, coluna, esperado) != "valida":
+                problemas.append(f"coluna v6 {tabela}.{coluna} ausente ou diferente da esperada")
+        if _estado_indice_email_ci(cursor) != "valido":
+            problemas.append(f"índice v6 {INDICE_EMAIL_CI} ausente ou diferente do esperado")
+        estados_v7 = {
+            f"{tabela}.{coluna}": _estado_coluna_v6(cursor, tabela, coluna, esperado)
+            for tabela, coluna, _, esperado in COLUNAS_V7
+        }
+        estados_v7[INDICE_POSICAO] = _estado_indice_posicao(cursor)
+        for item, estado in estados_v7.items():
+            if estado == "incompativel":
+                problemas.append(f"{item} com definição diferente da esperada")
+
+        if versao == VERSAO_SCHEMA_V7:
+            completos = all(e in ("valida", "valido") for e in estados_v7.values())
+            if not completos:
+                problemas.append("user_version 7 sem todos os itens da v7")
+            if problemas:
+                raise SchemaV7IncompativelError(problemas)
+            cursor.execute("ROLLBACK;")
+            return {"executado": False, "motivo": "já migrado", "backup": None}
+
+        presentes = [item for item, estado in estados_v7.items() if estado != "ausente"]
+        if presentes:
+            problemas.append(f"itens da v7 já presentes num banco v6: {', '.join(presentes)}")
+        if problemas:
+            raise SchemaV7IncompativelError(problemas)
+
+        validacao_v6 = _verificar_schema_v6(cursor)
+        if not validacao_v6["ok"]:
+            raise BancoNaoPreparadoError(validacao_v6)
+
+        provaveis, diagnostico = _classificar_vagas(cursor)
+        if diagnostico:
+            raise VagasNaoInferiveisError(diagnostico)
+
+        # Lido por outra conexão: o RESERVED lock deste BEGIN IMMEDIATE ainda
+        # permite leitura e garante que nada muda entre o backup e as alterações.
+        caminho_backup = criar_backup(caminho_banco, rotulo="v7")
+        if not _verificar_integridade_backup(caminho_backup):
+            raise RuntimeError(
+                f"Backup pré-migração v7 falhou no integrity_check ({caminho_backup}); "
+                "migração abortada."
+            )
+
+        contagens_antes = _contagens(cursor)
+        dados_antes = _dados_v6(cursor)
+
+        for tabela, coluna, definicao, _ in COLUNAS_V7:
+            cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao};")
+
+        cursor.execute("SELECT id FROM series_recorrencia ORDER BY id")
+        for (serie_id,) in cursor.fetchall():
+            cursor.execute(
+                "SELECT id FROM contas WHERE serie_id = ? ORDER BY data_vencimento, id", (serie_id,)
+            )
+            ids = [linha[0] for linha in cursor.fetchall()]
+            for posicao, conta_id in enumerate(ids, start=1):
+                cursor.execute(
+                    "UPDATE contas SET posicao = ?, data_prevista = data_vencimento WHERE id = ?",
+                    (posicao, conta_id),
+                )
+            cursor.execute(
+                "UPDATE series_recorrencia SET posicao_ancora = ? WHERE id = ?",
+                (1 if ids else 0, serie_id),
+            )
+
+        cursor.execute(f"CREATE UNIQUE INDEX {INDICE_POSICAO} ON contas(serie_id, posicao);")
+        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V7};")
+
+        verificacao = _verificar_schema_v7(cursor)
+        if (not verificacao["ok"] or _contagens(cursor) != contagens_antes
+                or _dados_v6(cursor) != dados_antes):
+            raise RuntimeError("Validação pós-migração v7 falhou; alterações revertidas.")
+
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+    return {"executado": True, "backup": caminho_backup, "ocorrencias_provaveis": provaveis}
 
 
 def _banco_existente_vazio(caminho_banco):
@@ -838,46 +1153,49 @@ def _banco_existente_vazio(caminho_banco):
 
 def preparar_banco():
     """
-    Garante, na inicialização do app, que `NOME_DO_BANCO` está pronto para a
-    v6, reutilizando `criar_tabelas()`, `migrar_schema_v6()` e
-    `validar_migracao_v6()`:
+    Garante, na inicialização do app, que `NOME_DO_BANCO` está no schema
+    atual (v7), reutilizando `criar_tabelas()`, `migrar_schema_v6()`,
+    `migrar_schema_v7()` e `validar_schema_atual()`:
 
       * `user_version` fora de VERSOES_SUPORTADAS (ex.: banco de uma versão
         futura): `VersaoDeBancoNaoSuportadaError` antes de qualquer escrita;
       * banco inexistente, ou arquivo sem nenhuma tabela: `criar_tabelas()`
-        gera o schema v6 direto, sem backup -> situação "criado";
-      * banco que já passa em `validar_migracao_v6()`: nada é gravado, nem
+        gera o schema v7 direto, sem backup -> situação "criado";
+      * banco que já passa em `validar_schema_atual()`: nada é gravado, nem
         lock de escrita é pedido -> "atual";
-      * qualquer outro banco existente vai para `migrar_schema_v6()`, que
-        antes de qualquer escrita exige as quatro tabelas com exatamente as
-        colunas da v5 (+ itens da v6 compatíveis): um schema antigo ou
-        desconhecido é recusado; um v5 válido é migrado (backup, transação,
-        rollback) -> "migrado", ou "atual" se não havia nada a fazer.
+      * banco v5 (ou v6 incompleto): `migrar_schema_v6()` e depois
+        `migrar_schema_v7()` -- duas transações e dois backups. Se a v7
+        falhar, o banco fica em v6 válido (com o backup v6) e a próxima
+        inicialização retoma a partir dele;
+      * banco v6: só `migrar_schema_v7()` -> "migrado".
 
     `criar_tabelas()` nunca é chamada sobre um banco existente. Ao final, o
-    banco precisa passar em `validar_migracao_v6()`; caso contrário,
-    `BancoNaoPreparadoError`. Erros da migração (`ColisaoDeEmailError`,
-    `SchemaV6IncompativelError`, falhas de backup, `sqlite3.DatabaseError`
-    de arquivo inválido etc.) são propagados sem tratamento: nenhum reparo
-    silencioso, e quem chama decide como interromper o app.
+    banco precisa passar em `validar_schema_atual()`; caso contrário,
+    `BancoNaoPreparadoError`. Erros das migrações (inclusive
+    `VagasNaoInferiveisError`, D3) são propagados sem tratamento: nenhum
+    reparo silencioso, e quem chama decide como interromper o app.
 
-    Retorna {"situacao": "criado" | "migrado" | "atual", "migracao": dict | None}.
+    Retorna {"situacao": "criado" | "migrado" | "atual",
+             "migracao": dict | None (v6), "migracao_v7": dict | None}.
     """
     caminho_banco = NOME_DO_BANCO
-    migracao = None
+    migracao_v6 = migracao_v7 = None
     if not os.path.exists(caminho_banco) or _banco_existente_vazio(caminho_banco):
         criar_tabelas()
         situacao = "criado"
-    elif validar_migracao_v6(caminho_banco)["ok"]:
-        return {"situacao": "atual", "migracao": None}
+    elif validar_schema_atual(caminho_banco)["ok"]:
+        return {"situacao": "atual", "migracao": None, "migracao_v7": None}
     else:
-        migracao = migrar_schema_v6(caminho_banco)
-        situacao = "migrado" if migracao["executado"] else "atual"
+        if not validar_migracao_v6(caminho_banco)["ok"]:
+            migracao_v6 = migrar_schema_v6(caminho_banco)
+        migracao_v7 = migrar_schema_v7(caminho_banco)
+        executou = any(m is not None and m["executado"] for m in (migracao_v6, migracao_v7))
+        situacao = "migrado" if executou else "atual"
 
-    validacao = validar_migracao_v6(caminho_banco)
+    validacao = validar_schema_atual(caminho_banco)
     if not validacao["ok"]:
         raise BancoNaoPreparadoError(validacao)
-    return {"situacao": situacao, "migracao": migracao}
+    return {"situacao": situacao, "migracao": migracao_v6, "migracao_v7": migracao_v7}
 
 
 # RNF05: PBKDF2-HMAC-SHA256 (stdlib, sem dependência nova) com salt aleatório
@@ -1341,6 +1659,95 @@ def _gerar_datas_ocorrencias(frequencia, data_inicio, data_termino):
     return [data_inicio] + _avancar_ate_limite(avancar, data_inicio, limite_ano, limite_mes)
 
 
+def _competencia(data_iso):
+    """Competência (AAAA-MM) de uma data ISO."""
+    return data_iso[:7]
+
+
+def _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor, data, descricao,
+                        posicao=None):
+    """
+    Nova ocorrência pendente de série, na vaga `data` (vencimento real =
+    vaga). Sem `posicao`, entra com NULL e ganha a posição na próxima
+    `_renumerar_segmento` da mesma transação.
+    """
+    cursor.execute(
+        """
+        INSERT INTO contas
+            (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao,
+             posicao, data_prevista)
+        VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?, ?, ?)
+        """,
+        (usuario_id, categoria_id, serie_id, nome, valor, data, descricao, posicao, data),
+    )
+    return cursor.lastrowid
+
+
+def _renumerar_segmento(cursor, serie_id, apos_posicao):
+    """
+    Etapa 2b, invariante I3: as ocorrências da série com posição maior que
+    `apos_posicao` (e as recém-inseridas, com posição NULL) passam a ter
+    posições apos_posicao+1, +2, ... na ordem (data_prevista, id). As
+    posições até `apos_posicao` (a âncora e tudo antes dela) nunca mudam.
+    Duas fases (primeiro -id, depois o valor final) para o índice UNIQUE
+    (serie_id, posicao) nunca colidir no meio da transação.
+    """
+    filtro = "serie_id = ? AND (posicao > ? OR posicao IS NULL)"
+    cursor.execute(f"SELECT id FROM contas WHERE {filtro} ORDER BY data_prevista, id",
+                   (serie_id, apos_posicao))
+    ids = [linha[0] for linha in cursor.fetchall()]
+    cursor.execute(f"UPDATE contas SET posicao = -id WHERE {filtro}", (serie_id, apos_posicao))
+    for posicao, conta_id in enumerate(ids, start=apos_posicao + 1):
+        cursor.execute("UPDATE contas SET posicao = ? WHERE id = ?", (posicao, conta_id))
+
+
+def _grade_a_partir_da_vaga(frequencia, dia_ancora, mes_ancora, vaga, data_termino):
+    """
+    D1, variante "d" (Etapa 2b): nova grade ao alterar a frequência a partir
+    de uma ocorrência cuja VAGA é `vaga`. O dia (e o mês, se anual) vêm do
+    vencimento real da selecionada; as novas vagas começam na competência
+    seguinte à vaga dela, até o término (ou 12 meses depois da vaga, se
+    aberta). Sem vencimento movido para outro mês, é exatamente a grade que
+    `_gerar_datas_ocorrencias` gera a partir do vencimento.
+
+    Retorna (data_inicio da grade, [datas das novas vagas]).
+    """
+    vaga_data = date.fromisoformat(vaga)
+    if frequencia == "mensal":
+        ano, mes = vaga_data.year, vaga_data.month
+        avancar = lambda a, m: _somar_mes(a, m, dia_ancora)  # noqa: E731
+    else:
+        ano = vaga_data.year if mes_ancora <= vaga_data.month else vaga_data.year - 1
+        mes = mes_ancora
+        avancar = lambda a, m: _somar_ano(a, mes_ancora, dia_ancora)  # noqa: E731
+    base = date(ano, mes, _ajustar_dia(ano, mes, dia_ancora)).isoformat()
+    if data_termino is not None:
+        limite_ano, limite_mes = map(int, data_termino.split("-"))
+    else:
+        limite_ano, limite_mes = vaga_data.year + 1, vaga_data.month
+    return base, _avancar_ate_limite(avancar, base, limite_ano, limite_mes)
+
+
+def _vaga_na_grade(data_prevista, frequencia, mes_ancora, data_termino):
+    """
+    D2/D4: a vaga pertence à grade atual da série? Não pertence quando está
+    além do término ou, numa série anual, em outro mês que não o da âncora
+    (ex.: uma editada preservada depois de mensal -> anual).
+    """
+    if data_termino is not None and _competencia(data_prevista) > data_termino:
+        return False
+    return frequencia == "mensal" or int(data_prevista[5:7]) == mes_ancora
+
+
+def _competencias_ocupadas(cursor, serie_id, apos_posicao):
+    """Competências previstas já ocupadas por ocorrências depois de `apos_posicao`."""
+    cursor.execute(
+        "SELECT data_prevista FROM contas WHERE serie_id = ? AND posicao > ?",
+        (serie_id, apos_posicao),
+    )
+    return {_competencia(linha[0]) for linha in cursor.fetchall()}
+
+
 def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
                             data_termino=None, categoria_id=None, descricao=None):
     """
@@ -1384,25 +1791,20 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
             """
             INSERT INTO series_recorrencia
                 (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                 mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                 mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao,
+                 posicao_ancora)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
             """,
             (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
              mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
         )
         serie_id = cursor.lastrowid
 
-        ids_ocorrencias = []
-        for data_ocorrencia in datas:
-            cursor.execute(
-                """
-                INSERT INTO contas
-                    (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
-                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                """,
-                (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia, descricao),
-            )
-            ids_ocorrencias.append(cursor.lastrowid)
+        ids_ocorrencias = [
+            _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
+                                data_ocorrencia, descricao, posicao=posicao)
+            for posicao, data_ocorrencia in enumerate(datas, start=1)
+        ]
 
         cursor.execute("COMMIT;")
     except Exception:
@@ -1433,15 +1835,19 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
       `horizonte_gerado_ate`, sempre usando `dia_ancora`/`mes_ancora` da
       própria série (nunca redevirados de uma ocorrência já gerada), o
       que garante ausência de arrasto (5.2) e preserva a âncora original.
-    - Antes de inserir, confirma contra `contas` que cada data calculada
-      ainda não existe para esta série (5.20/9.4) — dupla proteção além
-      de confiar apenas em `horizonte_gerado_ate`.
+    - Etapa 2b: uma vaga só é criada se nenhuma ocorrência do segmento
+      atual (posição >= `posicao_ancora`) já ocupar a mesma competência
+      prevista -- uma editada preservada ocupa a própria vaga mesmo com o
+      vencimento real movido, e uma ocorrência movida para a data da
+      próxima vaga não a suprime (a comparação é pela vaga, não pelo
+      vencimento). As novas entram no segmento em ordem de vaga.
     - Idempotente: se `ate_data` já está coberto por `horizonte_gerado_ate`
       (ou atrás dele), não há nada a avançar e a função retorna `[]` sem
       abrir transação nenhuma; chamar de novo com o mesmo `ate_data` nunca
       duplica nem altera o estado.
-    - `horizonte_gerado_ate` só avança até a última ocorrência realmente
-      inserida por esta chamada — nunca antecipado além disso.
+    - `horizonte_gerado_ate` passa a ser a última vaga da grade coberta
+      por esta chamada (inclusive se ela já estava ocupada por uma
+      preservada) -- nunca salta para o vencimento de uma ocorrência.
     - Atômica: qualquer falha reverte tudo (ROLLBACK); nunca deixa parte
       das ocorrências criadas nem o horizonte atualizado parcialmente.
 
@@ -1456,7 +1862,8 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
         cursor.execute(
             """
             SELECT usuario_id, nome, valor, categoria_id, frequencia,
-                   dia_ancora, mes_ancora, data_termino, ativa, horizonte_gerado_ate, descricao
+                   dia_ancora, mes_ancora, data_termino, ativa, horizonte_gerado_ate, descricao,
+                   posicao_ancora
             FROM series_recorrencia WHERE id = ?
             """,
             (serie_id,),
@@ -1466,7 +1873,7 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
             raise ValueError(f"series_recorrencia com id={serie_id} não existe")
 
         (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-         mes_ancora, data_termino, ativa, horizonte_gerado_ate, descricao) = linha
+         mes_ancora, data_termino, ativa, horizonte_gerado_ate, descricao, posicao_ancora) = linha
 
         if ativa == 0 or data_termino is not None:
             return []
@@ -1488,26 +1895,14 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
         try:
             cursor.execute("BEGIN;")
 
-            placeholders = ",".join("?" * len(novas_datas))
-            cursor.execute(
-                f"SELECT data_vencimento FROM contas WHERE serie_id = ? AND data_vencimento IN ({placeholders})",
-                (serie_id, *novas_datas),
-            )
-            ja_existentes = {linha_existente[0] for linha_existente in cursor.fetchall()}
-
-            ids_novos = []
-            for data_ocorrencia in novas_datas:
-                if data_ocorrencia in ja_existentes:
-                    continue
-                cursor.execute(
-                    """
-                    INSERT INTO contas
-                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                    """,
-                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia, descricao),
-                )
-                ids_novos.append(cursor.lastrowid)
+            ocupadas = _competencias_ocupadas(cursor, serie_id, posicao_ancora - 1)
+            ids_novos = [
+                _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
+                                    data_ocorrencia, descricao)
+                for data_ocorrencia in novas_datas
+                if _competencia(data_ocorrencia) not in ocupadas
+            ]
+            _renumerar_segmento(cursor, serie_id, posicao_ancora)
 
             cursor.execute(
                 "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
@@ -1605,27 +2000,27 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
                 """
                 INSERT INTO series_recorrencia
                     (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                     mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                     mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao,
+                     posicao_ancora)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
                 """,
                 (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
                  mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
             )
             serie_id = cursor.lastrowid
 
-            cursor.execute("UPDATE contas SET serie_id = ? WHERE id = ?", (serie_id, conta_id))
+            # Etapa 2b: a conta vira a âncora (posição 1) e sua vaga é o
+            # próprio vencimento.
+            cursor.execute(
+                "UPDATE contas SET serie_id = ?, posicao = 1, data_prevista = data_vencimento WHERE id = ?",
+                (serie_id, conta_id),
+            )
 
-            ids_novos = []
-            for data_ocorrencia in datas_futuras:
-                cursor.execute(
-                    """
-                    INSERT INTO contas
-                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                    """,
-                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia, descricao),
-                )
-                ids_novos.append(cursor.lastrowid)
+            ids_novos = [
+                _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
+                                    data_ocorrencia, descricao, posicao=posicao)
+                for posicao, data_ocorrencia in enumerate(datas_futuras, start=2)
+            ]
 
             cursor.execute("COMMIT;")
         except Exception:
@@ -1647,7 +2042,7 @@ def listar_contas(usuario_id, ano_mes=None):
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
                    serie_id, data_pagamento, editado_individualmente, descricao
             FROM contas WHERE usuario_id = ? AND data_vencimento LIKE ?
-            ORDER BY data_vencimento
+            ORDER BY data_vencimento, posicao, id
             """,
             (usuario_id, f"{ano_mes}%"),
         )
@@ -1657,7 +2052,7 @@ def listar_contas(usuario_id, ano_mes=None):
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
                    serie_id, data_pagamento, editado_individualmente, descricao
             FROM contas WHERE usuario_id = ?
-            ORDER BY data_vencimento
+            ORDER BY data_vencimento, posicao, id
             """,
             (usuario_id,),
         )
@@ -1737,6 +2132,9 @@ def listar_contas_atrasadas(usuario_id):
 def obter_parcela(serie_id, conta_id):
     """
     Posição (X) e total (Y) de uma ocorrência dentro da série (RF26/5.19).
+    Etapa 2b: X segue a posição lógica (`contas.posicao`), não o
+    vencimento -- uma ocorrência movida com "Somente este mês" mantém a
+    própria parcela.
 
     Série com data de término definida: retorna (posição, total).
     Série sem data de término: retorna (posição, None) -- a ERS proíbe
@@ -1751,7 +2149,7 @@ def obter_parcela(serie_id, conta_id):
     conexao = conectar()
     cursor = conexao.cursor()
     cursor.execute(
-        "SELECT id FROM contas WHERE serie_id = ? ORDER BY data_vencimento",
+        "SELECT id FROM contas WHERE serie_id = ? ORDER BY posicao, id",
         (serie_id,),
     )
     ids_ordenados = [linha[0] for linha in cursor.fetchall()]
@@ -1967,12 +2365,28 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     return True
 
 
+MENSAGEM_VENCIMENTO_ANTES_DA_PARCELA_ANTERIOR = (
+    "Para alterar esta conta e as próximas, escolha um mês posterior ao da parcela anterior."
+)
+
+
+class VencimentoAntesDaParcelaAnteriorError(ValueError):
+    """
+    D5 (Etapa 2b): "Este mês em diante" com um novo vencimento cuja
+    competência não é posterior à VAGA (`data_prevista`) da ocorrência
+    imediatamente anterior na série. Recusado antes de qualquer gravação.
+    """
+
+    def __init__(self):
+        super().__init__(MENSAGEM_VENCIMENTO_ANTES_DA_PARCELA_ANTERIOR)
+
+
 def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
                         remover_categoria=False, descricao=None, remover_descricao=False):
     """
     RF20 "Este mês em diante" (5.6): aplica nome/valor/categoria/data à
-    ocorrência selecionada e às futuras da mesma série (data_vencimento >=
-    referência, capturada antes de qualquer alteração) — INCLUSIVE
+    ocorrência selecionada e às futuras da mesma série (posição lógica >=
+    a da selecionada -- Etapa 2b; nunca pelo vencimento real) — INCLUSIVE
     ocorrências já editadas individualmente (`editado_individualmente=1`)
     ou já pagas. Decisão fechada da ERS (5.1): "Este mês em diante" é uma
     ação deliberada do usuário sobre a série no escopo que ele escolheu, e
@@ -1990,13 +2404,21 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     ela já tem é ignorado (correção v6.0, Etapa 0).
 
     data_vencimento redefine a âncora da série a partir desta ocorrência
-    (9.3): a ocorrência selecionada recebe exatamente a data informada, e
-    a mesma quantidade de ocorrências futuras que já existia é recalculada
+    (9.3): a ocorrência selecionada recebe exatamente a data informada (e
+    essa passa a ser a sua vaga), e as futuras que ocupam vagas da grade
+    atual -- a mesma quantidade -- são recalculadas
     em sequência a partir da nova âncora (dia/mês) e da frequência atual
     da série, sem arrasto (mesmo mecanismo de `_somar_mes`/`_somar_ano`
     usado na geração — seção 5.2). `dia_ancora`/`mes_ancora`/`data_inicio`
-    da série são atualizados de acordo, e `horizonte_gerado_ate` passa a
-    refletir a última ocorrência realmente existente após a reorganização.
+    da série são atualizados de acordo, `posicao_ancora` passa a ser a
+    posição da selecionada e `horizonte_gerado_ate` a última vaga da nova
+    sequência. D2: editadas preservadas fora da grade (outro mês numa série
+    anual, ou além do término -- D4) mantêm data e vaga, e a sequência pula
+    as competências que elas ocupam.
+    D5: um novo vencimento cuja competência não seja posterior à vaga da
+    ocorrência imediatamente anterior levanta
+    `VencimentoAntesDaParcelaAnteriorError` antes de qualquer gravação
+    (nenhum campo é alterado). Na primeira ocorrência não há limite.
     Se a série tem `data_termino` e a reorganização ultrapassaria esse
     limite, a chamada inteira é rejeitada (nada é alterado) e a função
     retorna False.
@@ -2035,7 +2457,7 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     cursor_leitura = conexao_leitura.cursor()
     cursor_leitura.execute(
         """
-        SELECT serie_id, data_vencimento, nome, valor, categoria_id, descricao
+        SELECT serie_id, data_vencimento, nome, valor, categoria_id, descricao, posicao
         FROM contas WHERE id = ?
         """,
         (conta_id,),
@@ -2044,7 +2466,8 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     if linha is None:
         conexao_leitura.close()
         return False
-    serie_id, data_referencia, nome_atual, valor_atual, categoria_id_atual, descricao_atual = linha
+    (serie_id, data_referencia, nome_atual, valor_atual, categoria_id_atual, descricao_atual,
+     posicao_referencia) = linha
     descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
 
     # Correção v6.0 (Etapa 0): só propaga o que o usuário realmente alterou
@@ -2082,27 +2505,44 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
                                         descricao=descricao, remover_descricao=remover_descricao)
 
     cursor_leitura.execute(
-        "SELECT frequencia, data_termino, ativa FROM series_recorrencia WHERE id = ?",
+        "SELECT frequencia, data_termino, ativa, mes_ancora FROM series_recorrencia WHERE id = ?",
         (serie_id,),
     )
-    frequencia, data_termino, ativa = cursor_leitura.fetchone()
+    frequencia, data_termino, ativa, mes_ancora_atual = cursor_leitura.fetchone()
     if ativa == 0:
         conexao_leitura.close()
         return False
 
+    # D5: o novo vencimento precisa cair numa competência posterior à VAGA
+    # da ocorrência imediatamente anterior (não ao vencimento real dela, que
+    # pode ter sido movido). Sem anterior (primeira ocorrência), sem limite.
+    if data_vencimento is not None:
+        cursor_leitura.execute(
+            "SELECT data_prevista FROM contas WHERE serie_id = ? AND posicao < ? "
+            "ORDER BY posicao DESC LIMIT 1",
+            (serie_id, posicao_referencia),
+        )
+        anterior = cursor_leitura.fetchone()
+        if anterior is not None and _competencia(data_vencimento) <= _competencia(anterior[0]):
+            conexao_leitura.close()
+            raise VencimentoAntesDaParcelaAnteriorError()
+
+    # Etapa 2b: "futuras" = posição lógica maior que a da selecionada (não
+    # o vencimento real), em ordem de posição.
     cursor_leitura.execute(
         """
-        SELECT id, data_vencimento FROM contas
-        WHERE serie_id = ? AND data_vencimento >= ?
-        ORDER BY data_vencimento
+        SELECT id, data_prevista, editado_individualmente FROM contas
+        WHERE serie_id = ? AND posicao > ?
+        ORDER BY posicao
         """,
-        (serie_id, data_referencia),
+        (serie_id, posicao_referencia),
     )
     ocorrencias_futuras = cursor_leitura.fetchall()
     conexao_leitura.close()
 
     novas_datas_por_id = None
     dia_ancora_novo = mes_ancora_novo = None
+    horizonte_novo = None
     if data_vencimento is not None:
         data_nova = date.fromisoformat(data_vencimento)
         dia_ancora_novo, mes_ancora_novo = data_nova.day, data_nova.month
@@ -2111,20 +2551,31 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             if frequencia == "mensal"
             else (lambda ano, mes: _somar_ano(ano, mes_ancora_novo, dia_ancora_novo))
         )
-        novas_datas = [data_vencimento]
-        for _ in range(len(ocorrencias_futuras) - 1):
-            ano_atual, mes_atual, _ = map(int, novas_datas[-1].split("-"))
-            novas_datas.append(avancar(ano_atual, mes_atual))
-
-        if data_termino is not None:
-            limite_ano, limite_mes = map(int, data_termino.split("-"))
-            ano_ultima, mes_ultima, _ = map(int, novas_datas[-1].split("-"))
-            if (ano_ultima, mes_ultima) > (limite_ano, limite_mes):
-                return False
-
-        novas_datas_por_id = {
-            ocorrencias_futuras[i][0]: novas_datas[i] for i in range(len(ocorrencias_futuras))
+        # D2: as futuras são resequenciadas, exceto as EDITADAS preservadas
+        # fora da grade atual (outro mês numa série anual, ou além do
+        # término -- D4), que mantêm data e vaga; a nova sequência pula as
+        # competências que elas ocupam. Uma não editada é sempre mecânica
+        # e sempre resequenciada, mesmo vinda de um bloco antigo da grade
+        # (ex.: meses de antes de uma mudança mensal -> anual) -- C3.
+        da_grade = [oc_id for oc_id, prevista, editado in ocorrencias_futuras
+                    if not editado or _vaga_na_grade(prevista, frequencia, mes_ancora_atual, data_termino)]
+        ocupadas_fora_da_grade = {
+            _competencia(prevista) for oc_id, prevista, _ in ocorrencias_futuras if oc_id not in da_grade
         }
+        novas_datas = []
+        ultima = data_vencimento
+        while len(novas_datas) < len(da_grade):
+            ano_atual, mes_atual, _ = map(int, ultima.split("-"))
+            ultima = avancar(ano_atual, mes_atual)
+            if _competencia(ultima) not in ocupadas_fora_da_grade:
+                novas_datas.append(ultima)
+        horizonte_novo = novas_datas[-1] if novas_datas else data_vencimento
+
+        if data_termino is not None and _competencia(horizonte_novo) > data_termino:
+            return False
+
+        novas_datas_por_id = {conta_id: data_vencimento}
+        novas_datas_por_id.update(zip(da_grade, novas_datas))
 
     conexao = sqlite3.connect(NOME_DO_BANCO)
     conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
@@ -2147,12 +2598,16 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
         elif descricao is not None:
             campos.append("descricao = ?"); valores.append(descricao)
         if campos:
-            sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND data_vencimento >= ?"
-            cursor.execute(sql, (*valores, serie_id, data_referencia))
+            sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?"
+            cursor.execute(sql, (*valores, serie_id, posicao_referencia))
 
         if novas_datas_por_id is not None:
             for oc_id, nova_data in novas_datas_por_id.items():
-                cursor.execute("UPDATE contas SET data_vencimento = ? WHERE id = ?", (nova_data, oc_id))
+                cursor.execute(
+                    "UPDATE contas SET data_vencimento = ?, data_prevista = ? WHERE id = ?",
+                    (nova_data, nova_data, oc_id),
+                )
+            _renumerar_segmento(cursor, serie_id, posicao_referencia)
 
         campos_serie, valores_serie = [], []
         if nome is not None:
@@ -2172,17 +2627,12 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             campos_serie.append("mes_ancora = ?")
             valores_serie.append(mes_ancora_novo if frequencia == "anual" else None)
             campos_serie.append("data_inicio = ?"); valores_serie.append(data_vencimento)
+            campos_serie.append("posicao_ancora = ?"); valores_serie.append(posicao_referencia)
+            campos_serie.append("horizonte_gerado_ate = ?"); valores_serie.append(horizonte_novo)
         if campos_serie:
             sql = f"UPDATE series_recorrencia SET {', '.join(campos_serie)} WHERE id = ?"
             cursor.execute(sql, (*valores_serie, serie_id))
 
-        if novas_datas_por_id is not None:
-            cursor.execute("SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,))
-            novo_horizonte = cursor.fetchone()[0]
-            cursor.execute(
-                "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
-                (novo_horizonte, serie_id),
-            )
 
         cursor.execute("COMMIT;")
     except Exception:
@@ -2199,28 +2649,37 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
     RF27 (5.5): altera a frequência de uma série a partir da ocorrência
     selecionada, que passa a ser a nova âncora.
 
-    - Ocorrências anteriores à selecionada (data_vencimento < referência):
-      nunca tocadas.
-    - A ocorrência selecionada em si: não é alterada — sua data já É a
-      nova âncora; só a configuração da série muda a partir dela.
-    - Ocorrências futuras (data_vencimento > referência) que ainda seguem
+    Etapa 2b: anteriores/futuras pela posição lógica (`contas.posicao`),
+    nunca pelo vencimento real.
+
+    - Ocorrências anteriores à selecionada: nunca tocadas.
+    - A ocorrência selecionada em si: não é alterada (nem a vaga) -- só a
+      configuração da série muda a partir dela.
+    - D1, variante "d": o dia (e o mês, se anual) da nova grade vêm do
+      vencimento real da selecionada, mas as novas vagas começam na
+      competência seguinte à VAGA dela (`_grade_a_partir_da_vaga`) -- uma
+      selecionada movida para antes do histórico não gera vagas por cima
+      das anteriores.
+    - Ocorrências futuras que ainda seguem
       o padrão mecânico da série (`editado_individualmente = 0`) são
       substituídas: removidas e regeradas sob a nova frequência e o novo
       término, a partir da nova âncora (sem arrasto —
       `_somar_mes`/`_somar_ano`).
     - Ocorrências futuras já editadas individualmente
       (`editado_individualmente = 1`): preservadas, nunca substituídas —
-      exceção fechada em 5.1/5.5, independente do novo término escolhido.
+      exceção fechada em 5.1/5.5, independente do novo término escolhido
+      (D4: além do término continuam existindo e contando). Cada uma
+      ocupa a própria vaga: a nova grade não cria outra ocorrência na
+      mesma competência prevista.
     - `status` e `data_pagamento` nunca são tocados, para nenhuma
       ocorrência (5.9).
     - As ocorrências regeneradas copiam o modelo da série (nome, valor,
       categoria e descrição); o modelo não é alterado por esta função.
     - `series_recorrencia.frequencia/dia_ancora/mes_ancora/data_inicio/
-      data_termino` são atualizados para refletir a nova configuração;
-      `horizonte_gerado_ate` é recalculado como o maior `data_vencimento`
-      realmente existente na série após a operação (cobre tanto as novas
-      ocorrências quanto qualquer preservada que esteja mais à frente do
-      novo término).
+      data_termino/posicao_ancora` são atualizados para refletir a nova
+      configuração; `horizonte_gerado_ate` é a última vaga da nova grade
+      -- nunca uma preservada distante, que faria a geração sob demanda
+      saltar períodos (E3).
 
     Fase D5 (decisão de produto): `data_termino` ("AAAA-MM" ou `None`) é
     uma escolha nova e explícita do usuário a cada alteração de
@@ -2259,11 +2718,13 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
     conexao.execute("PRAGMA foreign_keys = ON;")
     cursor = conexao.cursor()
     try:
-        cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+        cursor.execute(
+            "SELECT serie_id, data_vencimento, posicao, data_prevista FROM contas WHERE id = ?", (conta_id,)
+        )
         linha = cursor.fetchone()
         if linha is None:
             raise ValueError(f"conta com id={conta_id} não existe")
-        serie_id, referencia = linha
+        serie_id, referencia, posicao_referencia, vaga_referencia = linha
         if serie_id is None:
             raise ValueError("RF27 não se aplica a conta avulsa (sem série)")
 
@@ -2281,55 +2742,49 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
                 "não é possível alterar sua frequência"
             )
 
-        ano_ref, mes_ref, dia_ref = map(int, referencia.split("-"))
-        dia_ancora_novo = dia_ref
-        mes_ancora_novo = mes_ref if nova_frequencia == "anual" else None
+        data_referencia = date.fromisoformat(referencia)
+        dia_ancora_novo = data_referencia.day
+        mes_ancora_novo = data_referencia.month if nova_frequencia == "anual" else None
+        data_inicio_nova, novas_datas = _grade_a_partir_da_vaga(
+            nova_frequencia, dia_ancora_novo, mes_ancora_novo, vaga_referencia, data_termino,
+        )
 
+        # Etapa 2b: futuras pela posição lógica, não pelo vencimento real.
         cursor.execute(
-            "SELECT id, editado_individualmente FROM contas WHERE serie_id = ? AND data_vencimento > ?",
-            (serie_id, referencia),
+            "SELECT id, editado_individualmente FROM contas WHERE serie_id = ? AND posicao > ?",
+            (serie_id, posicao_referencia),
         )
         futuras = cursor.fetchall()
         substituiveis = [oc_id for oc_id, editado in futuras if editado == 0]
         preservadas = [oc_id for oc_id, editado in futuras if editado == 1]
 
-        datas = _gerar_datas_ocorrencias(nova_frequencia, referencia, data_termino)
-        novas_datas = datas[1:]  # a primeira (referencia) já existe -- é a própria conta_id
-
         try:
             cursor.execute("BEGIN;")
-
-            cursor.execute(
-                """
-                UPDATE series_recorrencia
-                SET frequencia = ?, dia_ancora = ?, mes_ancora = ?, data_inicio = ?, data_termino = ?
-                WHERE id = ?
-                """,
-                (nova_frequencia, dia_ancora_novo, mes_ancora_novo, referencia, data_termino, serie_id),
-            )
 
             if substituiveis:
                 placeholders = ",".join("?" * len(substituiveis))
                 cursor.execute(f"DELETE FROM contas WHERE id IN ({placeholders})", substituiveis)
 
-            ids_novos = []
-            for nova_data in novas_datas:
-                cursor.execute(
-                    """
-                    INSERT INTO contas
-                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                    """,
-                    (usuario_id, categoria_id_serie, serie_id, nome_serie, valor_serie, nova_data,
-                     descricao_serie),
-                )
-                ids_novos.append(cursor.lastrowid)
+            # Uma editada preservada ocupa a própria vaga: a nova grade não
+            # cria outra ocorrência na mesma competência prevista (E1/E2).
+            ocupadas = _competencias_ocupadas(cursor, serie_id, posicao_referencia)
+            ids_novos = [
+                _inserir_ocorrencia(cursor, usuario_id, categoria_id_serie, serie_id, nome_serie,
+                                    valor_serie, nova_data, descricao_serie)
+                for nova_data in novas_datas
+                if _competencia(nova_data) not in ocupadas
+            ]
+            _renumerar_segmento(cursor, serie_id, posicao_referencia)
 
-            cursor.execute("SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,))
-            novo_horizonte = cursor.fetchone()[0]
             cursor.execute(
-                "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
-                (novo_horizonte, serie_id),
+                """
+                UPDATE series_recorrencia
+                SET frequencia = ?, dia_ancora = ?, mes_ancora = ?, data_inicio = ?, data_termino = ?,
+                    horizonte_gerado_ate = ?, posicao_ancora = ?
+                WHERE id = ?
+                """,
+                (nova_frequencia, dia_ancora_novo, mes_ancora_novo, data_inicio_nova, data_termino,
+                 novas_datas[-1] if novas_datas else data_inicio_nova, posicao_referencia, serie_id),
             )
 
             cursor.execute("COMMIT;")
@@ -2465,9 +2920,13 @@ def excluir_conta(conta_id):
     linha de `contas`, então não há mais FK para quebrar.
 
     Se a ocorrência excluída pertencia a uma série:
-      - se ainda restar ao menos uma ocorrência da série, `horizonte_gerado_ate`
-        é recalculado como `MAX(data_vencimento)` das que restam, para nunca
-        apontar a uma data sem ocorrência correspondente;
+      - se ainda restar ao menos uma ocorrência da série,
+        `horizonte_gerado_ate` NÃO muda (Etapa 2b): ele é a última vaga que
+        a grade já gerou, não a maior vaga restante. Assim a vaga excluída
+        fica vazia de vez (excluir a última gerada não a faz ser recriada
+        ao navegar -- C2), as seguintes continuam sendo geradas, e uma
+        editada preservada muito além da grade não faz o horizonte saltar
+        competências (C1);
       - se não restar nenhuma ocorrência, o próprio registro em
         `series_recorrencia` é removido junto — sem ocorrências, não há
         mais nada para a série rastrear.
@@ -2491,17 +2950,9 @@ def excluir_conta(conta_id):
             cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
 
             if serie_id is not None:
-                cursor.execute(
-                    "SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,)
-                )
-                novo_horizonte = cursor.fetchone()[0]
-                if novo_horizonte is None:
+                cursor.execute("SELECT 1 FROM contas WHERE serie_id = ? LIMIT 1", (serie_id,))
+                if cursor.fetchone() is None:
                     cursor.execute("DELETE FROM series_recorrencia WHERE id = ?", (serie_id,))
-                else:
-                    cursor.execute(
-                        "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
-                        (novo_horizonte, serie_id),
-                    )
 
             cursor.execute("COMMIT;")
         except Exception:
@@ -2516,7 +2967,8 @@ def excluir_conta(conta_id):
 def excluir_conta_serie(conta_id):
     """
     RF08 "Este mês em diante" (5.7): exclui a ocorrência selecionada e
-    todas as futuras da mesma série (`data_vencimento >= referência`).
+    todas as futuras da mesma série (posição lógica >= a da selecionada,
+    Etapa 2b -- não o vencimento real).
     Ocorrências anteriores permanecem no histórico. Sem exceção para
     ocorrências já pagas ou editadas individualmente dentro do trecho
     excluído — a ERS (5.7) não prevê nenhuma proteção nesse sentido para
@@ -2562,11 +3014,11 @@ def excluir_conta_serie(conta_id):
     conexao.execute("PRAGMA foreign_keys = ON;")
     cursor = conexao.cursor()
     try:
-        cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+        cursor.execute("SELECT serie_id, posicao FROM contas WHERE id = ?", (conta_id,))
         linha = cursor.fetchone()
         if linha is None:
             return False
-        serie_id, data_referencia = linha
+        serie_id, posicao_referencia = linha
 
         try:
             cursor.execute("BEGIN;")
@@ -2579,12 +3031,15 @@ def excluir_conta_serie(conta_id):
                 )
                 (termino_atual,) = cursor.fetchone()
 
+                # Etapa 2b: "daqui em diante" pela posição lógica -- uma
+                # ocorrência anterior com o vencimento movido para depois
+                # da selecionada é preservada.
                 cursor.execute(
-                    "DELETE FROM contas WHERE serie_id = ? AND data_vencimento >= ?",
-                    (serie_id, data_referencia),
+                    "DELETE FROM contas WHERE serie_id = ? AND posicao >= ?",
+                    (serie_id, posicao_referencia),
                 )
                 cursor.execute(
-                    "SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,)
+                    "SELECT MAX(data_prevista) FROM contas WHERE serie_id = ?", (serie_id,)
                 )
                 novo_horizonte = cursor.fetchone()[0]
                 if novo_horizonte is None:
@@ -2625,7 +3080,9 @@ def encerrar_recorrencia(conta_id):
     ocorrência). A regra fundamental é nunca apagar histórico: o corte
     usado para decidir o que remover é sempre o **maior** entre a data da
     ocorrência selecionada e a data atual --
-    `corte = max(data_vencimento da ocorrência selecionada, hoje)`:
+    `corte = max(data_vencimento da ocorrência selecionada, hoje)` (5.8),
+    aplicado só às ocorrências POSTERIORES à selecionada na posição lógica
+    (Etapa 2b) -- uma anterior com o vencimento movido nunca é removida:
 
     - se a ocorrência selecionada é passada (ex.: hoje é setembro/2026 e o
       usuário está editando março/2026), o corte vira "hoje" -- tudo até
@@ -2663,11 +3120,11 @@ def encerrar_recorrencia(conta_id):
     conexao.execute("PRAGMA foreign_keys = ON;")
     cursor = conexao.cursor()
     try:
-        cursor.execute("SELECT serie_id, data_vencimento FROM contas WHERE id = ?", (conta_id,))
+        cursor.execute("SELECT serie_id, data_vencimento, posicao FROM contas WHERE id = ?", (conta_id,))
         linha = cursor.fetchone()
         if linha is None:
             raise ValueError(f"conta com id={conta_id} não existe")
-        serie_id, referencia = linha
+        serie_id, referencia, posicao_referencia = linha
         if serie_id is None:
             raise ValueError("RF29 não se aplica a conta avulsa (sem série)")
 
@@ -2687,16 +3144,17 @@ def encerrar_recorrencia(conta_id):
                 """
                 DELETE FROM contas
                 WHERE serie_id = ?
+                  AND posicao > ?
                   AND data_vencimento > ?
                   AND status != 'pago'
                   AND data_pagamento IS NULL
                   AND editado_individualmente = 0
                 """,
-                (serie_id, corte),
+                (serie_id, posicao_referencia, corte),
             )
             ocorrencias_removidas = cursor.rowcount
 
-            cursor.execute("SELECT MAX(data_vencimento) FROM contas WHERE serie_id = ?", (serie_id,))
+            cursor.execute("SELECT MAX(data_prevista) FROM contas WHERE serie_id = ?", (serie_id,))
             novo_horizonte = cursor.fetchone()[0]
 
             cursor.execute(

@@ -21,6 +21,14 @@ COLUNAS_NOVAS = {
     ("usuarios", "email_verificado"): ("INTEGER", 1, "0"),
     ("usuarios", "tema"): ("TEXT", 1, "'claro'"),
 }
+COLUNAS_V7 = {
+    ("contas", "posicao"): ("INTEGER", 0, None),
+    ("contas", "data_prevista"): ("TEXT", 0, None),
+    ("series_recorrencia", "posicao_ancora"): ("INTEGER", 0, None),
+}
+# Primeira user_version que esta versão do app NÃO conhece (a 7 passou a
+# ser a atual na Etapa 2b).
+VERSAO_FUTURA = db.VERSAO_SCHEMA_ATUAL + 1
 
 
 class AuxiliaresBancoV6(TesteComBancoTemporario):
@@ -125,12 +133,20 @@ class AuxiliaresBancoV6(TesteComBancoTemporario):
         self.assertEqual(self.backups(), [])
         self.assert_sem_transacao_nem_lock(self.caminho_v5)
 
-    def assert_schema_v6(self, caminho):
+    def assert_schema_v6(self, caminho, versao=6):
         for (tabela, coluna), definicao in COLUNAS_NOVAS.items():
             self.assertEqual(self.colunas(caminho, tabela).get(coluna), definicao, f"{tabela}.{coluna}")
         indices = {linha[1]: linha[2] for linha in self.sql(caminho, "PRAGMA index_list(usuarios)")}
         self.assertEqual(indices.get(db.INDICE_EMAIL_CI), 1)
-        self.assertEqual(self.sql(caminho, "PRAGMA user_version")[0][0], 6)
+        self.assertEqual(self.sql(caminho, "PRAGMA user_version")[0][0], versao)
+
+    def assert_schema_v7(self, caminho):
+        """Schema atual: tudo da v6 + posição lógica (Etapa 2b), user_version 7."""
+        self.assert_schema_v6(caminho, versao=7)
+        for (tabela, coluna), definicao in COLUNAS_V7.items():
+            self.assertEqual(self.colunas(caminho, tabela).get(coluna), definicao, f"{tabela}.{coluna}")
+        indices = {linha[1]: linha[2] for linha in self.sql(caminho, "PRAGMA index_list(contas)")}
+        self.assertEqual(indices.get(db.INDICE_POSICAO), 1)
 
 
 class TesteMigracaoV6(AuxiliaresBancoV6):
@@ -224,9 +240,11 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
     # ------------------------------------------------------------------
     #  Banco novo e criar_tabelas()
     # ------------------------------------------------------------------
-    def test_banco_novo_ja_nasce_v6_e_migracao_nao_faz_nada(self):
-        self.assert_schema_v6(self.caminho_banco)
+    def test_banco_novo_ja_nasce_v7_e_migracao_v6_nao_faz_nada(self):
+        # Etapa 2b: criar_tabelas() cria o schema atual (v7), que contém a v6.
+        self.assert_schema_v7(self.caminho_banco)
         self.assertTrue(db.validar_migracao_v6(self.caminho_banco)["ok"])
+        self.assertTrue(db.validar_schema_atual(self.caminho_banco)["ok"])
 
         resultado = db.migrar_schema_v6(self.caminho_banco)
 
@@ -236,6 +254,7 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
     def test_banco_novo_e_banco_migrado_tem_as_mesmas_colunas(self):
         self.criar_v5()
         db.migrar_schema_v6(self.caminho_v5)
+        db.migrar_schema_v7(self.caminho_v5)
         for tabela in COLUNAS_V5:
             self.assertEqual(self.colunas(self.caminho_v5, tabela), self.colunas(self.caminho_banco, tabela), tabela)
 
@@ -409,7 +428,7 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
         self.assertEqual(self.backups(), [])
 
     def test_versao_nao_suportada_aborta_antes_de_qualquer_escrita(self):
-        for versao in (7, 3):
+        for versao in (VERSAO_FUTURA, 3):
             with self.subTest(user_version=versao):
                 if os.path.exists(self.caminho_v5):
                     os.remove(self.caminho_v5)
@@ -428,7 +447,7 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
     def test_validacao_recusa_banco_v6_com_versao_futura(self):
         self.criar_v5()
         db.migrar_schema_v6(self.caminho_v5)
-        self.sql(self.caminho_v5, "PRAGMA user_version = 7")
+        self.sql(self.caminho_v5, f"PRAGMA user_version = {VERSAO_FUTURA}")
         self.assertFalse(db.validar_migracao_v6(self.caminho_v5)["ok"])
 
     def test_tabelas_fora_do_schema_v5_nao_sao_tratadas_como_v5(self):

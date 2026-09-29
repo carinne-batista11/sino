@@ -144,7 +144,22 @@ class TestExcluir(TesteComBancoTemporario):
         self.assertTrue(db.excluir_conta(ids[0]))
         self.assertEqual(self.datas(serie_id), ["2026-10-10", "2026-11-10", "2026-12-10"])
         db.excluir_conta(ids[3])
-        self.assertEqual(self.serie(serie_id)["horizonte_gerado_ate"], "2026-11-10")
+        # Etapa 2b (C2): o horizonte é a última vaga já gerada pela grade e
+        # não recua ao excluir a última ocorrência -- a vaga fica vazia.
+        self.assertEqual(self.datas(serie_id), ["2026-10-10", "2026-11-10"])
+        self.assertEqual(self.serie(serie_id)["horizonte_gerado_ate"], "2026-12-10")
+
+    def test_excluir_a_ultima_gerada_nao_a_recria_e_gera_as_seguintes(self):
+        serie_id, ids = db.criar_serie_recorrente(self.usuario_id, "Internet", 100.0, "2026-09-10", "mensal")
+        ultima = ids[-1]
+        self.assertEqual(self.conta(ultima)["data_vencimento"], "2027-09-10")
+        self.assertTrue(db.excluir_conta(ultima))
+
+        novos = db.gerar_ocorrencias_sob_demanda(serie_id, "2027-11")
+
+        self.assertEqual([self.conta(c)["data_vencimento"] for c in novos], ["2027-10-10", "2027-11-10"])
+        self.assertNotIn("2027-09-10", self.datas(serie_id))
+        self.assertEqual(db.gerar_ocorrencias_sob_demanda(serie_id, "2027-11"), [])
 
     def test_excluir_ultima_ocorrencia_remove_serie(self):
         serie_id, ids = db.criar_serie_recorrente(

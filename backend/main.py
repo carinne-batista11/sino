@@ -530,9 +530,9 @@ def parse_valor(texto):
 
 def preparar_banco_ou_exibir_erro(page):
     """
-    ERS v6.0, Etapa 1: garante o banco pronto para a v6 antes de qualquer
-    tela que dependa dele (database.preparar_banco: cria, migra com backup
-    ou reconhece que já está atualizado). Em caso de falha, o traceback
+    ERS v6.0, Etapas 1 e 2b: garante o banco no schema atual (v7) antes de
+    qualquer tela que dependa dele (database.preparar_banco: cria, migra
+    v5 -> v6 -> v7 com backup ou reconhece que já está atualizado). Em caso de falha, o traceback
     completo vai para o terminal, a usuária vê só uma mensagem genérica e o
     retorno False impede que o app siga para o login.
     """
@@ -569,7 +569,10 @@ def preparar_banco_ou_exibir_erro(page):
         return False
 
     if resultado["situacao"] == "migrado":
-        print(f"Sino: banco migrado para a v6. Backup pré-migração: {resultado['migracao']['backup']}")
+        for versao, chave in (("v6", "migracao"), ("v7", "migracao_v7")):
+            migracao = resultado.get(chave)
+            if migracao and migracao.get("executado"):
+                print(f"Sino: banco migrado para a {versao}. Backup pré-migração: {migracao['backup']}")
     return True
 
 
@@ -2240,18 +2243,22 @@ def main(page: ft.Page):
                         )
 
                 def mostrar_dialogo_escopo_edicao(campos_alterados, mensagem_alteracao):
-                    def mostrar_erro_limite(erro_limite):
-                        # 5.23: erro de limite nunca é apresentado como
-                        # "ultrapassaria o término" nem como falha genérica.
+                    def mostrar_recusa(erro):
+                        # 5.23 (limite de caracteres) e D5 (mês não posterior
+                        # ao da parcela anterior): mensagem própria, nunca
+                        # "ultrapassaria o término" nem falha genérica. A
+                        # recusa acontece antes de qualquer gravação, e
+                        # Status/Recorrência (aplicados só depois) também
+                        # não são gravados.
                         page.pop_dialog()
-                        erro_edit.value = str(erro_limite)
+                        erro_edit.value = str(erro)
                         page.update()
 
                     def aplicar_somente_esta(e):
                         try:
                             sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
                         except limites.LimiteDeCaracteresError as erro_limite:
-                            mostrar_erro_limite(erro_limite)
+                            mostrar_recusa(erro_limite)
                             return
                         if not sucesso:
                             page.pop_dialog()
@@ -2269,8 +2276,9 @@ def main(page: ft.Page):
                     def aplicar_este_mes_em_diante(e):
                         try:
                             sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
-                        except limites.LimiteDeCaracteresError as erro_limite:
-                            mostrar_erro_limite(erro_limite)
+                        except (limites.LimiteDeCaracteresError,
+                                database.VencimentoAntesDaParcelaAnteriorError) as erro:
+                            mostrar_recusa(erro)
                             return
                         if not sucesso:
                             page.pop_dialog()

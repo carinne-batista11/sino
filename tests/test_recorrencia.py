@@ -117,10 +117,13 @@ class TestGeracaoSobDemanda(TesteComBancoTemporario):
         self.assertEqual(len(set(self.datas(serie_id))), total)
 
     def test_nao_duplica_data_ja_existente(self):
+        # Etapa 2b: uma ocorrência que já ocupa a vaga de outubro/2027 (além
+        # do horizonte) impede outra na mesma competência prevista.
         serie_id, _ = db.criar_serie_recorrente(self.usuario_id, "Internet", 100.0, "2026-09-15", "mensal")
         self.executar(
-            "INSERT INTO contas (usuario_id, serie_id, nome, valor, data_vencimento) VALUES (?, ?, ?, ?, ?)",
-            (self.usuario_id, serie_id, "Internet", 100.0, "2027-10-15"),
+            """INSERT INTO contas (usuario_id, serie_id, nome, valor, data_vencimento, posicao, data_prevista)
+               VALUES (?, ?, ?, ?, ?, 99, ?)""",
+            (self.usuario_id, serie_id, "Internet", 100.0, "2027-10-15", "2027-10-15"),
         )
         novos = db.gerar_ocorrencias_sob_demanda(serie_id, "2027-11")
         self.assertEqual(len(novos), 1)
