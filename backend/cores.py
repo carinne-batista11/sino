@@ -87,8 +87,23 @@ PALETAS = {
 
         # Categorias sem cor definida (a paleta oficial fica em db.py)
         "categoria_sem_cor": "#E5E4DE",
-        # "Sem categoria" (conta sem categoria): cinza, sem emoji -- ERS 8.4/5.25
+        # "Sem categoria" (conta sem categoria): cinza reservado, sem emoji --
+        # ERS 8.4/5.25; mesmo valor de db.COR_RESERVADA_SEM_CATEGORIA.
         "sem_categoria": "#888780",
+
+        # Tela Gráfico (Etapa 5, protótipo 10)
+        "grafico_total_fundo": "#EEF7F2",
+        "grafico_total_borda": "#D5EDE1",
+        "grafico_total_icone": "#1D9E75",
+        "grafico_pago_fundo": "#EEF4FB",
+        "grafico_pago_borda": "#D8E6F5",
+        "grafico_pago_icone": "#1E88E5",
+        "grafico_progresso_fundo": "#E3E7EC",
+        "grafico_barra": "#A8E0CC",
+        "grafico_barra_destaque": "#1D9E75",
+        "grafico_comparacao_fundo": "#F0F0EC",
+        "variacao_aumento": "#A32D2D",
+        "variacao_reducao": "#1D9E75",
         "categoria_cor_padrao": "#1D9E75",
     },
 }

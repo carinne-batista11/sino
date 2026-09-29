@@ -2,7 +2,8 @@
 # Ambiente de referência: Python 3.11.
 #
 # O restante do código usa a biblioteca padrão do Python (sqlite3,
-# hashlib, secrets, datetime...) e o pacote `regex`. As dependências transitivas
+# hashlib, secrets, datetime...), o pacote `regex` e o `flet-charts` (gráficos
+# da tela Gráfico). As dependências transitivas
 # (httpx, msgpack, oauthlib, repath, rich) são resolvidas pelo pip a partir
 # dos pacotes abaixo.
 #
@@ -10,6 +11,8 @@
 # flet-desktop precisam estar exatamente na mesma versão.
 flet==0.86.5
 flet-desktop==0.86.5
+# flet-charts: gráficos da tela Gráfico (Etapa 5); mesma versão do flet.
+flet-charts==0.86.5
 
 # regex: contagem de caracteres percebidos pelo usuário (agrupamentos de
 # grafemas, `\X`) nos limites de texto da ERS v6.0 (5.23/T5) --

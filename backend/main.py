@@ -7,11 +7,13 @@ import os
 import re
 import sys
 import traceback
+from calendar import monthrange
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "database"))
 
 import flet as ft
+import flet_charts as fch
 import db as database
 import aviso_sonoro
 import cores
@@ -591,6 +593,102 @@ def texto_parcela(parcela):
     return f"Parcela {posicao} de {total}" if total is not None else f"Parcela {posicao}"
 
 
+MESES_ABREVIADOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+
+def formatar_percentual(valor):
+    """5.28: casa decimal só quando necessária -- 42%, 24,5%, 8,3%."""
+    arredondado = round(valor + 0.0, 1)
+    if arredondado == int(arredondado):
+        return f"{int(arredondado)}%"
+    return f"{arredondado:.1f}%".replace(".", ",")
+
+
+def percentual_de(parte, total):
+    return 0.0 if not total else parte / total * 100
+
+
+def mes_anterior(ano, mes):
+    return (ano - 1, 12) if mes == 1 else (ano, mes - 1)
+
+
+def intervalo_do_periodo(modo, ano, mes=None):
+    """(início, fim) ISO do mês ou do ano."""
+    if modo == "anual":
+        return f"{ano:04d}-01-01", f"{ano:04d}-12-31"
+    return f"{ano:04d}-{mes:02d}-01", f"{ano:04d}-{mes:02d}-{monthrange(ano, mes)[1]:02d}"
+
+
+def rotulo_periodo(modo, ano, mes=None):
+    return str(ano) if modo == "anual" else f"{MESES_PT[mes - 1]} de {ano}"
+
+
+def janela_seis_meses(ano, mes):
+    """RF21: o mês (ano, mes) e os cinco anteriores, em ordem."""
+    meses = [(ano, mes)]
+    while len(meses) < 6:
+        meses.insert(0, mes_anterior(*meses[0]))
+    return meses
+
+
+def texto_total_pago(pago, total):
+    """5.24: "R$ 2.000,00 de R$ 2.340,00 pagos — 85,5%"."""
+    return (f"{formatar_moeda(pago)} de {formatar_moeda(total)} pagos — "
+            f"{formatar_percentual(percentual_de(pago, total))}")
+
+
+def ordenar_distribuicao(itens):
+    """RF22: maior valor primeiro; "Sem categoria" sempre por último (5.25)."""
+    com_categoria = sorted((i for i in itens if i["categoria_id"] is not None),
+                           key=lambda i: (-i["total"], i["nome"].lower()))
+    return com_categoria + [i for i in itens if i["categoria_id"] is None]
+
+
+def comparacao_com_anterior(atual, anterior):
+    """
+    RF23 (5.29): variação do período em relação ao anterior, pelos totais.
+    Retorna {"tipo", "destaque", "complemento"}; `tipo` em aumento, reducao,
+    igual, sem_base, sem_gastos.
+    """
+    diferenca = round(atual - anterior, 2)
+    if atual == 0 and anterior == 0:
+        return {"tipo": "sem_gastos", "destaque": "Sem gastos nos dois períodos.", "complemento": None}
+    if anterior == 0:
+        return {"tipo": "sem_base", "destaque": "Não há base de comparação",
+                "complemento": f"{formatar_moeda(diferenca)} a mais"}
+    if diferenca == 0:
+        return {"tipo": "igual", "destaque": "0% — Sem alteração", "complemento": None}
+    variacao = formatar_percentual(abs(diferenca) / anterior * 100)
+    if diferenca > 0:
+        return {"tipo": "aumento", "destaque": f"▲ {variacao}", "complemento": f"{formatar_moeda(diferenca)} a mais"}
+    return {"tipo": "reducao", "destaque": f"▼ {variacao}", "complemento": f"{formatar_moeda(-diferenca)} a menos"}
+
+
+LARGURA_MINIMA_LEGENDA_EM_COLUNAS = 700
+
+
+def layout_gastos_por_categoria(largura_pagina):
+    """
+    Etapa 5 (protótipo 10): medidas de "Gastos por categoria". Em janela
+    larga, colunas fixas e próximas -- nome (cabe um nome de 30 caracteres
+    numa linha), valor e percentual -- e uma rosca grande. Em janela
+    estreita, o nome ocupa o espaço livre e quebra linha, e a rosca encolhe
+    para caber. Largura desconhecida é tratada como larga.
+    """
+    if not isinstance(largura_pagina, (int, float)) or largura_pagina >= LARGURA_MINIMA_LEGENDA_EM_COLUNAS:
+        return {"largura_nome": 240, "largura_valor": 130, "largura_percentual": 60, "tamanho_rosca": 320,
+                "estreita": False}
+    return {"largura_nome": None, "largura_valor": 112, "largura_percentual": 56,
+            "tamanho_rosca": int(max(200, min(300, largura_pagina - 90))), "estreita": True}
+
+
+def ano_inicial_anual(anos_com_historico, ano_atual):
+    """5.26: o ano atual se tiver contas; senão o mais recente com contas."""
+    if not anos_com_historico or ano_atual in anos_com_historico:
+        return ano_atual
+    return max(anos_com_historico)
+
+
 def parse_valor(texto):
     texto = (texto or "").strip().replace("R$", "").strip()
     if not texto:
@@ -700,7 +798,7 @@ def main(page: ft.Page):
                 controls=[
                     item("inicio", ft.Icons.HOME, "Início", lambda e: mostrar_tela_principal()),
                     item("categorias", ft.Icons.FOLDER, "Categorias", lambda e: mostrar_tela_categorias()),
-                    item("grafico", ft.Icons.BAR_CHART, "Gráfico", None),
+                    item("grafico", ft.Icons.BAR_CHART, "Gráfico", lambda e: mostrar_tela_grafico()),
                     item("ajustes", ft.Icons.SETTINGS, "Ajustes", None),
                 ],
             ),
@@ -3200,6 +3298,12 @@ def main(page: ft.Page):
                 erro.value = str(erro_limite)
                 page.update()
                 return
+            except database.CorReservadaError:
+                # 5.13: o cinza é reservado a "Sem categoria" (a paleta não o
+                # oferece; esta é a barreira da gravação).
+                erro.value = "Essa cor é reservada para “Sem categoria”. Escolha outra."
+                page.update()
+                return
             except ValueError as erro_valor:
                 if "cor" in str(erro_valor):
                     erro.value = "Essa cor já está em uso por outra categoria sua. Escolha outra."
@@ -3308,6 +3412,395 @@ def main(page: ft.Page):
     # ======================================================
     #  TELA DE CATEGORIAS (CRUD)
     # ======================================================
+    # ======================================================
+    #  TELA GRÁFICO (ERS v6.0, Etapa 5: RF21-RF23, RF34)
+    #  Protótipo 10. Somente consulta: nunca gera ocorrências (5.26).
+    # ======================================================
+    def mostrar_tela_grafico():
+        page.controls.clear()
+        page.overlay.clear()
+        page.padding = 0
+
+        hoje = date.today()
+        anos = database.anos_com_contas(usuario_atual["id"])
+        estado = {
+            "modo": "mensal",                               # período geral (Mensal | Anual)
+            "ano": hoje.year, "mes": hoje.month,            # período mensal
+            "ano_anual": ano_inicial_anual(anos, hoje.year),  # período anual
+            "perspectiva": "seis_meses",                    # só RF21 (6 meses | Anual)
+        }
+        # STRETCH: cada bloco ocupa toda a largura (ex.: cartão de comparação).
+        corpo = ft.Column(spacing=16, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[])
+        ALTURA_CARTOES_TOTAIS = 190  # Total do mês/ano e Total pago com a mesma altura (protótipo 10)
+
+        # ---------------------------------------------------------- auxiliares
+        def cartao(conteudo, bgcolor=None, borda=None, col=None, padding=18, height=None):
+            return ft.Container(
+                col=col, height=height, bgcolor=bgcolor or cores.fundo_card, border_radius=16, padding=padding,
+                border=ft.Border.all(1, borda or cores.borda_suave), content=conteudo,
+            )
+
+        def circulo_icone(icone, cor, tamanho=52):
+            return ft.Container(
+                width=tamanho, height=tamanho, border_radius=tamanho / 2,
+                bgcolor=ft.Colors.with_opacity(0.14, cor), alignment=ft.Alignment.CENTER,
+                content=ft.Icon(icone, color=cor, size=tamanho * 0.5),
+            )
+
+        def alternador(opcoes, selecionada, ao_escolher):
+            return ft.Container(
+                bgcolor=cores.grafico_comparacao_fundo, border_radius=20, padding=3,
+                content=ft.Row(tight=True, spacing=0, controls=[
+                    ft.Container(
+                        border_radius=17, padding=ft.Padding(16, 7, 16, 7),
+                        bgcolor=cores.grafico_barra_destaque if valor == selecionada else None,
+                        content=ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD,
+                                        color=cores.texto_sobre_acao if valor == selecionada else cores.texto_secundario),
+                        on_click=lambda e, v=valor: ao_escolher(v),
+                    )
+                    for valor, rotulo in opcoes
+                ]),
+            )
+
+        def periodo_atual():
+            if estado["modo"] == "anual":
+                return "anual", estado["ano_anual"], None
+            return "mensal", estado["ano"], estado["mes"]
+
+        # ---------------------------------------------------------- ações
+        def escolher_modo(modo):
+            estado["modo"] = modo
+            estado["perspectiva"] = "anual" if modo == "anual" else "seis_meses"
+            atualizar()
+
+        def escolher_perspectiva(perspectiva):
+            estado["perspectiva"] = perspectiva
+            atualizar()
+
+        def navegar(delta):
+            if estado["modo"] == "anual":
+                if estado["ano_anual"] in anos:
+                    indice = anos.index(estado["ano_anual"]) + delta
+                    if 0 <= indice < len(anos):
+                        estado["ano_anual"] = anos[indice]
+            else:
+                ano, mes = estado["ano"], estado["mes"] + delta
+                if mes == 0:
+                    ano, mes = ano - 1, 12
+                elif mes == 13:
+                    ano, mes = ano + 1, 1
+                estado["ano"], estado["mes"] = ano, mes
+            atualizar()
+
+        # ---------------------------------------------------------- blocos
+        def bloco_navegacao():
+            modo, ano, mes = periodo_atual()
+            if modo == "anual":
+                pode_voltar = estado["ano_anual"] in anos and anos.index(estado["ano_anual"]) > 0
+                pode_avancar = estado["ano_anual"] in anos and anos.index(estado["ano_anual"]) < len(anos) - 1
+            else:
+                pode_voltar = pode_avancar = True
+            return ft.Row(
+                alignment=ft.MainAxisAlignment.CENTER, spacing=12,
+                controls=[
+                    ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, icon_color=cores.texto_principal,
+                                  disabled=not pode_voltar, tooltip="Período anterior",
+                                  on_click=lambda e: navegar(-1)),
+                    ft.Container(
+                        width=240, padding=ft.Padding(0, 10, 0, 10), border_radius=24,
+                        border=ft.Border.all(1, cores.borda_suave), bgcolor=cores.fundo_card,
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Text(rotulo_periodo(modo, ano, mes), size=16, weight=ft.FontWeight.BOLD,
+                                        color=cores.texto_principal),
+                    ),
+                    ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, icon_color=cores.texto_principal,
+                                  disabled=not pode_avancar, tooltip="Próximo período",
+                                  on_click=lambda e: navegar(1)),
+                ],
+            )
+
+        def bloco_totais(total, pago):
+            modo, ano, _ = periodo_atual()
+            rotulo_total = "Total do ano" if modo == "anual" else "Total do mês"
+            explicacao = (f"Valor total das contas cadastradas em {ano} (pagas, pendentes e atrasadas)."
+                          if modo == "anual" else
+                          "Todas as contas cadastradas neste mês (pagas, pendentes e atrasadas).")
+            cartao_total = cartao(
+                col={"xs": 12, "md": 6}, bgcolor=cores.grafico_total_fundo, borda=cores.grafico_total_borda,
+                height=ALTURA_CARTOES_TOTAIS,
+                conteudo=ft.Row(spacing=16, vertical_alignment=ft.CrossAxisAlignment.START, controls=[
+                    circulo_icone(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED, cores.grafico_total_icone),
+                    ft.Column(expand=True, spacing=4, controls=[
+                        ft.Row(spacing=6, controls=[
+                            ft.Text(rotulo_total, size=15, color=cores.texto_principal),
+                            ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=cores.texto_secundario,
+                                    tooltip=explicacao),
+                        ]),
+                        ft.Text(formatar_moeda(total), size=28, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                        ft.Text(explicacao, size=12, color=cores.texto_secundario),
+                    ]),
+                ]),
+            )
+            fracao = 0 if not total else min(pago / total, 1)
+            cartao_pago = cartao(
+                col={"xs": 12, "md": 6}, bgcolor=cores.grafico_pago_fundo, borda=cores.grafico_pago_borda,
+                height=ALTURA_CARTOES_TOTAIS,
+                conteudo=ft.Column(spacing=10, controls=[
+                    ft.Row(spacing=16, vertical_alignment=ft.CrossAxisAlignment.START, controls=[
+                        circulo_icone(ft.Icons.CHECK_CIRCLE, cores.grafico_pago_icone),
+                        ft.Column(expand=True, spacing=4, controls=[
+                            ft.Text("Total pago", size=15, color=cores.texto_principal),
+                            ft.Text(formatar_moeda(pago), size=28, weight=ft.FontWeight.BOLD,
+                                    color=cores.texto_principal),
+                        ]),
+                    ]),
+                    ft.Row(spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                        ft.ProgressBar(value=fracao, expand=True, height=10, border_radius=5,
+                                       color=cores.grafico_barra_destaque, bgcolor=cores.grafico_progresso_fundo),
+                        ft.Text(formatar_percentual(percentual_de(pago, total)), size=13,
+                                color=cores.texto_principal),
+                    ]),
+                    ft.Text(f"{formatar_moeda(pago)} de {formatar_moeda(total)} pagos", size=13,
+                            color=cores.texto_secundario),
+                ]),
+            )
+            return ft.ResponsiveRow(spacing=16, run_spacing=16, controls=[cartao_total, cartao_pago])
+
+        def grafico_barras(pontos):
+            """pontos: [(rótulo, valor, destaque)] -- valor logo acima de cada barra."""
+            maior = max((valor for _, valor, _ in pontos), default=0) or 1
+            grupos = [
+                fch.BarChartGroup(x=i, rods=[fch.BarChartRod(
+                    from_y=0, to_y=valor, width=46,
+                    color=cores.grafico_barra_destaque if destaque else cores.grafico_barra,
+                    border_radius=ft.BorderRadius.only(top_left=6, top_right=6),
+                    selected=True,  # rótulo fixo acima da barra (gráfico não interativo)
+                    tooltip=fch.BarChartRodTooltip(
+                        text=formatar_moeda(valor),
+                        text_style=ft.TextStyle(
+                            size=13, weight=ft.FontWeight.BOLD,
+                            color=cores.grafico_barra_destaque if destaque else cores.texto_secundario),
+                    ),
+                )])
+                for i, (_, valor, destaque) in enumerate(pontos)
+            ]
+            return fch.BarChart(
+                groups=grupos, height=230, interactive=False,
+                min_y=0, max_y=maior * 1.3,
+                group_alignment=ft.MainAxisAlignment.SPACE_AROUND,
+                tooltip=fch.BarChartTooltip(bgcolor=ft.Colors.TRANSPARENT, padding=0, margin=4),
+                bottom_axis=fch.ChartAxis(label_size=30, labels=[
+                    fch.ChartAxisLabel(value=i, label=ft.Text(
+                        rotulo, size=14,
+                        weight=ft.FontWeight.BOLD if destaque else None,
+                        color=cores.grafico_barra_destaque if destaque else cores.texto_principal))
+                    for i, (rotulo, _, destaque) in enumerate(pontos)
+                ]),
+                left_axis=fch.ChartAxis(show_labels=False),
+                right_axis=fch.ChartAxis(show_labels=False),
+                top_axis=fch.ChartAxis(show_labels=False),
+                horizontal_grid_lines=fch.ChartGridLines(interval=maior * 1.3, color=cores.divisor, width=1),
+            )
+
+        def bloco_evolucao():
+            modo, ano, mes = periodo_atual()
+            if estado["perspectiva"] == "anual":
+                subtitulo = "Total das contas cadastradas por ano"
+                ano_destacado = ano
+                pontos = [(str(a), total, a == ano_destacado) for a, total in database.totais_por_ano(usuario_atual["id"])]
+            else:
+                subtitulo = "Total de contas cadastradas nos últimos 6 meses"
+                fim = (ano, 12) if modo == "anual" else (ano, mes)
+                meses = janela_seis_meses(*fim)
+                totais = database.totais_por_mes(usuario_atual["id"], f"{meses[0][0]:04d}-{meses[0][1]:02d}",
+                                                 f"{meses[-1][0]:04d}-{meses[-1][1]:02d}")
+                pontos = [(MESES_ABREVIADOS[m - 1], totais.get(f"{a:04d}-{m:02d}", 0.0),
+                           modo == "mensal" and (a, m) == (ano, mes)) for a, m in meses]
+            cabecalho = ft.ResponsiveRow(vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                ft.Column(col={"xs": 12, "sm": 7}, spacing=2, controls=[
+                    ft.Text("Evolução dos gastos", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                    ft.Text(subtitulo, size=14, color=cores.texto_secundario),
+                ]),
+                ft.Row(col={"xs": 12, "sm": 5}, alignment=ft.MainAxisAlignment.END, controls=[
+                    alternador((("seis_meses", "6 meses"), ("anual", "Anual")), estado["perspectiva"],
+                               escolher_perspectiva),
+                ]),
+            ])
+            conteudo = (grafico_barras(pontos) if pontos else
+                        ft.Text("Ainda não há dados para exibir.", size=13, color=cores.texto_secundario))
+            return cartao(ft.Column(spacing=16, controls=[cabecalho, conteudo]))
+
+        def bloco_categorias(total, itens):
+            modo, ano, mes = periodo_atual()
+            titulo = ft.Column(spacing=2, controls=[
+                ft.Text("Gastos por categoria", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                ft.Text("Distribuição do total do ano" if modo == "anual" else "Distribuição do total do mês",
+                        size=14, color=cores.texto_secundario),
+            ])
+            if not total:
+                return cartao(ft.Column(spacing=16, controls=[
+                    titulo,
+                    ft.Text("Ainda não há dados para exibir neste período.", size=14, color=cores.texto_secundario),
+                ]))
+            layout = layout_gastos_por_categoria(page.width)
+            tamanho = layout["tamanho_rosca"]
+            cores_exibicao = database.cores_de_exibicao(database.listar_categorias(usuario_atual["id"]))
+
+            def cor_do_item(item):
+                if item["categoria_id"] is None:
+                    return cores.sem_categoria
+                return cores_exibicao.get(item["categoria_id"]) or item["cor"]
+
+            secoes, linhas = [], []
+            for item in itens:
+                cor = cor_do_item(item)
+                fatia = item["total"] / total
+                # Percentuais só na legenda (nenhum título nas fatias).
+                secoes.append(fch.PieChartSection(value=item["total"], color=cor,
+                                                  radius=layout["tamanho_rosca"] * 0.2, title=""))
+                sem_categoria = item["categoria_id"] is None
+                linhas.append(ft.Container(
+                    padding=ft.Padding(0, 8, 0, 8),
+                    border=ft.Border(bottom=ft.BorderSide(1, cores.divisor)),
+                    content=ft.Row(spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                        ft.Container(width=34, height=34, border_radius=17, bgcolor=cor,
+                                     alignment=ft.Alignment.CENTER,
+                                     content=None if sem_categoria or not item["icone"]
+                                     else ft.Text(item["icone"], size=16)),
+                        # Nome completo, sem corte (até 30 caracteres numa linha em
+                        # janela larga; em janela estreita quebra linha).
+                        ft.Text(item["nome"], size=15,
+                                width=layout["largura_nome"], expand=layout["largura_nome"] is None,
+                                color=cores.sem_categoria if sem_categoria else cores.texto_principal),
+                        ft.Text(formatar_moeda(item["total"]), size=15, width=layout["largura_valor"],
+                                text_align=ft.TextAlign.RIGHT, color=cores.texto_principal),
+                        ft.Text(formatar_percentual(fatia * 100), size=15, width=layout["largura_percentual"],
+                                text_align=ft.TextAlign.RIGHT,
+                                weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                    ]),
+                ))
+            rosca = ft.Stack(width=tamanho, height=tamanho, controls=[
+                fch.PieChart(width=tamanho, height=tamanho, sections=secoes, center_space_radius=tamanho * 0.28,
+                             sections_space=2, start_degree_offset=-90),
+                ft.Container(width=tamanho, height=tamanho, alignment=ft.Alignment.CENTER, content=ft.Column(
+                    tight=True, spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                        ft.Text("Total do ano" if modo == "anual" else "Total do mês", size=13,
+                                color=cores.texto_secundario),
+                        ft.Text(formatar_moeda(total), size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                    ])),
+            ])
+            periodo = str(ano) if modo == "anual" else f"{MESES_PT[mes - 1].lower()} de {ano}"
+            nota = ft.Container(
+                bgcolor=cores.grafico_comparacao_fundo, border_radius=10, padding=10,
+                content=ft.Row(spacing=8, controls=[
+                    ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=cores.texto_secundario),
+                    ft.Text(f"Apenas categorias com contas em {periodo} são exibidas. Contas sem categoria "
+                            "são agrupadas como “Sem categoria”.", size=12, color=cores.texto_secundario, expand=True),
+                ]),
+            )
+            return cartao(ft.Column(spacing=16, controls=[
+                titulo,
+                ft.ResponsiveRow(spacing=24, run_spacing=16, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                    # Rosca e legenda lado a lado a partir de "lg"; abaixo disso, legenda
+                    # embaixo da rosca.
+                    ft.Container(col={"xs": 12, "lg": 5}, alignment=ft.Alignment.CENTER, content=rosca),
+                    ft.Column(col={"xs": 12, "lg": 7}, spacing=0,
+                              horizontal_alignment=ft.CrossAxisAlignment.STRETCH if layout["estreita"]
+                              else ft.CrossAxisAlignment.START,
+                              controls=linhas + [ft.Container(height=8), nota]),
+                ]),
+            ]))
+
+        def bloco_comparacao(total):
+            modo, ano, mes = periodo_atual()
+            if modo == "anual":
+                anterior_rotulo = str(ano - 1)
+                total_anterior, _ = database.resumo_do_periodo(usuario_atual["id"], *intervalo_do_periodo("anual", ano - 1))
+                sujeito = "O total do ano"
+            else:
+                a, m = mes_anterior(ano, mes)
+                anterior_rotulo = MESES_PT[m - 1].lower()
+                total_anterior, _ = database.resumo_do_periodo(usuario_atual["id"], *intervalo_do_periodo("mensal", a, m))
+                sujeito = "O total do mês"
+            comparacao = comparacao_com_anterior(total, total_anterior)
+            frase = {"aumento": f"{sujeito} aumentou em", "reducao": f"{sujeito} diminuiu em",
+                     "igual": f"{sujeito} não mudou", "sem_base": f"Sem gastos em {anterior_rotulo}",
+                     "sem_gastos": "Nenhuma conta nos dois períodos"}[comparacao["tipo"]]
+            cor = {"aumento": cores.variacao_aumento, "reducao": cores.variacao_reducao}.get(
+                comparacao["tipo"], cores.texto_principal)
+            direita = [ft.Text(comparacao["destaque"], size=24 if comparacao["tipo"] in ("aumento", "reducao") else 16,
+                               weight=ft.FontWeight.BOLD, color=cor, text_align=ft.TextAlign.RIGHT)]
+            if comparacao["complemento"]:
+                direita.append(ft.Text(f"({comparacao['complemento']})", size=14, color=cor,
+                                       text_align=ft.TextAlign.RIGHT))
+            # Largura total: texto à esquerda e variação à direita; em janela
+            # estreita as duas partes se empilham (ResponsiveRow).
+            return cartao(bgcolor=cores.grafico_comparacao_fundo, borda=cores.grafico_comparacao_fundo,
+                          conteudo=ft.ResponsiveRow(
+                spacing=16, run_spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Row(col={"xs": 12, "sm": 8}, spacing=16, controls=[
+                        circulo_icone(ft.Icons.BAR_CHART, cores.texto_secundario),
+                        ft.Column(expand=True, spacing=2, controls=[
+                            ft.Text(f"Comparado a {anterior_rotulo}", size=17, weight=ft.FontWeight.BOLD,
+                                    color=cores.texto_principal),
+                            ft.Text(frase, size=14, color=cores.texto_secundario),
+                        ]),
+                    ]),
+                    ft.Column(col={"xs": 12, "sm": 4}, spacing=0, horizontal_alignment=ft.CrossAxisAlignment.END,
+                              controls=direita),
+                ],
+            ))
+
+        def atualizar():
+            modo, ano, mes = periodo_atual()
+            inicio, fim = intervalo_do_periodo(modo, ano, mes)
+            total, pago = database.resumo_do_periodo(usuario_atual["id"], inicio, fim)
+            itens = ordenar_distribuicao(database.gastos_por_categoria(usuario_atual["id"], inicio, fim))
+            corpo.controls = [
+                ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
+                    alternador((("mensal", "Mensal"), ("anual", "Anual")), estado["modo"], escolher_modo),
+                ]),
+                bloco_navegacao(),
+                bloco_totais(total, pago),
+                bloco_evolucao(),
+                bloco_categorias(total, itens),
+                bloco_comparacao(total),
+            ]
+            if not total:
+                corpo.controls.insert(2, ft.Text("Ainda não há dados para exibir neste período.", size=14,
+                                                 color=cores.texto_secundario, text_align=ft.TextAlign.CENTER))
+            page.update()
+
+        cabecalho = ft.Row(spacing=14, vertical_alignment=ft.CrossAxisAlignment.START, controls=[
+            ft.Icon(ft.Icons.BAR_CHART, size=40, color=cores.grafico_barra_destaque),
+            ft.Column(expand=True, spacing=2, controls=[
+                ft.Text("Gráfico", size=28, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                ft.Text("Veja um resumo dos seus gastos e para onde seu dinheiro está indo.", size=14,
+                        color=cores.texto_secundario),
+            ]),
+        ])
+        conteudo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[
+            ft.Container(padding=ft.Padding(20, 32, 20, 24), content=ft.Column(
+                data="tela_grafico", spacing=16, controls=[cabecalho, corpo])),
+        ])
+        raiz = ft.Column(expand=True, controls=[conteudo, barra_navegacao("grafico")])
+        layout_desenhado = {"valor": layout_gastos_por_categoria(page.width)}
+
+        def ao_redimensionar(e):
+            # Redesenha só se a legenda mudar de forma (larga <-> estreita ou
+            # outro tamanho de rosca) e só enquanto o Gráfico estiver na tela.
+            if raiz not in page.controls:
+                return
+            novo = layout_gastos_por_categoria(page.width)
+            if novo != layout_desenhado["valor"]:
+                layout_desenhado["valor"] = novo
+                atualizar()
+
+        page.on_resize = ao_redimensionar
+        page.add(raiz)
+        atualizar()
+
     def mostrar_tela_categorias():
         page.controls.clear()
         page.padding = 0

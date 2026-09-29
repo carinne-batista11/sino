@@ -1408,6 +1408,41 @@ CORES_CATEGORIAS_PRE_CRIADAS = [
 
 LIMITE_CATEGORIAS_POR_USUARIO = 30  # 5.11, contando as pré-criadas
 
+# 5.13/5.25 (Etapa 5): cinza reservado ao agrupamento "Sem categoria" --
+# nenhuma categoria pode usá-lo (não está na paleta, e a gravação recusa).
+# backend/cores.py (`sem_categoria`) usa exatamente este valor.
+COR_RESERVADA_SEM_CATEGORIA = "#888780"
+
+
+class CorReservadaError(ValueError):
+    """Tentativa de gravar o cinza reservado a "Sem categoria" (5.13)."""
+
+    def __init__(self):
+        super().__init__("o cinza é reservado para 'Sem categoria' e não pode ser usado por uma categoria")
+
+
+def _recusar_cor_reservada(cor):
+    if cor is not None and str(cor).strip().upper() == COR_RESERVADA_SEM_CATEGORIA:
+        raise CorReservadaError()
+
+
+def cores_de_exibicao(categorias):
+    """
+    Etapa 5: cor de cada categoria nos gráficos, {categoria_id: cor}. A cor
+    gravada é usada como está; uma categoria sem cor recebe, só para a
+    exibição (nada é gravado), uma cor da paleta que nenhuma categoria do
+    usuário usa -- na ordem da paleta, distribuídas por ordem de id. Assim a
+    cor é estável entre períodos e nunca é o cinza reservado. Pelo limite
+    de 30 categorias sempre há cor livre; se um banco legado passar do
+    limite, a paleta é reaproveitada em ciclo (a legenda desambigua pelo nome).
+    """
+    usadas = {c["cor"].upper() for c in categorias if c.get("cor")}
+    livres = [cor for cor in PALETA_CORES_CATEGORIAS if cor.upper() not in usadas] or list(PALETA_CORES_CATEGORIAS)
+    sem_cor = sorted(c["id"] for c in categorias if not c.get("cor"))
+    resultado = {c["id"]: c["cor"] for c in categorias if c.get("cor")}
+    resultado.update({categoria_id: livres[i % len(livres)] for i, categoria_id in enumerate(sem_cor)})
+    return resultado
+
 
 def _proxima_cor_disponivel(cursor, usuario_id, ignorar_categoria_id=None):
     """Primeira cor da paleta ainda não usada por outra categoria do usuário (5.13)."""
@@ -1439,9 +1474,11 @@ def criar_categoria(usuario_id, nome, icone=None, cor=None):
     Nome com no máximo 30 caracteres (5.11/5.23): acima disso levanta
     `LimiteDeCaracteresError` (subclasse de ValueError) sem gravar nada.
 
-    Operação transacional. Retorna o id da categoria criada.
+    Operação transacional. Retorna o id da categoria criada. O cinza
+    reservado a "Sem categoria" é recusado (`CorReservadaError`, 5.13).
     """
     validar_limite("nome_categoria", nome, LIMITE_NOME_CATEGORIA)
+    _recusar_cor_reservada(cor)
 
     conexao = sqlite3.connect(NOME_DO_BANCO)
     conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
@@ -2126,6 +2163,100 @@ def listar_contas_atrasadas(usuario_id):
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
          "status": "atrasado", "categoria_id": l[4], "serie_id": l[5], "descricao": l[6]}
         for l in linhas
+    ]
+
+
+# ------------------------------------------------------------------
+#  Gráfico (ERS v6.0, Etapa 5: RF21-RF23, 5.24-5.30)
+#
+#  Somente leitura. Consideram todas as contas JÁ REGISTRADAS do usuário,
+#  em qualquer status, pelo mês do vencimento real e pela categoria de cada
+#  ocorrência. Nenhuma delas gera ocorrências recorrentes (5.26, CT114).
+# ------------------------------------------------------------------
+def _somas(cursor, sql, parametros):
+    cursor.execute(sql, parametros)
+    return cursor.fetchall()
+
+
+def resumo_do_periodo(usuario_id, inicio, fim):
+    """(total, pago) das contas com vencimento entre `inicio` e `fim` (ISO,
+    inclusive), em centavos arredondados. Status não altera o total (5.24)."""
+    conexao = conectar()
+    try:
+        total, pago = conexao.execute(
+            """
+            SELECT COALESCE(SUM(valor), 0),
+                   COALESCE(SUM(CASE WHEN status = 'pago' THEN valor END), 0)
+            FROM contas WHERE usuario_id = ? AND data_vencimento BETWEEN ? AND ?
+            """,
+            (usuario_id, inicio, fim),
+        ).fetchone()
+    finally:
+        conexao.close()
+    return round(total, 2), round(pago, 2)
+
+
+def totais_por_mes(usuario_id, primeiro_ano_mes, ultimo_ano_mes):
+    """{"AAAA-MM": total} dos meses com contas no intervalo (inclusive)."""
+    conexao = conectar()
+    try:
+        linhas = _somas(
+            conexao.cursor(),
+            """
+            SELECT substr(data_vencimento, 1, 7), SUM(valor) FROM contas
+            WHERE usuario_id = ? AND substr(data_vencimento, 1, 7) BETWEEN ? AND ?
+            GROUP BY 1
+            """,
+            (usuario_id, primeiro_ano_mes, ultimo_ano_mes),
+        )
+    finally:
+        conexao.close()
+    return {mes: round(total, 2) for mes, total in linhas}
+
+
+def totais_por_ano(usuario_id):
+    """[(ano, total)] só dos anos com contas registradas, em ordem (5.26)."""
+    conexao = conectar()
+    try:
+        linhas = _somas(
+            conexao.cursor(),
+            "SELECT substr(data_vencimento, 1, 4), SUM(valor) FROM contas WHERE usuario_id = ? GROUP BY 1 ORDER BY 1",
+            (usuario_id,),
+        )
+    finally:
+        conexao.close()
+    return [(int(ano), round(total, 2)) for ano, total in linhas]
+
+
+def anos_com_contas(usuario_id):
+    return [ano for ano, _ in totais_por_ano(usuario_id)]
+
+
+def gastos_por_categoria(usuario_id, inicio, fim):
+    """
+    RF22: [{categoria_id, nome, icone, cor, total}] das categorias com contas
+    no período, pela categoria de cada ocorrência (5.28). Contas sem
+    categoria formam o item com `categoria_id` None ("Sem categoria", 5.25).
+    Sem ordenação de apresentação (feita na interface).
+    """
+    conexao = conectar()
+    try:
+        linhas = _somas(
+            conexao.cursor(),
+            """
+            SELECT c.categoria_id, cat.nome, cat.icone, cat.cor, SUM(c.valor)
+            FROM contas c LEFT JOIN categorias cat ON cat.id = c.categoria_id
+            WHERE c.usuario_id = ? AND c.data_vencimento BETWEEN ? AND ?
+            GROUP BY c.categoria_id
+            """,
+            (usuario_id, inicio, fim),
+        )
+    finally:
+        conexao.close()
+    return [
+        {"categoria_id": categoria_id, "nome": nome if categoria_id is not None else "Sem categoria",
+         "icone": icone, "cor": cor, "total": round(total, 2)}
+        for categoria_id, nome, icone, cor, total in linhas
     ]
 
 
@@ -2825,6 +2956,7 @@ def editar_categoria(usuario_id, categoria_id, nome=None, icone=None, cor=None):
     """
     if nome is not None:
         validar_limite("nome_categoria", nome, LIMITE_NOME_CATEGORIA)
+    _recusar_cor_reservada(cor)
 
     conexao = sqlite3.connect(NOME_DO_BANCO)
     conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
