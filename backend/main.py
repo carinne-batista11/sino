@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import flet as ft
 import db as database
+import aviso_sonoro
 import cores
+import limites
 
 MESES_PT = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -225,7 +227,8 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
                                status_antigo=None, status_novo=None,
                                data_pagamento_antiga=None, data_pagamento_nova=None,
                                recorrencia_acao=None, recorrencia_frequencia=None,
-                               recorrencia_data_termino=None):
+                               recorrencia_data_termino=None,
+                               descricao_antiga=None, descricao_nova=None):
     """RF20/RF07 (5.6/5.11): frase em linguagem natural descrevendo somente os
     campos realmente alterados (nome, valor, data de vencimento, categoria,
     status/data de pagamento e/ou recorrência). `data_antiga`/`data_nova`
@@ -250,7 +253,11 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
     qualquer ação de recorrência usam verbo próprio ("removeu"/"definiu"/
     "marcou"/"voltou"/"transformou"/"encerrou") que não combina com
     "alterou" -- por isso viram frases à parte, concatenadas com um espaço
-    quando há também alterações que cabem na frase principal."""
+    quando há também alterações que cabem na frase principal.
+
+    Descrição (5.22), comparada já normalizada: alterar entra na frase
+    principal ("a descrição", sem repetir o texto); adicionar e remover
+    viram frases à parte, como a categoria."""
     partes = []
     if nome_antigo != nome_novo:
         partes.append(f"o nome de '{nome_antigo}' para '{nome_novo}'")
@@ -267,6 +274,17 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
             frase_categoria_especial = f"Você removeu a categoria '{categoria_nome_antiga}'."
         else:
             frase_categoria_especial = f"Você definiu a categoria como '{categoria_nome_nova}'."
+
+    frase_descricao_especial = None
+    descricao_antiga = limites.normalizar_descricao(descricao_antiga)
+    descricao_nova = limites.normalizar_descricao(descricao_nova)
+    if descricao_antiga != descricao_nova:
+        if descricao_antiga is not None and descricao_nova is not None:
+            partes.append("a descrição")
+        elif descricao_antiga is None:
+            frase_descricao_especial = "Você adicionou uma descrição."
+        else:
+            frase_descricao_especial = "Você removeu a descrição."
 
     frase_status_especial = None
     estava_pago = status_antigo == "pago"
@@ -322,7 +340,8 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
         frase_alterou = f"Você alterou {corpo}."
 
     frases = [
-        f for f in (frase_alterou, frase_categoria_especial, frase_status_especial, frase_recorrencia_especial)
+        f for f in (frase_alterou, frase_categoria_especial, frase_descricao_especial,
+                    frase_status_especial, frase_recorrencia_especial)
         if f
     ]
     if not frases:
@@ -331,7 +350,8 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
 
 
 def campos_alterados_edicao(nome_original, nome_novo, valor_original, valor_novo,
-                            data_original, data_nova, categoria_original, categoria_nova):
+                            data_original, data_nova, categoria_original, categoria_nova,
+                            descricao_original=None, descricao_nova=None):
     """RF20/5.6 (correção v6.0, Etapa 0): argumentos para
     `database.editar_conta_ocorrencia`/`editar_conta_serie` contendo SOMENTE
     os campos que o usuário realmente alterou -- um campo não alterado nunca
@@ -339,7 +359,12 @@ def campos_alterados_edicao(nome_original, nome_novo, valor_original, valor_novo
     ocorrências futuras com valores próprios. `data_original`/`data_nova`
     são objetos `date`; categoria `None` = sem categoria (vira
     `remover_categoria=True` quando ela foi removida). Dicionário vazio
-    quando nada propagável mudou."""
+    quando nada propagável mudou.
+
+    Descrição (5.22): comparada já normalizada (`limites.normalizar_descricao`)
+    -- só espaços nas bordas não contam como alteração. Removida vira
+    `remover_descricao=True` (mesmo motivo da categoria: `None` sozinho
+    significa "não mexer")."""
     campos = {}
     if nome_novo != nome_original:
         campos["nome"] = nome_novo
@@ -352,7 +377,137 @@ def campos_alterados_edicao(nome_original, nome_novo, valor_original, valor_novo
             campos["remover_categoria"] = True
         else:
             campos["categoria_id"] = categoria_nova
+    descricao_original = limites.normalizar_descricao(descricao_original)
+    descricao_nova = limites.normalizar_descricao(descricao_nova)
+    if descricao_nova != descricao_original:
+        if descricao_nova is None:
+            campos["remover_descricao"] = True
+        else:
+            campos["descricao"] = descricao_nova
     return campos
+
+
+def erro_de_limite(campo, texto, limite):
+    """5.23: mensagem amigável se `texto` passar de `limite` caracteres
+    percebidos (`limites.contar_caracteres`); `None` quando está dentro."""
+    contagem = limites.contar_caracteres(texto)
+    if contagem > limite:
+        return limites.mensagem_limite(campo, limite, contagem)
+    return None
+
+
+def texto_contador(texto, limite):
+    """Contador exibido junto ao campo, por grafemas (ex.: "12/30")."""
+    return f"{limites.contar_caracteres(texto)}/{limite}"
+
+
+def texto_para_limite(campo, texto):
+    """Texto como será contado e gravado: descrição normalizada, nomes com strip."""
+    if campo == "descricao":
+        return limites.normalizar_descricao(texto)
+    return (texto or "").strip()
+
+
+def atualizar_contador_de_limite(controle, campo, limite):
+    """5.23: contador pelos grafemas do valor VISÍVEL (bruto, com espaços e
+    quebras de linha) -- o mesmo que o bloqueio da digitação usa -- e, se o
+    texto que seria gravado (normalizado) passar do limite, a mensagem
+    amigável no campo. Nunca altera `controle.value` (P4: nada é cortado)."""
+    controle.counter = texto_contador(controle.value, limite)
+    controle.error = erro_de_limite(campo, texto_para_limite(campo, controle.value), limite)
+
+
+MENSAGEM_LIMITE_ATINGIDO = "Limite atingido"
+
+
+def edicao_dentro_do_limite(anterior, novo, limite):
+    """
+    5.23: uma edição (digitação, colagem, substituição da seleção) é aceita
+    se o valor visível resultante couber no limite ou, num dado antigo que
+    já estava acima dele, se REDUZIR a contagem -- apagar ou substituir por
+    menos continua possível até o texto se adequar (P4).
+
+    Conta os grafemas do valor bruto do campo, inclusive espaços nas bordas
+    e quebras de linha: com o contador em 30/30, qualquer 31º grafema é
+    recusado. A normalização (strip) continua valendo ao salvar e na
+    persistência, que validam o texto normalizado.
+    """
+    contagem_nova = limites.contar_caracteres(novo)
+    return contagem_nova <= limite or contagem_nova < limites.contar_caracteres(anterior)
+
+
+def cursor_apos_recusa(anterior, novo):
+    """
+    Posição do cursor (em unidades UTF-16, como o Flutter conta) ao
+    restaurar `anterior` depois de recusar `novo`: onde a edição recusada
+    começou (fim do prefixo comum), recuada até a fronteira de grafema mais
+    próxima -- o cursor nunca fica no meio de um emoji composto.
+    """
+    anterior = anterior or ""
+    novo = novo or ""
+    prefixo = 0
+    while prefixo < min(len(anterior), len(novo)) and anterior[prefixo] == novo[prefixo]:
+        prefixo += 1
+    posicao = 0
+    for grafema in limites.grafemas(anterior):
+        if posicao + len(grafema) > prefixo:
+            break
+        posicao += len(grafema)
+    return len(anterior[:posicao].encode("utf-16-le")) // 2
+
+
+class LimiteDoCampo:
+    """
+    Liga a um TextField o contador por grafemas e o bloqueio do limite
+    (5.23). Uma edição que ultrapassaria o limite é recusada inteira: o
+    campo volta ao último valor válido (nada é cortado, então um emoji
+    composto nunca fica pela metade), o cursor volta para onde a edição
+    começou e o campo mostra "Limite atingido". Usado em vez de
+    `max_length`, que truncaria o texto colado e um dado antigo acima do
+    limite ao editar.
+
+    Cada recusa também pede um som curto a `aviso` (por padrão
+    `aviso_sonoro.aviso_limite`, melhor esforço, sem bloquear a interface).
+    """
+
+    def __init__(self, controle, campo, limite, ao_mudar=None, aviso=None):
+        self.controle = controle
+        self.campo = campo
+        self.limite = limite
+        self.ao_mudar = ao_mudar
+        self.aviso = aviso if aviso is not None else aviso_sonoro.aviso_limite
+        controle.on_change = self.tratar_mudanca
+        self.sincronizar()
+
+    def sincronizar(self):
+        """Adota o valor atual do campo como o último válido (abertura do
+        formulário ou valor definido pelo código)."""
+        self.ultimo_valor = self.controle.value or ""
+        self.controle.helper = None
+        atualizar_contador_de_limite(self.controle, self.campo, self.limite)
+
+    def tratar_mudanca(self, e):
+        novo = self.controle.value or ""
+        if edicao_dentro_do_limite(self.ultimo_valor, novo, self.limite):
+            self.ultimo_valor = novo
+            self.controle.helper = None
+            atualizar_contador_de_limite(self.controle, self.campo, self.limite)
+            if self.ao_mudar is not None:
+                self.ao_mudar(e)
+        else:
+            cursor = cursor_apos_recusa(self.ultimo_valor, novo)
+            self.controle.value = self.ultimo_valor
+            self.controle.selection = ft.TextSelection(base_offset=cursor, extent_offset=cursor)
+            self.controle.helper = MENSAGEM_LIMITE_ATINGIDO
+            atualizar_contador_de_limite(self.controle, self.campo, self.limite)
+            self.aviso.tocar()
+        e.page.update()
+
+
+def ligar_contador_de_limite(controle, campo, limite, ao_mudar=None, aviso=None):
+    """Contador por grafemas e bloqueio do limite em `controle` (ver
+    `LimiteDoCampo`); `ao_mudar` só é chamado para edições aceitas."""
+    return LimiteDoCampo(controle, campo, limite, ao_mudar, aviso)
 
 
 def parse_valor(texto):
@@ -489,6 +644,7 @@ def main(page: ft.Page):
 
         campo_nome = ft.TextField(label="Nome completo", hint_text="Seu nome", width=330, visible=False,
                                    color=cores.texto_principal)
+        limite_nome_cadastro = ligar_contador_de_limite(campo_nome, "nome_usuario", limites.LIMITE_NOME_USUARIO)
         campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330, color=cores.texto_principal)
         campo_senha = ft.TextField(label="Senha", hint_text="********", password=True,
                                     can_reveal_password=True, width=330, color=cores.texto_principal)
@@ -507,8 +663,12 @@ def main(page: ft.Page):
 
             if modo_cadastro[0]:
                 nome = campo_nome.value.strip() if campo_nome.value else ""
+                erro_nome = erro_de_limite("nome_usuario", nome, limites.LIMITE_NOME_USUARIO)
                 if not nome or not email or not senha:
                     mensagem.value = "Preencha nome, e-mail e senha."
+                    mensagem.color = cores.texto_erro
+                elif erro_nome:
+                    mensagem.value = erro_nome
                     mensagem.color = cores.texto_erro
                 elif not campo_aceite_termos.value:
                     # RF15: aceite é obrigatório para prosseguir -- criar_usuario
@@ -566,6 +726,7 @@ def main(page: ft.Page):
         def alternar_modo(e):
             modo_cadastro[0] = not modo_cadastro[0]
             campo_nome.value = ""
+            limite_nome_cadastro.sincronizar()
             campo_email.value = ""
             campo_senha.value = ""
             campo_aceite_termos.value = False
@@ -1692,8 +1853,19 @@ def main(page: ft.Page):
                 # sendo editado aqui -- reset a cada abertura de Editar.
                 vencimento_pendente["valor"] = data_venc_atual
 
+                # 5.23/P4: sem max_length -- dados antigos acima do limite
+                # aparecem inteiros; contador e mensagem explicam o excesso e
+                # Salvar só é aceito depois de ajustados.
                 campo_nome_edit = ft.TextField(
                     label="Nome da conta", value=conta["nome"], color=cores.texto_principal,
+                )
+                # RF07/RF32 (5.22): descrição pode ser adicionada, editada ou
+                # removida (campo vazio = remover).
+                descricao_original = conta.get("descricao")
+                campo_descricao_edit = ft.TextField(
+                    label="Descrição (opcional)", value=descricao_original or "",
+                    hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
+                    multiline=True, min_lines=2, max_lines=5, color=cores.texto_principal,
                 )
                 campo_valor_edit = ft.TextField(
                     label="Valor",
@@ -1797,6 +1969,8 @@ def main(page: ft.Page):
                         or valor_atual != conta["valor"]
                         or data_selecionada["valor"] != data_venc_atual
                         or categoria_atual != categoria_id_original
+                        or limites.normalizar_descricao(campo_descricao_edit.value)
+                        != limites.normalizar_descricao(descricao_original)
                         or rascunho_status["status"] != conta["status"]
                         or rascunho_status["data_pagamento"] != conta.get("data_pagamento")
                         or rascunho_recorrencia["acao"] is not None
@@ -1836,7 +2010,10 @@ def main(page: ft.Page):
                 rascunho_recorrencia["data_termino"] = None
                 bloco_recorrencia.content = bloco_rotulado("Recorrência", [construir_conteudo_recorrencia()])
 
-                campo_nome_edit.on_change = lambda e: atualizar_estado_botao_salvar()
+                ligar_contador_de_limite(campo_nome_edit, "nome_conta", limites.LIMITE_NOME_CONTA,
+                                         ao_mudar=lambda e: atualizar_estado_botao_salvar())
+                ligar_contador_de_limite(campo_descricao_edit, "descricao", limites.LIMITE_DESCRICAO,
+                                         ao_mudar=lambda e: atualizar_estado_botao_salvar())
                 campo_valor_edit.on_change = lambda e: atualizar_estado_botao_salvar()
 
 
@@ -1917,9 +2094,20 @@ def main(page: ft.Page):
                 def salvar_edicao(e):
                     nome = campo_nome_edit.value.strip() if campo_nome_edit.value else ""
                     valor = parse_valor(campo_valor_edit.value)
+                    descricao = limites.normalizar_descricao(campo_descricao_edit.value)
+                    # P4 (decisão da Etapa 2): TODOS os textos do formulário
+                    # precisam estar dentro do limite, mesmo que o usuário só
+                    # tenha mudado outro campo (valor, status...). Nada é
+                    # cortado: o usuário ajusta e salva de novo.
+                    erro_textos = (
+                        erro_de_limite("nome_conta", nome, limites.LIMITE_NOME_CONTA)
+                        or erro_de_limite("descricao", descricao, limites.LIMITE_DESCRICAO)
+                    )
 
                     if not nome:
                         erro_edit.value = "Digite um nome para a conta."
+                    elif erro_textos:
+                        erro_edit.value = erro_textos
                     elif valor is None:
                         erro_edit.value = "Informe um valor válido."
                     elif data_selecionada["valor"] is None:
@@ -1959,6 +2147,7 @@ def main(page: ft.Page):
                         recorrencia_acao=rascunho_recorrencia["acao"],
                         recorrencia_frequencia=rascunho_recorrencia["frequencia"],
                         recorrencia_data_termino=rascunho_recorrencia["data_termino"],
+                        descricao_antiga=descricao_original, descricao_nova=descricao,
                     )
                     if mensagem_alteracao is None:
                         # Nada mudou de fato -- não deveria ser alcançável com
@@ -1972,7 +2161,7 @@ def main(page: ft.Page):
                     # pagamento pertencem exclusivamente à ocorrência (5.9/5.1) e nunca
                     # são propagáveis para a série, então NUNCA justificam sozinhos o
                     # diálogo "Somente este mês/Este mês em diante". Só Nome/Valor/
-                    # Vencimento/Categoria entram nesta checagem -- de propósito, não
+                    # Vencimento/Categoria/Descrição (v6, 5.6) entram nesta checagem -- de propósito, não
                     # volte a juntar as duas perguntas numa só (importante também para
                     # quando Recorrência virar rascunho: a mesma distinção vai valer).
                     # Correção v6.0 (Etapa 0): só os campos realmente alterados
@@ -1982,12 +2171,14 @@ def main(page: ft.Page):
                     campos_alterados = campos_alterados_edicao(
                         conta["nome"], nome, conta["valor"], valor,
                         data_venc_atual, nova_data, categoria_id_original, categoria_id_novo,
+                        descricao_original, descricao,
                     )
                     ha_alteracao_propagavel = bool(campos_alterados)
 
                     if conta.get("serie_id") is not None and serie_ativa and ha_alteracao_propagavel:
                         # RF20 (5.6): só pergunta o escopo quando existe algo
-                        # propagável de fato (Nome/Valor/Vencimento/Categoria) --
+                        # propagável de fato (Nome/Valor/Vencimento/Categoria/
+                        # Descrição -- um único diálogo para todos, CT107) --
                         # uma alteração só de Status/data de pagamento nunca chega
                         # aqui, mesmo numa série ativa. Sem restrição de mês/ano
                         # (removida na Fase 2.6); a nova data pode cair em
@@ -1996,13 +2187,18 @@ def main(page: ft.Page):
                         mostrar_dialogo_escopo_edicao(campos_alterados, mensagem_alteracao)
                     else:
                         if ha_alteracao_propagavel:
-                            # Só grava Nome/Valor/Vencimento/Categoria quando algo
+                            # Só grava Nome/Valor/Vencimento/Categoria/Descrição quando algo
                             # deles de fato mudou -- uma alteração só de Status não
                             # deve gerar uma reescrita sem propósito destes campos
                             # (e, numa série ativa, não deve marcar
                             # editado_individualmente=1 à toa só por causa de
                             # Status, que nunca é uma edição desses campos).
-                            database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
+                            try:
+                                database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
+                            except limites.LimiteDeCaracteresError as erro_limite:
+                                erro_edit.value = str(erro_limite)
+                                page.update()
+                                return
                         aplicar_status_pendente()
                         if not aplicar_recorrencia_pendente():
                             erro_edit.value = "Não foi possível aplicar a alteração de recorrência."
@@ -2044,8 +2240,19 @@ def main(page: ft.Page):
                         )
 
                 def mostrar_dialogo_escopo_edicao(campos_alterados, mensagem_alteracao):
+                    def mostrar_erro_limite(erro_limite):
+                        # 5.23: erro de limite nunca é apresentado como
+                        # "ultrapassaria o término" nem como falha genérica.
+                        page.pop_dialog()
+                        erro_edit.value = str(erro_limite)
+                        page.update()
+
                     def aplicar_somente_esta(e):
-                        sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
+                        try:
+                            sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
+                        except limites.LimiteDeCaracteresError as erro_limite:
+                            mostrar_erro_limite(erro_limite)
+                            return
                         if not sucesso:
                             page.pop_dialog()
                             erro_edit.value = "Não foi possível salvar esta alteração."
@@ -2060,7 +2267,11 @@ def main(page: ft.Page):
                         mostrar_confirmacao_edicao(mensagem_alteracao, dialogo_alvo=dialogo)
 
                     def aplicar_este_mes_em_diante(e):
-                        sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
+                        try:
+                            sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
+                        except limites.LimiteDeCaracteresError as erro_limite:
+                            mostrar_erro_limite(erro_limite)
+                            return
                         if not sucesso:
                             page.pop_dialog()
                             erro_edit.value = (
@@ -2108,7 +2319,7 @@ def main(page: ft.Page):
                 # "Salvar alterações" começa desabilitado (cinza -- #E5E4DE/#888780,
                 # mesmas cores já usadas no app para estado inativo) e só habilita
                 # (verde -- #1D9E75, mesma cor de toda ação principal do Sino)
-                # quando nome/valor/vencimento/categoria realmente diferirem do
+                # quando nome/valor/vencimento/categoria/descrição realmente diferirem do
                 # estado original (ha_alteracao_pendente, já conectada via
                 # on_change em cada campo -- ver atualizar_estado_botao_salvar
                 # acima). Larguras fixas para os dois pararem de ocupar a tela
@@ -2150,6 +2361,7 @@ def main(page: ft.Page):
                                                   on_click=abrir_seletor_data),
                                 ]),
                                 campo_categoria_edit,
+                                campo_descricao_edit,
                                 bloco_status,
                                 bloco_recorrencia,
                                 ft.Container(height=16),
@@ -2611,6 +2823,9 @@ def main(page: ft.Page):
     #  parametrizada pelo callback ao_salvar.
     # ======================================================
     def abrir_dialogo_categoria(cat=None, ao_salvar=None):
+        # 5.23: sem max_length -- um nome antigo acima de 30 caracteres é
+        # exibido inteiro; o contador (por grafemas) e a mensagem explicam o
+        # excesso, e Salvar só é aceito depois de ajustado (P4).
         campo_nome = ft.TextField(label="Nome da categoria", value=cat["nome"] if cat else "", width=280)
         campo_icone = ft.TextField(label="Ícone (emoji, opcional)",
                                     value=cat["icone"] if cat else "", width=280)
@@ -2663,7 +2878,8 @@ def main(page: ft.Page):
             montar_sugestoes_emoji()
             page.update()
 
-        campo_nome.on_change = ao_mudar_nome
+        ligar_contador_de_limite(campo_nome, "nome_categoria", limites.LIMITE_NOME_CATEGORIA,
+                                 ao_mudar=ao_mudar_nome)
         montar_sugestoes_emoji()
 
         # Melhoria de UX pós-Bloco 1: seletor geral de emojis, sempre visível
@@ -2839,6 +3055,11 @@ def main(page: ft.Page):
                 erro.value = "Digite um nome para a categoria."
                 page.update()
                 return
+            erro_nome = erro_de_limite("nome_categoria", nome, limites.LIMITE_NOME_CATEGORIA)
+            if erro_nome:
+                erro.value = erro_nome
+                page.update()
+                return
 
             # Segunda barreira do limite de 30 categorias -- só para
             # CRIAÇÃO (cat is None); nunca bloqueia a edição de uma
@@ -2864,6 +3085,12 @@ def main(page: ft.Page):
                     categoria_id_resultante = cat["id"]
                 else:
                     categoria_id_resultante = database.criar_categoria(usuario_atual["id"], nome, icone, cor)
+            except limites.LimiteDeCaracteresError as erro_limite:
+                # Checado antes do ValueError genérico (é subclasse dele):
+                # nunca confundir com cor em uso ou limite de categorias.
+                erro.value = str(erro_limite)
+                page.update()
+                return
             except ValueError as erro_valor:
                 if "cor" in str(erro_valor):
                     erro.value = "Essa cor já está em uso por outra categoria sua. Escolha outra."
@@ -3112,10 +3339,20 @@ def main(page: ft.Page):
 
         campo_nome = ft.TextField(
             label="Nome da conta", hint_text="Ex: Aluguel, Internet...", color=cores.texto_principal,
+            counter=texto_contador("", limites.LIMITE_NOME_CONTA),
         )
         campo_valor = ft.TextField(
             label="Valor", hint_text="R$ 0,00", keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
         )
+        # RF04/RF32 (5.22): descrição opcional. 5.23: contador por grafemas e
+        # mensagem ao passar do limite -- sem max_length (cortaria sem aviso).
+        campo_descricao = ft.TextField(
+            label="Descrição (opcional)", hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
+            multiline=True, min_lines=2, max_lines=5, color=cores.texto_principal,
+            counter=texto_contador("", limites.LIMITE_DESCRICAO),
+        )
+        ligar_contador_de_limite(campo_nome, "nome_conta", limites.LIMITE_NOME_CONTA)
+        ligar_contador_de_limite(campo_descricao, "descricao", limites.LIMITE_DESCRICAO)
         campo_data = ft.TextField(
             label="Data de vencimento", hint_text="dd/mm/aaaa", read_only=True, expand=True, color=cores.texto_principal,
         )
@@ -3253,8 +3490,16 @@ def main(page: ft.Page):
             tipo = tipo_selecionado["valor"]
             data_termino = None
 
+            descricao = limites.normalizar_descricao(campo_descricao.value)
+            erro_textos = (
+                erro_de_limite("nome_conta", nome, limites.LIMITE_NOME_CONTA)
+                or erro_de_limite("descricao", descricao, limites.LIMITE_DESCRICAO)
+            )
+
             if not nome:
                 erro.value = "Digite um nome para a conta."
+            elif erro_textos:
+                erro.value = erro_textos
             elif valor is None:
                 erro.value = "Informe um valor válido."
             elif data_selecionada["valor"] is None:
@@ -3275,17 +3520,23 @@ def main(page: ft.Page):
                 page.update()
                 return
 
-            if tipo == "unica":
-                database.criar_conta_unica(
-                    usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
-                    categoria_id=categoria_id,
-                )
-            else:
-                database.criar_serie_recorrente(
-                    usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
-                    "mensal" if tipo == "mensal" else "anual",
-                    data_termino=data_termino, categoria_id=categoria_id,
-                )
+            try:
+                if tipo == "unica":
+                    database.criar_conta_unica(
+                        usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
+                        categoria_id=categoria_id, descricao=descricao,
+                    )
+                else:
+                    database.criar_serie_recorrente(
+                        usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
+                        "mensal" if tipo == "mensal" else "anual",
+                        data_termino=data_termino, categoria_id=categoria_id, descricao=descricao,
+                    )
+            except limites.LimiteDeCaracteresError as erro_limite:
+                # Segunda barreira (a persistência valida de novo, 5.23).
+                erro.value = str(erro_limite)
+                page.update()
+                return
             mostrar_tela_principal()
 
         cabecalho = ft.Row(
@@ -3330,6 +3581,7 @@ def main(page: ft.Page):
                                               on_click=abrir_seletor_data),
                             ]),
                             campo_categoria,
+                            campo_descricao,
                             ft.Container(height=8),
                             cartao_tipo,
                             ft.Container(height=8),

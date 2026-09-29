@@ -9,6 +9,17 @@ import secrets
 from datetime import date, datetime, timedelta
 from calendar import monthrange
 
+from limites import (  # noqa: F401 -- reexportados para a interface (database.*)
+    LIMITE_DESCRICAO,
+    LIMITE_NOME_CATEGORIA,
+    LIMITE_NOME_CONTA,
+    LIMITE_NOME_USUARIO,
+    LimiteDeCaracteresError,
+    contar_caracteres,
+    normalizar_descricao,
+    validar_limite,
+)
+
 NOME_DO_BANCO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sino.db")
 PASTA_BACKUPS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
 
@@ -947,6 +958,10 @@ def criar_usuario(nome, email, senha, aceite_termos=False):
     """
     if not aceite_termos:
         return False, "É necessário aceitar os Termos de Uso e a Política de Privacidade."
+    try:
+        validar_limite("nome_usuario", nome, LIMITE_NOME_USUARIO)  # 5.23
+    except LimiteDeCaracteresError as erro:
+        return False, str(erro)
 
     conexao = conectar()
     cursor = conexao.cursor()
@@ -1103,8 +1118,13 @@ def criar_categoria(usuario_id, nome, icone=None, cor=None):
     atribuição automática, a chamada é rejeitada (levanta ValueError) --
     nunca falha silenciosamente nem atribui cor duplicada.
 
+    Nome com no máximo 30 caracteres (5.11/5.23): acima disso levanta
+    `LimiteDeCaracteresError` (subclasse de ValueError) sem gravar nada.
+
     Operação transacional. Retorna o id da categoria criada.
     """
+    validar_limite("nome_categoria", nome, LIMITE_NOME_CATEGORIA)
+
     conexao = sqlite3.connect(NOME_DO_BANCO)
     conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
     conexao.execute("PRAGMA foreign_keys = ON;")
@@ -1227,20 +1247,35 @@ def _somar_ano(ano, mes_ancora, dia_ancora):
     return date(proximo_ano, mes_ancora, dia_ajustado).isoformat()
 
 
-def criar_conta_unica(usuario_id, nome, valor, data_vencimento, categoria_id=None):
+def _validar_textos_conta(nome=None, descricao=None):
+    """5.23: valida só os textos que serão gravados (`None` = não enviado)."""
+    if nome is not None:
+        validar_limite("nome_conta", nome, LIMITE_NOME_CONTA)
+    if descricao is not None:
+        validar_limite("descricao", descricao, LIMITE_DESCRICAO)
+
+
+def criar_conta_unica(usuario_id, nome, valor, data_vencimento, categoria_id=None, descricao=None):
     """
     Cria uma conta avulsa (RF04/RF10 — tipo Única): uma única linha em
     `contas`, sem série. `serie_id` fica `NULL` e nenhum registro é criado
     em `series_recorrencia`.
+
+    `descricao` é opcional (5.22) e gravada já normalizada (sem espaços nas
+    bordas; vazia vira NULL). Nome acima de 30 ou descrição acima de 500
+    caracteres levantam `LimiteDeCaracteresError` sem gravar nada (5.23).
     """
+    descricao = normalizar_descricao(descricao)
+    _validar_textos_conta(nome, descricao)
+
     conexao = conectar()
     cursor = conexao.cursor()
     cursor.execute(
         """
-        INSERT INTO contas (usuario_id, categoria_id, nome, valor, data_vencimento, status)
-        VALUES (?, ?, ?, ?, ?, 'pendente')
+        INSERT INTO contas (usuario_id, categoria_id, nome, valor, data_vencimento, status, descricao)
+        VALUES (?, ?, ?, ?, ?, 'pendente', ?)
         """,
-        (usuario_id, categoria_id, nome, valor, data_vencimento),
+        (usuario_id, categoria_id, nome, valor, data_vencimento, descricao),
     )
     novo_id = cursor.lastrowid
     conexao.commit()
@@ -1307,7 +1342,7 @@ def _gerar_datas_ocorrencias(frequencia, data_inicio, data_termino):
 
 
 def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
-                            data_termino=None, categoria_id=None):
+                            data_termino=None, categoria_id=None, descricao=None):
     """
     Cria uma série recorrente (RF10 — Mensal/Anual): insere `series_recorrencia`
     e gera as ocorrências correspondentes em `contas`, cada uma apontando
@@ -1322,9 +1357,15 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
     Operação atômica: qualquer falha reverte tudo (ROLLBACK) — nunca deixa
     a série sem suas ocorrências, nem ocorrências órfãs. Retorna
     (serie_id, [ids das ocorrências criadas, em ordem]).
+
+    `descricao` (5.22) vai para o modelo da série e para cada ocorrência,
+    normalizada como em `criar_conta_unica`; limites de nome/descrição
+    (5.23) são verificados antes de qualquer gravação.
     """
     if frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
+    descricao = normalizar_descricao(descricao)
+    _validar_textos_conta(nome, descricao)
 
     ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
     mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
@@ -1343,11 +1384,11 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
             """
             INSERT INTO series_recorrencia
                 (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                 mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                 mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """,
             (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-             mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate),
+             mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
         )
         serie_id = cursor.lastrowid
 
@@ -1356,10 +1397,10 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
             cursor.execute(
                 """
                 INSERT INTO contas
-                    (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                    (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
+                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
                 """,
-                (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia),
+                (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia, descricao),
             )
             ids_ocorrencias.append(cursor.lastrowid)
 
@@ -1384,6 +1425,9 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
       retorna `[]` — séries com término já saem geradas integralmente na
       criação (2.4); séries removidas (RF29, fora do escopo desta fase)
       não devem voltar a gerar ocorrências, só se preserva essa checagem.
+    - As novas ocorrências copiam o modelo da série: nome, valor,
+      categoria e descrição (5.6/5.22 -- "Este mês em diante" atualiza
+      esse modelo, então elas já nascem com os dados novos).
     - Nunca toca ocorrências existentes (passadas, pagas, editadas
       individualmente ou não) — só insere o que falta a partir de
       `horizonte_gerado_ate`, sempre usando `dia_ancora`/`mes_ancora` da
@@ -1412,7 +1456,7 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
         cursor.execute(
             """
             SELECT usuario_id, nome, valor, categoria_id, frequencia,
-                   dia_ancora, mes_ancora, data_termino, ativa, horizonte_gerado_ate
+                   dia_ancora, mes_ancora, data_termino, ativa, horizonte_gerado_ate, descricao
             FROM series_recorrencia WHERE id = ?
             """,
             (serie_id,),
@@ -1422,7 +1466,7 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
             raise ValueError(f"series_recorrencia com id={serie_id} não existe")
 
         (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-         mes_ancora, data_termino, ativa, horizonte_gerado_ate) = linha
+         mes_ancora, data_termino, ativa, horizonte_gerado_ate, descricao) = linha
 
         if ativa == 0 or data_termino is not None:
             return []
@@ -1458,10 +1502,10 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
                 cursor.execute(
                     """
                     INSERT INTO contas
-                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
                     """,
-                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia),
+                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia, descricao),
                 )
                 ids_novos.append(cursor.lastrowid)
 
@@ -1513,8 +1557,10 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
 
     Retorna (serie_id, ids_das_novas_ocorrencias) -- a própria `conta_id`
     não está nessa lista: ela é a âncora, mantém seu id e todos os seus
-    dados (nome/valor/categoria/status/data_pagamento), só ganha um
-    `serie_id` novo.
+    dados (nome/valor/categoria/descricao/status/data_pagamento), só ganha
+    um `serie_id` novo. Nome, valor, categoria e descrição da conta viram o
+    modelo da série e são copiados para as ocorrências criadas; como são
+    dados já gravados (não uma entrada nova), não são revalidados (P4).
     """
     if frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
@@ -1525,13 +1571,16 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
     cursor = conexao.cursor()
     try:
         cursor.execute(
-            "SELECT usuario_id, categoria_id, serie_id, nome, valor, data_vencimento FROM contas WHERE id = ?",
+            """
+            SELECT usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, descricao
+            FROM contas WHERE id = ?
+            """,
             (conta_id,),
         )
         linha = cursor.fetchone()
         if linha is None:
             raise ValueError(f"conta com id={conta_id} não existe")
-        usuario_id, categoria_id, serie_id_atual, nome, valor, data_vencimento = linha
+        usuario_id, categoria_id, serie_id_atual, nome, valor, data_vencimento, descricao = linha
         if serie_id_atual is not None:
             cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id_atual,))
             linha_serie_atual = cursor.fetchone()
@@ -1556,11 +1605,11 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
                 """
                 INSERT INTO series_recorrencia
                     (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                     mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                     mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
                 (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                 mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate),
+                 mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
             )
             serie_id = cursor.lastrowid
 
@@ -1571,10 +1620,10 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
                 cursor.execute(
                     """
                     INSERT INTO contas
-                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
                     """,
-                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia),
+                    (usuario_id, categoria_id, serie_id, nome, valor, data_ocorrencia, descricao),
                 )
                 ids_novos.append(cursor.lastrowid)
 
@@ -1596,7 +1645,7 @@ def listar_contas(usuario_id, ano_mes=None):
         cursor.execute(
             """
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
-                   serie_id, data_pagamento, editado_individualmente
+                   serie_id, data_pagamento, editado_individualmente, descricao
             FROM contas WHERE usuario_id = ? AND data_vencimento LIKE ?
             ORDER BY data_vencimento
             """,
@@ -1606,7 +1655,7 @@ def listar_contas(usuario_id, ano_mes=None):
         cursor.execute(
             """
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
-                   serie_id, data_pagamento, editado_individualmente
+                   serie_id, data_pagamento, editado_individualmente, descricao
             FROM contas WHERE usuario_id = ?
             ORDER BY data_vencimento
             """,
@@ -1626,6 +1675,7 @@ def listar_contas(usuario_id, ano_mes=None):
             "id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
             "status": status, "categoria_id": l[5], "serie_id": l[6],
             "data_pagamento": l[7], "editado_individualmente": l[8],
+            "descricao": l[9],
         })
     return contas
 
@@ -1640,7 +1690,7 @@ def listar_contas_proximas(usuario_id, dias=7):
 
     cursor.execute(
         """
-        SELECT id, nome, valor, data_vencimento, status, categoria_id, serie_id
+        SELECT id, nome, valor, data_vencimento, status, categoria_id, serie_id, descricao
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente'
               AND data_vencimento BETWEEN ? AND ?
@@ -1653,7 +1703,7 @@ def listar_contas_proximas(usuario_id, dias=7):
 
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
-         "status": l[4], "categoria_id": l[5], "serie_id": l[6]}
+         "status": l[4], "categoria_id": l[5], "serie_id": l[6], "descricao": l[7]}
         for l in linhas
     ]
 
@@ -1667,7 +1717,7 @@ def listar_contas_atrasadas(usuario_id):
 
     cursor.execute(
         """
-        SELECT id, nome, valor, data_vencimento, categoria_id, serie_id
+        SELECT id, nome, valor, data_vencimento, categoria_id, serie_id, descricao
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente' AND data_vencimento < ?
         ORDER BY data_vencimento
@@ -1679,7 +1729,7 @@ def listar_contas_atrasadas(usuario_id):
 
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
-         "status": "atrasado", "categoria_id": l[4], "serie_id": l[5]}
+         "status": "atrasado", "categoria_id": l[4], "serie_id": l[5], "descricao": l[6]}
         for l in linhas
     ]
 
@@ -1824,8 +1874,22 @@ def editar_data_pagamento(conta_id, nova_data):
     return True
 
 
+def _normalizar_entrada_descricao(descricao, remover_descricao):
+    """
+    5.22: `(descricao, remover_descricao)` já normalizados. Uma descrição
+    informada que fica vazia após o strip é o mesmo que removê-la; a
+    remoção explícita tem prioridade sobre um texto informado junto.
+    """
+    if remover_descricao:
+        return None, True
+    if descricao is None:
+        return None, False  # não enviada: não alterar
+    descricao = normalizar_descricao(descricao)
+    return descricao, descricao is None
+
+
 def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
-                             remover_categoria=False):
+                             remover_categoria=False, descricao=None, remover_descricao=False):
     """
     RF20 "Somente este mês" (5.6): altera nome/valor/categoria/data de
     vencimento de uma única ocorrência. Sem restrição de mês/ano — a trava
@@ -1849,7 +1913,19 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     (não deveria acontecer, mas a prioridade evita ambiguidade). Retorna
     False se a conta não existir; True quando a alteração é aplicada
     (inclusive quando nenhum campo foi informado — nada a fazer).
+
+    Descrição (5.22): mesma convenção -- `descricao=None` é "não alterar" e
+    `remover_descricao=True` grava NULL. O texto é gravado normalizado
+    (strip nas bordas, quebras internas preservadas); uma descrição
+    informada que fica vazia equivale a removê-la.
+
+    Limites (5.23): só `nome`/`descricao` efetivamente enviados são
+    validados, antes de qualquer gravação (`LimiteDeCaracteresError`);
+    valores antigos não enviados nunca são revalidados nem cortados (P4).
     """
+    descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
+    _validar_textos_conta(nome, descricao)
+
     conexao = conectar()
     cursor = conexao.cursor()
 
@@ -1875,6 +1951,11 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     if data_vencimento is not None:
         campos.append("data_vencimento = ?")
         valores.append(data_vencimento)
+    if remover_descricao:
+        campos.append("descricao = NULL")
+    elif descricao is not None:
+        campos.append("descricao = ?")
+        valores.append(descricao)
     if serie_id is not None and campos:
         campos.append("editado_individualmente = 1")
 
@@ -1887,7 +1968,7 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
 
 
 def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
-                        remover_categoria=False):
+                        remover_categoria=False, descricao=None, remover_descricao=False):
     """
     RF20 "Este mês em diante" (5.6): aplica nome/valor/categoria/data à
     ocorrência selecionada e às futuras da mesma série (data_vencimento >=
@@ -1924,6 +2005,17 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     às ocorrências afetadas quanto ao "modelo" da série, com prioridade
     sobre `categoria_id` -- mesma convenção de `editar_conta_ocorrencia`.
 
+    Descrição (5.6/5.22, P3): `descricao`/`remover_descricao` seguem a mesma
+    convenção de `editar_conta_ocorrencia` (normalizada; vazia = remover) e
+    entram na mesma regra de "só o que mudou": adicionar, alterar ou
+    remover a descrição da ocorrência selecionada é aplicado a ela, às
+    futuras e ao modelo, de onde `gerar_ocorrencias_sob_demanda` a copia.
+
+    Limites (5.23): validados DEPOIS do descarte dos campos iguais aos da
+    ocorrência selecionada -- um nome antigo acima do limite que não foi
+    alterado nunca bloqueia a edição de outro campo (P4). Acima do limite,
+    levanta `LimiteDeCaracteresError` antes de qualquer gravação.
+
     Conta avulsa (`serie_id` NULL): delega para `editar_conta_ocorrencia`
     (CT40 — sem diálogo de escopo, edição direta).
 
@@ -1942,14 +2034,18 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     conexao_leitura = conectar()
     cursor_leitura = conexao_leitura.cursor()
     cursor_leitura.execute(
-        "SELECT serie_id, data_vencimento, nome, valor, categoria_id FROM contas WHERE id = ?",
+        """
+        SELECT serie_id, data_vencimento, nome, valor, categoria_id, descricao
+        FROM contas WHERE id = ?
+        """,
         (conta_id,),
     )
     linha = cursor_leitura.fetchone()
     if linha is None:
         conexao_leitura.close()
         return False
-    serie_id, data_referencia, nome_atual, valor_atual, categoria_id_atual = linha
+    serie_id, data_referencia, nome_atual, valor_atual, categoria_id_atual, descricao_atual = linha
+    descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
 
     # Correção v6.0 (Etapa 0): só propaga o que o usuário realmente alterou
     # em relação à ocorrência selecionada. Um campo repetido com o mesmo
@@ -1967,12 +2063,23 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
         remover_categoria = False
     if not remover_categoria and categoria_id == categoria_id_atual:
         categoria_id = None
+    if remover_descricao and descricao_atual is None:
+        remover_descricao = False
+    if descricao is not None and descricao == descricao_atual:
+        descricao = None
+
+    try:
+        _validar_textos_conta(nome, descricao)
+    except LimiteDeCaracteresError:
+        conexao_leitura.close()
+        raise
 
     if serie_id is None:
         conexao_leitura.close()
         return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor,
                                         categoria_id=categoria_id, data_vencimento=data_vencimento,
-                                        remover_categoria=remover_categoria)
+                                        remover_categoria=remover_categoria,
+                                        descricao=descricao, remover_descricao=remover_descricao)
 
     cursor_leitura.execute(
         "SELECT frequencia, data_termino, ativa FROM series_recorrencia WHERE id = ?",
@@ -2035,6 +2142,10 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             campos.append("categoria_id = NULL")
         elif categoria_id is not None:
             campos.append("categoria_id = ?"); valores.append(categoria_id)
+        if remover_descricao:
+            campos.append("descricao = NULL")
+        elif descricao is not None:
+            campos.append("descricao = ?"); valores.append(descricao)
         if campos:
             sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND data_vencimento >= ?"
             cursor.execute(sql, (*valores, serie_id, data_referencia))
@@ -2052,6 +2163,10 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             campos_serie.append("categoria_id = NULL")
         elif categoria_id is not None:
             campos_serie.append("categoria_id = ?"); valores_serie.append(categoria_id)
+        if remover_descricao:
+            campos_serie.append("descricao = NULL")
+        elif descricao is not None:
+            campos_serie.append("descricao = ?"); valores_serie.append(descricao)
         if data_vencimento is not None:
             campos_serie.append("dia_ancora = ?"); valores_serie.append(dia_ancora_novo)
             campos_serie.append("mes_ancora = ?")
@@ -2098,6 +2213,8 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
       exceção fechada em 5.1/5.5, independente do novo término escolhido.
     - `status` e `data_pagamento` nunca são tocados, para nenhuma
       ocorrência (5.9).
+    - As ocorrências regeneradas copiam o modelo da série (nome, valor,
+      categoria e descrição); o modelo não é alterado por esta função.
     - `series_recorrencia.frequencia/dia_ancora/mes_ancora/data_inicio/
       data_termino` são atualizados para refletir a nova configuração;
       `horizonte_gerado_ate` é recalculado como o maior `data_vencimento`
@@ -2151,10 +2268,13 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
             raise ValueError("RF27 não se aplica a conta avulsa (sem série)")
 
         cursor.execute(
-            "SELECT usuario_id, nome, valor, categoria_id, ativa FROM series_recorrencia WHERE id = ?",
+            """
+            SELECT usuario_id, nome, valor, categoria_id, ativa, descricao
+            FROM series_recorrencia WHERE id = ?
+            """,
             (serie_id,),
         )
-        usuario_id, nome_serie, valor_serie, categoria_id_serie, ativa = cursor.fetchone()
+        usuario_id, nome_serie, valor_serie, categoria_id_serie, ativa, descricao_serie = cursor.fetchone()
         if ativa == 0:
             raise ValueError(
                 f"série id={serie_id} não está ativa -- recorrência já removida (RF29), "
@@ -2197,10 +2317,11 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
                 cursor.execute(
                     """
                     INSERT INTO contas
-                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                        (usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, status, descricao)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
                     """,
-                    (usuario_id, categoria_id_serie, serie_id, nome_serie, valor_serie, nova_data),
+                    (usuario_id, categoria_id_serie, serie_id, nome_serie, valor_serie, nova_data,
+                     descricao_serie),
                 )
                 ids_novos.append(cursor.lastrowid)
 
@@ -2240,9 +2361,16 @@ def editar_categoria(usuario_id, categoria_id, nome=None, icone=None, cor=None):
     cor antiga deixa de estar em uso por qualquer categoria, sem
     nenhuma ação extra necessária.
 
+    `nome`, quando informado, tem no máximo 30 caracteres (5.23) --
+    acima disso levanta `LimiteDeCaracteresError` sem alterar nada. Um
+    nome antigo não informado (`None`) nunca é revalidado.
+
     Operação transacional. Retorna True quando a alteração é aplicada
     (inclusive quando nenhum campo foi informado).
     """
+    if nome is not None:
+        validar_limite("nome_categoria", nome, LIMITE_NOME_CATEGORIA)
+
     conexao = sqlite3.connect(NOME_DO_BANCO)
     conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
     conexao.execute("PRAGMA foreign_keys = ON;")
