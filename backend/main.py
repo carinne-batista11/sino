@@ -510,6 +510,34 @@ def ligar_contador_de_limite(controle, campo, limite, ao_mudar=None, aviso=None)
     return LimiteDoCampo(controle, campo, limite, ao_mudar, aviso)
 
 
+def resumo_do_mes(contas):
+    """
+    RF12/5.16 (Etapa 3): (total, pago, pendente) das contas do mês. O total
+    soma TODAS as contas, independentemente do status -- marcar ou
+    desmarcar uma conta como paga só move o valor entre pago e pendente.
+    Atrasadas contam como pendentes (e no mês do vencimento).
+    """
+    pago = sum(c["valor"] for c in contas if c["status"] == "pago")
+    pendente = sum(c["valor"] for c in contas if c["status"] != "pago")
+    return pago + pendente, pago, pendente
+
+
+def ordenar_contas_do_mes(contas):
+    """Ordem da lista do mês: atrasadas primeiro, depois por vencimento."""
+    return sorted(contas, key=lambda c: (0 if c["status"] == "atrasado" else 1, c["data_vencimento"]))
+
+
+FILTROS_DE_STATUS = (
+    ("todas", "Todas"), ("pendentes", "Pendentes"), ("pagas", "Pagas"), ("atrasadas", "Atrasadas"),
+)
+
+
+def filtrar_por_status(contas, filtro):
+    """RF09/5.21: filtro da tela Ver status (as contas já são as do mês)."""
+    status = {"pendentes": "pendente", "pagas": "pago", "atrasadas": "atrasado"}.get(filtro)
+    return list(contas) if status is None else [c for c in contas if c["status"] == status]
+
+
 def parse_valor(texto):
     texto = (texto or "").strip().replace("R$", "").strip()
     if not texto:
@@ -778,12 +806,14 @@ def main(page: ft.Page):
     # ======================================================
     #  TELA PRINCIPAL
     # ======================================================
-    def mostrar_tela_principal():
+    def mostrar_tela_principal(mes_inicial=None):
+        """`mes_inicial` = (ano, mes) a manter selecionado (ex.: ao voltar da
+        edição aberta pelo lápis); sem ele, o mês atual."""
         page.controls.clear()
         page.padding = 0
 
         hoje = date.today()
-        mes_atual = [hoje.year, hoje.month]
+        mes_atual = list(mes_inicial) if mes_inicial else [hoje.year, hoje.month]
 
         avatar = ft.Container(
             content=ft.Text("$", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
@@ -850,40 +880,15 @@ def main(page: ft.Page):
         valor_pago = ft.Text("pago R$ 0,00", size=12, color=cores.total_pago)
         valor_pendente = ft.Text("pendente R$ 0,00", size=12, color=cores.total_pendente)
 
-        filtro_total = {"valor": "todas"}
-        OPCOES_FILTRO_TOTAL = (("todas", "Todas"), ("pendentes", "Pendentes"), ("pagas", "Pagas"))
-
-        def selecionar_filtro_total(valor):
-            filtro_total["valor"] = valor
-            atualizar_dados()
-
-        def chip_filtro_total(valor, rotulo):
-            ativo = filtro_total["valor"] == valor
-            return ft.Container(
-                content=ft.Text(rotulo, size=10, weight=ft.FontWeight.BOLD,
-                                 color=cores.filtro_ativo_texto if ativo else cores.filtro_inativo_texto),
-                bgcolor=cores.filtro_ativo_fundo if ativo else "transparent",
-                border=None if ativo else ft.Border.all(1, cores.filtro_inativo_borda),
-                border_radius=12,
-                padding=ft.Padding(8, 4, 8, 4),
-                on_click=lambda e: selecionar_filtro_total(valor),
-            )
-
-        linha_filtro_total = ft.Row(spacing=4, controls=[])
-
+        # RF12/5.16 (Etapa 3): sem filtros -- o total é sempre a soma de todas
+        # as contas do mês; pago/pendente continuam como informação complementar.
         card_total = ft.Container(
             bgcolor=cores.fundo_card_total,
             border_radius=16,
             padding=16,
             content=ft.Column(
                 controls=[
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        controls=[
-                            ft.Text("Total do mês", size=12, color=cores.texto_secundario_card_total),
-                            linha_filtro_total,
-                        ],
-                    ),
+                    ft.Text("Total do mês", size=12, color=cores.texto_secundario_card_total),
                     valor_total,
                     ft.Container(height=8),
                     ft.Row(
@@ -941,29 +946,43 @@ def main(page: ft.Page):
                     ],
                 )
 
-        def ao_clicar_ver_todas(e):
+        def ao_clicar_ver_status(e):
             ano_mes_atual = f"{mes_atual[0]:04d}-{mes_atual[1]:02d}"
-            mostrar_tela_todas_contas(ano_mes_atual)
+            mostrar_tela_ver_status(ano_mes_atual)
 
         titulo_contas = ft.Text("Suas contas", size=15, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
 
+        # RF09/5.21 (Etapa 3): "Ver status" substitui "Ver todas", ao lado do título.
         cabecalho_contas = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
                 titulo_contas,
                 ft.Container(
-                    content=ft.Text("Ver todas", size=13, color=cores.acao_primaria),
-                    on_click=ao_clicar_ver_todas,
+                    content=ft.Text("Ver status", size=13, color=cores.acao_primaria),
+                    on_click=ao_clicar_ver_status,
                 ),
             ],
         )
 
         lista_contas = ft.Column(controls=[], spacing=8)
 
-        def abrir_detalhe_conta(conta):
+        def abrir_detalhe_conta(conta, abrir_em_edicao=False):
+            """
+            Detalhes da conta; `abrir_em_edicao=True` (lápis da Tela
+            Principal, RF30) abre direto o formulário Editar. Nesse caminho,
+            Voltar/Cancelar e o "Entendi" depois de salvar retornam à Tela
+            Principal no mesmo mês selecionado; pelo caminho Detalhes ->
+            Editar, Voltar/Cancelar continuam retornando aos Detalhes.
+            """
             page.controls.clear()
             page.overlay.clear()
             page.padding = 0
+
+            def voltar_do_formulario():
+                if abrir_em_edicao:
+                    mostrar_tela_principal(tuple(mes_atual))
+                else:
+                    mostrar_visualizacao()
 
             categorias_atuais = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
             nome_categoria = categorias_atuais.get(conta.get("categoria_id")) or "Sem categoria"
@@ -2222,7 +2241,7 @@ def main(page: ft.Page):
                     # (conta avulsa ou série encerrada, `dialogo_alvo=None`).
                     def fechar_confirmacao(e):
                         page.pop_dialog()
-                        mostrar_tela_principal()
+                        mostrar_tela_principal(tuple(mes_atual) if abrir_em_edicao else None)
 
                     acao_entendi = ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                                               on_click=fechar_confirmacao)
@@ -2316,7 +2335,7 @@ def main(page: ft.Page):
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
                         ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
-                                      on_click=lambda e: mostrar_visualizacao()),
+                                      on_click=lambda e: voltar_do_formulario()),
                         ft.Text("Editar conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                         ft.Container(width=40),
                     ],
@@ -2342,7 +2361,7 @@ def main(page: ft.Page):
                     color=cores.botao_secundario_texto,
                     style=ft.ButtonStyle(side=ft.BorderSide(1, cores.borda_suave)),
                     width=110,
-                    on_click=lambda e: mostrar_visualizacao(),
+                    on_click=lambda e: voltar_do_formulario(),
                 )
                 botao_salvar = ft.Button(
                     content="Salvar alterações",
@@ -2386,9 +2405,12 @@ def main(page: ft.Page):
                 page.update()
 
             page.add(area_corpo)
-            mostrar_visualizacao()
+            if abrir_em_edicao:
+                mostrar_formulario_edicao()
+            else:
+                mostrar_visualizacao()
 
-        def linha_conta(conta, nome_categoria, acao_rapida_pagamento=False):
+        def linha_conta(conta, nome_categoria, acao_rapida_pagamento=False, acao_editar=False):
             data_venc = date.fromisoformat(conta["data_vencimento"])
             dias_delta = (data_venc - date.today()).days
 
@@ -2442,6 +2464,24 @@ def main(page: ft.Page):
             # a coluna da esquerda (nome/subtítulo) absorve o espaço restante.
             controles_linha[0].expand = True
             controles_linha[1].width = 92
+
+            if acao_editar:
+                # RF30/5.15 (Etapa 3): atalho para Editar conta, só na Tela
+                # Principal -- mesmas dimensões do controle de pagamento
+                # (IconButton 22 num Container de 40). O clique no botão não
+                # abre os Detalhes (o botão consome o toque, como o de pagamento).
+                controles_linha.append(
+                    ft.Container(
+                        width=40, alignment=ft.Alignment.CENTER,
+                        content=ft.IconButton(
+                            icon=ft.Icons.EDIT_OUTLINED,
+                            icon_color=cores.texto_secundario,
+                            icon_size=22,
+                            tooltip="Editar conta",
+                            on_click=lambda e, c=conta: abrir_detalhe_conta(c, abrir_em_edicao=True),
+                        ),
+                    )
+                )
 
             if acao_rapida_pagamento:
                 # Ação rápida em "Suas contas": reutiliza database.marcar_conta_como_paga
@@ -2526,23 +2566,10 @@ def main(page: ft.Page):
             contas_mes = database.listar_contas(usuario_atual["id"], ano_mes)
             categorias = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
 
-            pago = sum(c["valor"] for c in contas_mes if c["status"] == "pago")
-            pendente = sum(c["valor"] for c in contas_mes if c["status"] in ("pendente", "atrasado"))
-
-            if filtro_total["valor"] == "pendentes":
-                total_exibido = pendente
-            elif filtro_total["valor"] == "pagas":
-                total_exibido = pago
-            else:
-                total_exibido = pago + pendente
-
-            valor_total.value = formatar_moeda(total_exibido)
+            total, pago, pendente = resumo_do_mes(contas_mes)
+            valor_total.value = formatar_moeda(total)
             valor_pago.value = f"pago {formatar_moeda(pago)}"
             valor_pendente.value = f"pendente {formatar_moeda(pendente)}"
-
-            linha_filtro_total.controls.clear()
-            for valor, rotulo in OPCOES_FILTRO_TOTAL:
-                linha_filtro_total.controls.append(chip_filtro_total(valor, rotulo))
 
             proximas = database.listar_contas_proximas(usuario_atual["id"], dias=7)
             if proximas:
@@ -2570,80 +2597,57 @@ def main(page: ft.Page):
 
             construir_bloco_atrasadas(database.listar_contas_atrasadas(usuario_atual["id"]))
 
-            contas_ordenadas = sorted(
-                contas_mes,
-                key=lambda c: (0 if c["status"] == "atrasado" else 1, c["data_vencimento"]),
-            )[:5]
+            # RF05/5.15 (Etapa 3): TODAS as contas do mês (sem o antigo corte
+            # em 5), na rolagem normal da página (`conteudo`); ordem mantida.
+            contas_ordenadas = ordenar_contas_do_mes(contas_mes)
 
             lista_contas.controls.clear()
             if not contas_ordenadas:
                 lista_contas.controls.append(
                     ft.Container(
-                        content=ft.Text("Nenhuma conta cadastrada ainda.", color=cores.texto_secundario, size=13),
+                        content=ft.Text("Nenhuma conta neste mês.", color=cores.texto_secundario, size=13),
                         padding=16,
                     )
                 )
             else:
                 for c in contas_ordenadas:
                     lista_contas.controls.append(
-                        linha_conta(c, categorias.get(c["categoria_id"], ""), acao_rapida_pagamento=True)
+                        linha_conta(c, categorias.get(c["categoria_id"], ""), acao_rapida_pagamento=True,
+                                    acao_editar=True)
                     )
 
             page.update()
 
-        def mostrar_tela_todas_contas(ano_mes):
-            # RF05: mesma consulta e mesma ordenação de atualizar_dados(), só sem o
-            # corte [:5]. Reaproveita linha_conta()/abrir_detalhe_conta() por estar
-            # aninhada no mesmo escopo de mostrar_tela_principal().
-            # RF09: filtro de status, com estado local a esta chamada (recriado a
-            # cada abertura da tela, portanto nunca persistido) e independente do
-            # filtro_total do RF12.
+        def mostrar_tela_ver_status(ano_mes):
+            # RF09/5.21 (Etapa 3): "Ver status" -- consulta das contas do mês de
+            # referência por status (Todas | Pendentes | Pagas | Atrasadas). O
+            # mês é o do vencimento real (database.listar_contas), mesma lista e
+            # mesma ordem da Tela Principal. Reaproveita linha_conta()/
+            # abrir_detalhe_conta() por estar aninhada em mostrar_tela_principal();
+            # o filtro vive só nesta tela (recriado a cada abertura).
             page.controls.clear()
             page.padding = 0
 
             ano, mes = (int(p) for p in ano_mes.split("-"))
             categorias_atuais = {c["id"]: c["nome"] for c in database.listar_categorias(usuario_atual["id"])}
+            contas_do_mes_ordenadas = ordenar_contas_do_mes(database.listar_contas(usuario_atual["id"], ano_mes))
+            filtro_status = {"valor": "todas"}
 
-            contas_do_mes = database.listar_contas(usuario_atual["id"], ano_mes)
-            contas_do_mes_ordenadas = sorted(
-                contas_do_mes,
-                key=lambda c: (0 if c["status"] == "atrasado" else 1, c["data_vencimento"]),
-            )
+            lista_ver_status = ft.ListView(expand=True, spacing=8, padding=ft.Padding(20, 0, 20, 24))
 
-            filtro_ver_todas = {"status": "todas"}
-            OPCOES_FILTRO_STATUS_VER_TODAS = (
-                ("todas", "Todas"), ("pendentes", "Pendentes"),
-                ("pagas", "Pagas"), ("atrasadas", "Atrasadas"),
-            )
-
-            def contas_filtradas():
-                status_sel = filtro_ver_todas["status"]
-                resultado = contas_do_mes_ordenadas
-                if status_sel == "pendentes":
-                    resultado = [c for c in resultado if c["status"] == "pendente"]
-                elif status_sel == "pagas":
-                    resultado = [c for c in resultado if c["status"] == "pago"]
-                elif status_sel == "atrasadas":
-                    resultado = [c for c in resultado if c["status"] == "atrasado"]
-
-                return resultado
-
-            lista_completa = ft.ListView(expand=True, spacing=8, padding=ft.Padding(20, 0, 20, 24))
-
-            def recompor_lista_completa():
-                lista_completa.controls.clear()
+            def recompor_lista():
+                lista_ver_status.controls.clear()
                 if not contas_do_mes_ordenadas:
-                    lista_completa.controls.append(
+                    lista_ver_status.controls.append(
                         ft.Container(
                             content=ft.Text("Nenhuma conta cadastrada neste mês.", color=cores.texto_secundario, size=13),
                             padding=16,
                         )
                     )
                     return
-
-                filtradas = contas_filtradas()
+                filtradas = filtrar_por_status(contas_do_mes_ordenadas, filtro_status["valor"])
                 if not filtradas:
-                    lista_completa.controls.append(
+                    lista_ver_status.controls.append(
                         ft.Container(
                             content=ft.Text("Nenhuma conta encontrada com os filtros selecionados.",
                                              color=cores.texto_secundario, size=13),
@@ -2652,69 +2656,67 @@ def main(page: ft.Page):
                     )
                 else:
                     for c in filtradas:
-                        lista_completa.controls.append(
-                            linha_conta(c, categorias_atuais.get(c["categoria_id"], ""))
-                        )
+                        lista_ver_status.controls.append(linha_conta(c, categorias_atuais.get(c["categoria_id"], "")))
 
-            def atualizar_lista_ver_todas():
-                recompor_lista_completa()
-                page.update()
+            linha_filtros = ft.Row(spacing=8, controls=[])
 
-            linha_filtro_status_ver_todas = ft.Row(spacing=4, controls=[])
-
-            def montar_chips_status_ver_todas():
-                linha_filtro_status_ver_todas.controls.clear()
-                for valor, rotulo in OPCOES_FILTRO_STATUS_VER_TODAS:
-                    linha_filtro_status_ver_todas.controls.append(
-                        chip_filtro_status_ver_todas(valor, rotulo)
-                    )
-
-            def selecionar_filtro_status_ver_todas(valor):
-                filtro_ver_todas["status"] = valor
-                montar_chips_status_ver_todas()
-                atualizar_lista_ver_todas()
-
-            def chip_filtro_status_ver_todas(valor, rotulo):
-                ativo = filtro_ver_todas["status"] == valor
+            def botao_filtro(valor, rotulo):
+                # 8.2: botões maiores e mais destacados que os chips antigos
+                # (mesmo padrão dos chips "Única/Mensal/Anual" de Nova Conta).
+                ativo = filtro_status["valor"] == valor
                 return ft.Container(
-                    content=ft.Text(rotulo, size=10, weight=ft.FontWeight.BOLD,
-                                     color=cores.filtro_ativo_texto if ativo else cores.filtro_inativo_texto),
-                    bgcolor=cores.filtro_ativo_fundo if ativo else "transparent",
-                    border=None if ativo else ft.Border.all(1, cores.filtro_inativo_borda),
-                    border_radius=12,
-                    padding=ft.Padding(8, 4, 8, 4),
-                    on_click=lambda e, v=valor: selecionar_filtro_status_ver_todas(v),
+                    content=ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD,
+                                     color=cores.chip_ativo_texto if ativo else cores.chip_inativo_texto),
+                    bgcolor=cores.chip_ativo_fundo if ativo else cores.chip_inativo_fundo,
+                    border=None if ativo else ft.Border.all(1, cores.borda_suave),
+                    border_radius=10,
+                    padding=ft.Padding(0, 12, 0, 12),
+                    alignment=ft.Alignment.CENTER,
+                    expand=True,
+                    on_click=lambda e, v=valor: selecionar_filtro(v),
                 )
 
-            montar_chips_status_ver_todas()
-            recompor_lista_completa()
+            def montar_filtros():
+                linha_filtros.controls = [botao_filtro(valor, rotulo) for valor, rotulo in FILTROS_DE_STATUS]
 
-            cabecalho_todas_contas = ft.Container(
+            def selecionar_filtro(valor):
+                filtro_status["valor"] = valor
+                montar_filtros()
+                recompor_lista()
+                page.update()
+
+            montar_filtros()
+            recompor_lista()
+
+            cabecalho_ver_status = ft.Container(
                 padding=ft.Padding(20, 40, 20, 0),
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
                         ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
-                                      on_click=lambda e: mostrar_tela_principal()),
-                        ft.Text(f"{MESES_PT[mes - 1]} {ano}", size=18, weight=ft.FontWeight.BOLD,
-                                color=cores.texto_principal),
+                                      on_click=lambda e: mostrar_tela_principal((ano, mes))),
+                        ft.Column(
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=0,
+                            controls=[
+                                ft.Text("Ver status", size=13, color=cores.texto_secundario),
+                                ft.Text(f"{MESES_PT[mes - 1]} de {ano}", size=18, weight=ft.FontWeight.BOLD,
+                                        color=cores.texto_principal),
+                            ],
+                        ),
                         ft.Container(width=40),
                     ],
-                ),
-            )
-
-            filtros_ver_todas = ft.Container(
-                padding=ft.Padding(20, 12, 20, 4),
-                content=ft.Column(
-                    spacing=8,
-                    controls=[linha_filtro_status_ver_todas],
                 ),
             )
 
             page.add(
                 ft.Column(
                     expand=True,
-                    controls=[cabecalho_todas_contas, filtros_ver_todas, lista_completa],
+                    controls=[
+                        cabecalho_ver_status,
+                        ft.Container(padding=ft.Padding(20, 16, 20, 8), content=linha_filtros),
+                        lista_ver_status,
+                    ],
                 )
             )
             page.update()
@@ -2725,7 +2727,7 @@ def main(page: ft.Page):
             # selecionado na Tela Principal, então esta tela não filtra por
             # mes_atual. Reaproveita linha_conta()/abrir_detalhe_conta() por estar
             # aninhada no mesmo escopo de mostrar_tela_principal() (mesmo padrão de
-            # mostrar_tela_todas_contas).
+            # mostrar_tela_ver_status).
             page.controls.clear()
             page.padding = 0
 
