@@ -1,0 +1,75 @@
+{
+  "descricao": "Vetores Ed25519 da autorização v1 (chave de teste, não é credencial).",
+  "kid": "teste-1",
+  "chave_publica_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+  "valido": {
+    "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.OxxeiDJCQQoNzb9KC0MUezHQN3Vzt-PjThh83JTqiTX3H_kgKCda_iRdBzcOLmmDCs9esPPWZPetiN-uOuZLCg",
+    "conteudo": {
+      "v": 1,
+      "kid": "teste-1",
+      "jti": "dmV0b3ItZGUtdGVzdGUtMQ",
+      "fin": "recuperacao_senha",
+      "ctx": "0d67e2be5b0d7d2745b4e227faea71862f0a7a9dfdb595c1f7eef2120f864811",
+      "iat": 1790856184,
+      "exp": 1790856600
+    }
+  },
+  "invalidos": [
+    {
+      "motivo": "conteudo_alterado",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6ImNhZGFzdHJvIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.OxxeiDJCQQoNzb9KC0MUezHQN3Vzt-PjThh83JTqiTX3H_kgKCda_iRdBzcOLmmDCs9esPPWZPetiN-uOuZLCg"
+    },
+    {
+      "motivo": "assinatura_de_outro_conteudo",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.bVGxMNHBhwqN83qxSf03usEFL675vYqm6k7zzwuaXncHju1nkxoi80ASj6S3OFdm6QiBeWHPMCEK8q7_io0FAQ"
+    },
+    {
+      "motivo": "kid_desconhecido",
+      "token": "eyJ2IjoxLCJraWQiOiJvdXRyby1raWQiLCJqdGkiOiJkbVYwYjNJdFpHVXRkR1Z6ZEdVdE1RIiwiZmluIjoicmVjdXBlcmFjYW9fc2VuaGEiLCJjdHgiOiIwZDY3ZTJiZTViMGQ3ZDI3NDViNGUyMjdmYWVhNzE4NjJmMGE3YTlkZmRiNTk1YzFmN2VlZjIxMjBmODY0ODExIiwiaWF0IjoxNzkwODU2MTg0LCJleHAiOjE3OTA4NTY2MDB9.7GMjhsuTMWTkMcrDR9Q0XqWIZU3GPgC5ghIWdkYXw1xcL65XO2zwSW3FrdWdnVit7vtAt8P_4yvUl37ySs2nBg"
+    },
+    {
+      "motivo": "chave_errada",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.ZKjqEqDz0tGsg7Sui1uEwcM4D5_fa15-4IXyEwWKP8uHm6ukAvtF09MRAdfbOOk-RzqZyuw3dmxvCZKUYa1hBA"
+    },
+    {
+      "motivo": "assinatura_curta",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.OxxeiDJCQQoNzb9KC0MUezHQN3Vzt-PjThh83JTq"
+    },
+    {
+      "motivo": "base64_nao_canonico",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.OxxeiDJCQQoNzb9KC0MUezHQN3Vzt-PjThh83JTqiTX3H_kgKCda_iRdBzcOLmmDCs9esPPWZPetiN-uOuZLCB"
+    },
+    {
+      "motivo": "chave_duplicada",
+      "token": "eyJ2IjoxLCJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.GD9zb5XcdJcTS9xW-ftjXMhiO2P2cAjMfn_88_NM97wHLhEwqcFN55mgCIuDuUa1E7JPfzGcli4TJm1_BdivCw"
+    },
+    {
+      "motivo": "ordem_de_chaves",
+      "token": "eyJraWQiOiJ0ZXN0ZS0xIiwidiI6MSwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.-ji8TcGoP9W4CY1UZzJ9Detu6M6SmX6JVUi1hTnEmuq64D-uvMKVmb-ukpkUMIvF1ycii1fgbAHhJKSV65gEDQ"
+    },
+    {
+      "motivo": "chave_extra",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwLCJlbWFpbCI6InhAeS56In0.xsCvt6Oe_S1hA4g3QLbY8BSJljL4-fofXjMA0UAM5EfBLq0sFuIH9vxIWauecReLNFrtEwSjfJNV_Sg7NjGfBA"
+    },
+    {
+      "motivo": "booleano_como_inteiro",
+      "token": "eyJ2Ijp0cnVlLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.NaWzHZ9EF9S1_qEdh1tcTvbIpKLRW_mHFb7KqrCrvyD8hWOWmHyvjqZyXWTN_QWUxIMF1k1LU5lM4a-O-G9kBA"
+    },
+    {
+      "motivo": "exp_fracionario",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwLjV9.GHrj62pFXyJlOokIon5Pi2kQdN0idzQUuEDm3UJIvLEn9afnbeyOXKqirTasEHEDhe2QI619Gu76G-jAWGdmAw"
+    },
+    {
+      "motivo": "finalidade_desconhecida",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6ImxvZ2luIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.-f1As3KfJVQIyxVc6q7VWa0vm3QmPdEsvNW20pDWnnOwY_o0eqJu3upUu0uBg_FXF2_g4duGOVRugXxzsZoXBw"
+    },
+    {
+      "motivo": "contexto_maiusculo",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMEQ2N0UyQkU1QjBEN0QyNzQ1QjRFMjI3RkFFQTcxODYyRjBBN0E5REZEQjU5NUMxRjdFRUYyMTIwRjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.NMvr7M9y2gl6S9XkZdZ5FPJzLMAW7Vyt2KxSt-hNvGYp2rJhUVEIYDhqvwDT9U_HM-2Pbj8TLnjE9PmF8mNiAA"
+    },
+    {
+      "motivo": "formato",
+      "token": "eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoiZG1WMGIzSXRaR1V0ZEdWemRHVXRNUSIsImZpbiI6InJlY3VwZXJhY2FvX3NlbmhhIiwiY3R4IjoiMGQ2N2UyYmU1YjBkN2QyNzQ1YjRlMjI3ZmFlYTcxODYyZjBhN2E5ZGZkYjU5NWMxZjdlZWYyMTIwZjg2NDgxMSIsImlhdCI6MTc5MDg1NjE4NCwiZXhwIjoxNzkwODU2NjAwfQ.OxxeiDJCQQoNzb9KC0MUezHQN3Vzt-PjThh83JTqiTX3H_kgKCda_iRdBzcOLmmDCs9esPPWZPetiN-uOuZLCg.extra"
+    }
+  ]
+}

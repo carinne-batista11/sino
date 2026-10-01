@@ -2,10 +2,10 @@
 # Ambiente de referência: Python 3.11.
 #
 # O restante do código usa a biblioteca padrão do Python (sqlite3,
-# hashlib, secrets, datetime...), o pacote `regex` e o `flet-charts` (gráficos
-# da tela Gráfico). As dependências transitivas
-# (httpx, msgpack, oauthlib, repath, rich) são resolvidas pelo pip a partir
-# dos pacotes abaixo.
+# hashlib, secrets, datetime...), o pacote `regex`, o `flet-charts` (gráficos
+# da tela Gráfico), o `httpx` e o `cryptography` (cliente do serviço de
+# códigos de e-mail). As dependências transitivas (msgpack, oauthlib,
+# repath, rich...) são resolvidas pelo pip a partir dos pacotes abaixo.
 #
 # flet-desktop é o cliente usado por ft.run() no desktop; flet e
 # flet-desktop precisam estar exatamente na mesma versão.
@@ -18,3 +18,17 @@ flet-charts==0.86.5
 # grafemas, `\X`) nos limites de texto da ERS v6.0 (5.23/T5) --
 # database/limites.py.
 regex==2026.9.10
+
+# httpx: chamadas HTTP assíncronas ao serviço de códigos (Etapa 8) --
+# backend/servico_codigos.py. Já era dependência do flet; fixado aqui porque
+# o Sino passa a importá-lo diretamente.
+httpx==0.28.1
+
+# cryptography: verificação Ed25519 da autorização assinada pelo serviço de
+# códigos (Etapa 8) -- backend/autorizacao_servico.py, único módulo que a
+# importa. 50.0.2: versão estável com os avisos de segurança corrigidos
+# (inclui o OpenSSL embutido corrigido a partir da 48.0.1). Pacotes prontos
+# para Linux x86_64, Windows x64 e macOS ARM64; em Mac Intel a instalação
+# compila a partir do código-fonte (requer Rust). Empacotamento Android/iOS:
+# pendente, não validado.
+cryptography==50.0.2

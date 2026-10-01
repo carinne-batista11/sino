@@ -52,12 +52,17 @@ gerado pelo aplicativo para cada ação do usuário.
 {
   "finalidade": "cadastro" | "alteracao_email" | "recuperacao_senha",
   "email": "pessoa@exemplo.com",
-  "contexto": "<64 hex: SHA-256(finalidade ‖ e-mail normalizado ‖ nonce local)>",
+  "contexto": "<64 hex minúsculos: ver abaixo>",
   "segredo": "<43 caracteres base64url: 32 bytes aleatórios (S)>",
   "sem_envio": false
 }
 ```
 
+* `contexto`: SHA-256, em hexadecimal minúsculo, do texto UTF-8
+  `finalidade + "\x1f" + e-mail normalizado + "\x1f" + nonce em hexadecimal
+  minúsculo`, com nonce de 32 bytes aleatórios gerado pelo aplicativo para cada
+  operação e mantido só em memória. E-mail normalizado: sem espaços nas bordas
+  e em minúsculas. O serviço não recalcula o contexto; só o devolve assinado.
 * `email`: até 254 caracteres, sem espaços, com um único `@`. O serviço compara
   endereços em minúsculas; a mensagem é enviada ao endereço como informado.
 * `segredo` (S): fica só na memória do aplicativo e precisa acompanhar cada
@@ -225,3 +230,46 @@ segredos ou corpos de mensagem em logs.
 
 Sem `CHAVE_HMAC`, `CHAVE_ASSINATURA` ou `KID_ASSINATURA` válidos, o serviço responde
 `503 servico_indisponivel`. Nenhum segredo fica no aplicativo nem no repositório.
+
+## Comportamento esperado do cliente
+
+Referência: `backend/servico_codigos.py` (cliente do aplicativo) e
+`backend/autorizacao_servico.py` (verificação da autorização).
+
+* Corpo JSON compacto (sem espaços), com as chaves na ordem deste contrato. Na
+  recuperação, `sem_envio` vai sempre no corpo (`true` ou `false`), para que os
+  pedidos com e sem envio tenham o mesmo formato.
+* Cada ação do usuário usa uma `Idempotency-Key` nova (18 bytes aleatórios em
+  base64url). Falha de rede, tempo esgotado, `503` na validação e `202
+  em_processamento` são repetidos com a **mesma** chave e o mesmo corpo.
+* Respostas: no máximo 16 KiB; `Content-Type: application/json`; JSON estrito
+  (sem chaves duplicadas, sem `NaN`/`Infinity`, chaves exatas por resposta,
+  inteiros que não sejam booleanos nem frações); instantes no formato exato
+  `AAAA-MM-DDTHH:MM:SS.mmmZ`. Redirecionamentos não são seguidos; proxy,
+  `.netrc` e cookies do ambiente são ignorados; HTTP só para o próprio
+  computador.
+* Compressão: o cliente sempre pede `Accept-Encoding: identity` e recusa,
+  antes de ler o corpo, qualquer `Content-Encoding` diferente de `identity`;
+  o limite de 16 KiB vale sobre os bytes recebidos.
+* Cancelamento: descartar a operação impede novos envios, esperas e
+  repetições e o registro de qualquer resposta que chegue depois. Para
+  interromper na hora uma chamada em andamento, a tela também cancela a tarefa
+  assíncrona, o que fecha a resposta HTTP.
+* Prazos: o `expira_em` original (UTC) é guardado e o `exp` assinado precisa
+  ser igual a ele (em segundos, arredondado para baixo). O tempo restante usa
+  o relógio monotônico, contado de forma conservadora a partir do início da
+  requisição (`início + (expira_em − agora) − 2 s`), e nunca é ampliado para o
+  mesmo desafio. UTC e monotônico não são comparados entre si.
+* Autorização: conferida antes de ser usada (formato, tamanhos, assinatura com
+  a chave pública do `kid`, finalidade e contexto da operação, validade). O uso
+  único do `jti` é registrado pelo aplicativo na mesma transação local da
+  operação (migração v8).
+
+## Conformidade
+
+`servidor/test/conformidade/autorizacao.json` (vetores de assinatura) e
+`servidor/test/conformidade/transcricoes.json` (requisições e respostas reais)
+são gerados pelos testes do servidor com relógio e aleatoriedade fixos, e
+reproduzidos byte a byte pelos testes do cliente Python. Uma mudança no
+contrato exige regenerá-los (`SINO_ATUALIZAR_CONFORMIDADE=1`) e conferir as
+duas suítes.

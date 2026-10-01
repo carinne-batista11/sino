@@ -60,6 +60,8 @@ Entre as novidades especificadas estão:
 - **[Flet](https://flet.dev) 0.86.5**, para a interface desktop
 - **SQLite**, para o armazenamento local dos dados
 - **unittest** (biblioteca padrão do Python), para os testes automatizados
+- **httpx** e **cryptography**, no cliente do serviço de códigos de e-mail (em desenvolvimento)
+- **TypeScript**, **Cloudflare Workers** com **Durable Objects** (SQLite) e **Resend**, no serviço de códigos de e-mail, em desenvolvimento local e ainda não publicado; testes com **Vitest**
 
 ## ▶️ Como executar
 
@@ -80,19 +82,30 @@ Na primeira execução, o banco de dados é criado automaticamente em `database/
 
 ## 🧪 Testes
 
+Com o ambiente virtual `.venv` ativado e as dependências instaladas (veja "Como executar"):
+
 ```bash
 python3 -m unittest discover tests
 ```
 
-A suíte automatizada cobre a camada de dados: recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação. Cada teste roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo.
+A suíte precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo, e nenhum teste acessa a rede.
+
+Os testes do serviço de códigos (`servidor/`) usam Node.js 24 e rodam localmente, sem conta em serviços externos:
+
+```bash
+cd servidor
+npm ci
+npm test
+```
 
 ## 📁 Estrutura
 
 ```
-backend/    interface do aplicativo (Flet) e paleta de cores do tema
+backend/    interface do aplicativo (Flet), paleta de cores do tema e cliente do serviço de códigos
 database/   camada de dados (SQLite)
-docs/       especificações (ERS) e protótipos de interface
-tests/      testes automatizados
+docs/       especificações (ERS), contrato do serviço de códigos e protótipos de interface
+servidor/   serviço de códigos de e-mail (em desenvolvimento local, não publicado)
+tests/      testes automatizados do aplicativo
 ```
 
 ## 📄 Documentação

@@ -1,0 +1,312 @@
+{
+  "descricao": "Transcrições do contrato v1 geradas pelo servidor com relógio e aleatoriedade fixos.",
+  "kid": "teste-1",
+  "chave_publica_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+  "cenarios": {
+    "cadastro_validado": {
+      "finalidade": "cadastro",
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "81f5d941f17c3fd9929302a438621c9fe4726cd8f620ebfcff614c800c27a871",
+        "segredo": "f4315821cf95fb972fb1464dc68f9296d5852f712644f1b41ea85055cb9b85ab",
+        "chaves": [
+          "3c1c3f5dc3abab341192363da741cd98f237",
+          "c77485a94403da21097550fee51df25df6a1"
+        ]
+      },
+      "codigo": "874211",
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "PBw_XcOrqzQRkjY9p0HNmPI3",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"db5b385b054ac77bc8e1d32eec0613209c546f08c23b025710f5aafe1d265225\",\"segredo\":\"9DFYIc-V-5cvsUZNxo-SltWFL3EmRPG0HqhQVcubhas\"}"
+          },
+          "resposta": {
+            "status": 201,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios/KQEn6nBtarx6TgNpjvTRRg/validacao",
+            "idempotency_key": "x3SFqUQD2iEJdVD-5R3yXfah",
+            "corpo": "{\"email\":\"Pessoa@Exemplo.com\",\"segredo\":\"9DFYIc-V-5cvsUZNxo-SltWFL3EmRPG0HqhQVcubhas\",\"codigo\":\"874211\"}"
+          },
+          "resposta": {
+            "status": 200,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"autorizacao\":\"eyJ2IjoxLCJraWQiOiJ0ZXN0ZS0xIiwianRpIjoicVBLNVBuRFk0TzN3dnpDMzhwUFczQSIsImZpbiI6ImNhZGFzdHJvIiwiY3R4IjoiZGI1YjM4NWIwNTRhYzc3YmM4ZTFkMzJlZWMwNjEzMjA5YzU0NmYwOGMyM2IwMjU3MTBmNWFhZmUxZDI2NTIyNSIsImlhdCI6MTc5MDg1NjAwMCwiZXhwIjoxNzkwODU2NjAwfQ.hqaf7As7qVd_agglvf5_rAUKnihQnDICg_DlmjjkrHJrkz9Xkuj80bJwK7WxZYPMsXCFVeqbuvWo-zP39ZvtDw\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        }
+      ]
+    },
+    "recuperacao_sem_envio": {
+      "finalidade": "recuperacao_senha",
+      "sem_envio": true,
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "1232d57d13345c22e17e7158e7f1963aff312ef5dac329edfe1e24ada47840ae",
+        "segredo": "00e697bba91907ad4e3bae59e37fa7ebeb914e086b37bfd4cf5a57418bdf64dc",
+        "chaves": [
+          "8734e667f88a2aeca98751dc404ff38db629",
+          "cb73dde7dcb01b9f087ab571305f7670f209"
+        ]
+      },
+      "codigo": "000000",
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "hzTmZ_iKKuyph1HcQE_zjbYp",
+            "corpo": "{\"finalidade\":\"recuperacao_senha\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"2318797539dd39414af415ba9bff11ffd623ff3da010637403e6cbc9d5df6a05\",\"segredo\":\"AOaXu6kZB61OO65Z43-n6-uRTghrN7_Uz1pXQYvfZNw\",\"sem_envio\":true}"
+          },
+          "resposta": {
+            "status": 202,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios/KQEn6nBtarx6TgNpjvTRRg/validacao",
+            "idempotency_key": "y3Pd59ywG58IerVxMF92cPIJ",
+            "corpo": "{\"email\":\"Pessoa@Exemplo.com\",\"segredo\":\"AOaXu6kZB61OO65Z43-n6-uRTghrN7_Uz1pXQYvfZNw\",\"codigo\":\"000000\"}"
+          },
+          "resposta": {
+            "status": 422,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"codigo_invalido\",\"tentativas_restantes\":4}"
+          }
+        }
+      ]
+    },
+    "recuperacao_com_envio": {
+      "finalidade": "recuperacao_senha",
+      "sem_envio": false,
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "c95af99a3074ce44b09bb164d1ddef4c777d75e9c2f7ee658cd1e2578b8a886f",
+        "segredo": "bfcff5da89db279245d98103211d90fd3f39c4ec4bf8b7ffbb970882ccd3e038",
+        "chaves": [
+          "a3a492b54ce3110d97282deb7e7166b915d8"
+        ]
+      },
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "o6SStUzjEQ2XKC3rfnFmuRXY",
+            "corpo": "{\"finalidade\":\"recuperacao_senha\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"648683ef60a481955e256027942795fc42f7b4cbfc19fd049d459d338cb06bb3\",\"segredo\":\"v8_12onbJ5JF2YEDIR2Q_T85xOxL-Lf_u5cIgszT4Dg\",\"sem_envio\":false}"
+          },
+          "resposta": {
+            "status": 202,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        }
+      ]
+    },
+    "reenvio_antes_de_60s": {
+      "finalidade": "cadastro",
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "d6544ca9a475b7f6b7a0e0331295fb4c489cbeadefef4af0fd4ba99b9100bb98",
+        "segredo": "516f1254ffb792264df146a77769fe5ea3a987b04381b9bceb8a5f70bef216c0",
+        "chaves": [
+          "6545e3330953644021e40e3dd64f05e66e88",
+          "95a930a0779a8303f3db009e9c5acaf64970"
+        ]
+      },
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "ZUXjMwlTZEAh5A491k8F5m6I",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"482894b821f883740a4e8e43d9b655170dc0cafab010e1f6e39e67e94800e559\",\"segredo\":\"UW8SVP-3kiZN8Uand2n-XqOph7BDgbm864pfcL7yFsA\"}"
+          },
+          "resposta": {
+            "status": 201,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "lakwoHeagwPz2wCenFrK9klw",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"482894b821f883740a4e8e43d9b655170dc0cafab010e1f6e39e67e94800e559\",\"segredo\":\"UW8SVP-3kiZN8Uand2n-XqOph7BDgbm864pfcL7yFsA\"}"
+          },
+          "resposta": {
+            "status": 429,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"aguarde\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        }
+      ]
+    },
+    "em_processamento": {
+      "finalidade": "cadastro",
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "96c14e050a7d1e0c7229cd06829f87a87e92bc6b275baf72970f6f582afdc6c1",
+        "segredo": "b72d13776087073f9c637c87625eaed4823355fd09ff5cc3fc35184dadcb98bd",
+        "chaves": [
+          "611bf4990b6a149b671ff6f55fa78a540b5e"
+        ]
+      },
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "YRv0mQtqFJtnH_b1X6eKVAte",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"316d85552de7031d7f674fda4b3c1ff99574232ea14b4000310ca940e4a5495e\",\"segredo\":\"ty0Td2CHBz-cY3yHYl6u1IIzVf0J_1zD_DUYTa3LmL0\"}"
+          },
+          "falha_conexao": true
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "YRv0mQtqFJtnH_b1X6eKVAte",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"316d85552de7031d7f674fda4b3c1ff99574232ea14b4000310ca940e4a5495e\",\"segredo\":\"ty0Td2CHBz-cY3yHYl6u1IIzVf0J_1zD_DUYTa3LmL0\"}"
+          },
+          "resposta": {
+            "status": 202,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": "2",
+            "corpo": "{\"estado\":\"em_processamento\",\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "YRv0mQtqFJtnH_b1X6eKVAte",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"316d85552de7031d7f674fda4b3c1ff99574232ea14b4000310ca940e4a5495e\",\"segredo\":\"ty0Td2CHBz-cY3yHYl6u1IIzVf0J_1zD_DUYTa3LmL0\"}"
+          },
+          "resposta": {
+            "status": 201,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        }
+      ]
+    },
+    "falha_envio": {
+      "finalidade": "alteracao_email",
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "459483c57a6446235c12e2a6ef341074e43789742f7782b0df1df3af66f3a446",
+        "segredo": "b4ba0b0fa7b0e3deaa29bec503b3c58bc705d81502a18b427f279bb025490665",
+        "chaves": [
+          "28da16f5a9273a049335235db2a0ea15ec73"
+        ]
+      },
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "KNoW9aknOgSTNSNdsqDqFexz",
+            "corpo": "{\"finalidade\":\"alteracao_email\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"981c07d1380a5dffbfa3cc52dd07180797a64d7ec24d819cdf394c63eb869bba\",\"segredo\":\"tLoLD6ew496qKb7FA7PFi8cF2BUCoYtCfyebsCVJBmU\"}"
+          },
+          "resposta": {
+            "status": 502,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"falha_envio\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        }
+      ]
+    },
+    "teto_global": {
+      "finalidade": "recuperacao_senha",
+      "sem_envio": false,
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "e4ee54aadd2b904dfa3e37e07f39df6c6c4421378be0f18d86f40695a5dac067",
+        "segredo": "82ef5765500bca5d84b83a19efff1fa6b241f01623fcf48c61d539a92854b983",
+        "chaves": [
+          "a12f666096b2069d20b90972f34b30b004ee"
+        ]
+      },
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "oS9mYJayBp0guQly80swsATu",
+            "corpo": "{\"finalidade\":\"recuperacao_senha\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"b6e14bae4a45128c7f7d3d40233673f0675af1911bd8006a7c34a4114940a3e3\",\"segredo\":\"gu9XZVALyl2EuDoZ7_8fprJB8BYj_PSMYdU5qShUuYM\",\"sem_envio\":false}"
+          },
+          "resposta": {
+            "status": 503,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"servico_indisponivel\"}"
+          }
+        }
+      ]
+    },
+    "desafio_substituido": {
+      "finalidade": "cadastro",
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "189ae8abb224680df24b5e35347caaf9b371b3390b6c5ca1a7d4caad5f5bb15a",
+        "segredo": "f72302cfb8c7eea2c65ee7dad5c1999c29b55b3b564bc47599fca45a955e0d34",
+        "chaves": [
+          "03277bfc91bb7a3b94348bb595883f804d16",
+          "1e5e492bc327ca55f560e7df4cad528a1d94"
+        ]
+      },
+      "codigo": "874211",
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "Ayd7_JG7ejuUNIu1lYg_gE0W",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"eaed5ad193b8b336f33e30ab7b575705b7f6f9af93de3bd13b78ed975219a094\",\"segredo\":\"9yMCz7jH7qLGXufa1cGZnCm1WztWS8R1mfykWpVeDTQ\"}"
+          },
+          "resposta": {
+            "status": 201,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios/KQEn6nBtarx6TgNpjvTRRg/validacao",
+            "idempotency_key": "Hl5JK8MnylX1YOffTK1Sih2U",
+            "corpo": "{\"email\":\"Pessoa@Exemplo.com\",\"segredo\":\"9yMCz7jH7qLGXufa1cGZnCm1WztWS8R1mfykWpVeDTQ\",\"codigo\":\"874211\"}"
+          },
+          "resposta": {
+            "status": 410,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"desafio_encerrado\"}"
+          }
+        }
+      ]
+    }
+  }
+}
