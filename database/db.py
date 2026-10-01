@@ -1310,18 +1310,23 @@ def verificar_login(email, senha):
     o hash é substituído pelo formato novo nesse mesmo momento -- nunca
     antes da senha ser confirmada, e nunca para contas que não fizerem
     login (não precisamos conhecer a senha delas para isso). Contrato de
-    retorno inalterado: dict (id/nome/email) ou None.
+    retorno: dict (id/nome/email/tema) ou None.
 
     ERS v6.0: a busca por e-mail não diferencia maiúsculas de minúsculas
     (usa `idx_usuarios_email_ci` em bancos v6). `email_verificado` não
     bloqueia o login. Em um banco v5 legado com e-mails que só diferem na
     caixa, a correspondência exata tem prioridade.
+
+    5.36 (Etapa 6): `tema` é a preferência gravada do usuário, para o app
+    aplicá-la logo após o login. Em um banco v5 ainda não migrado (sem a
+    coluna), vale o padrão `TEMA_PADRAO`.
     """
     conexao = conectar()
     cursor = conexao.cursor()
+    tem_tema = _coluna_existe(cursor, "usuarios", "tema")
     cursor.execute(
-        """
-        SELECT id, nome, email, senha_hash FROM usuarios
+        f"""
+        SELECT id, nome, email, senha_hash{", tema" if tem_tema else ""} FROM usuarios
         WHERE lower(email) = lower(?)
         ORDER BY email = ? DESC, id
         LIMIT 1
@@ -1333,7 +1338,8 @@ def verificar_login(email, senha):
         conexao.close()
         return None
 
-    usuario_id, nome, email_encontrado, senha_hash_armazenada = resultado
+    usuario_id, nome, email_encontrado, senha_hash_armazenada = resultado[:4]
+    tema = resultado[4] if tem_tema else TEMA_PADRAO
     if not _verificar_senha(senha, senha_hash_armazenada):
         conexao.close()
         return None
@@ -1344,7 +1350,75 @@ def verificar_login(email, senha):
         conexao.commit()
 
     conexao.close()
-    return {"id": usuario_id, "nome": nome, "email": email_encontrado}
+    return {"id": usuario_id, "nome": nome, "email": email_encontrado, "tema": tema}
+
+
+# 5.36: temas aceitos em `usuarios.tema` (o CHECK do schema é o mesmo).
+TEMAS = ("claro", "escuro")
+TEMA_PADRAO = "claro"
+
+
+def obter_usuario(usuario_id):
+    """
+    Dados do usuário para a tela Ajustes (RF35, RF40): dict com id, nome,
+    email, email_verificado (bool) e tema, ou None se o usuário não existir.
+    Nunca devolve `senha_hash` nem `termos_aceitos_em`.
+    """
+    conexao = conectar()
+    try:
+        linha = conexao.execute(
+            "SELECT id, nome, email, email_verificado, tema FROM usuarios WHERE id = ?",
+            (usuario_id,),
+        ).fetchone()
+    finally:
+        conexao.close()
+    if linha is None:
+        return None
+    return {"id": linha[0], "nome": linha[1], "email": linha[2],
+            "email_verificado": bool(linha[3]), "tema": linha[4]}
+
+
+def alterar_nome_usuario(usuario_id, nome):
+    """
+    RF35/5.23: grava o novo nome do usuário, sem espaços nas bordas.
+
+    Nome vazio (ou só com espaços) levanta ValueError; acima de 70
+    caracteres percebidos levanta `LimiteDeCaracteresError`. Nos dois
+    casos nada é gravado. Só a linha de `usuario_id` é alterada.
+
+    Retorna o nome gravado, ou None se o usuário não existir -- quem chama
+    só atualiza a sessão/interface com esse retorno.
+    """
+    nome = (nome or "").strip()
+    if not nome:
+        raise ValueError("O nome é obrigatório.")
+    validar_limite("nome_usuario", nome, LIMITE_NOME_USUARIO)
+
+    conexao = conectar()
+    try:
+        cursor = conexao.execute("UPDATE usuarios SET nome = ? WHERE id = ?", (nome, usuario_id))
+        conexao.commit()
+        return nome if cursor.rowcount == 1 else None
+    finally:
+        conexao.close()
+
+
+def definir_tema(usuario_id, tema):
+    """
+    RF40/5.36: grava a preferência de tema do usuário ("claro" ou
+    "escuro"). Qualquer outro valor levanta ValueError sem gravar nada.
+    Retorna True se gravou, False se o usuário não existir.
+    """
+    if tema not in TEMAS:
+        raise ValueError(f"tema inválido: {tema!r} (aceitos: {', '.join(TEMAS)})")
+
+    conexao = conectar()
+    try:
+        cursor = conexao.execute("UPDATE usuarios SET tema = ? WHERE id = ?", (tema, usuario_id))
+        conexao.commit()
+        return cursor.rowcount == 1
+    finally:
+        conexao.close()
 
 
 # RF14/5.11: catálogo pré-criado, disponível "desde o primeiro acesso... não é

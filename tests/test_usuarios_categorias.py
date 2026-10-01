@@ -39,7 +39,7 @@ class TestUsuarios(TesteComBancoTemporario):
     def test_login(self):
         usuario_id = self.criar_usuario(email="ana@sino.com", senha="senha123", nome="Ana")
         self.assertEqual(db.verificar_login("ana@sino.com", "senha123"),
-                         {"id": usuario_id, "nome": "Ana", "email": "ana@sino.com"})
+                         {"id": usuario_id, "nome": "Ana", "email": "ana@sino.com", "tema": "claro"})
         self.assertIsNone(db.verificar_login("ana@sino.com", "errada"))
         self.assertIsNone(db.verificar_login("nao@existe.com", "senha123"))
 

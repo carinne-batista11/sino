@@ -132,8 +132,19 @@ class TestConsultasDoGrafico(TesteComBancoTemporario):
         sem = [i for i in itens if i["categoria_id"] is None]
         self.assertEqual((sem[0]["nome"], sem[0]["icone"], sem[0]["total"]), ("Sem categoria", None, 5.0))
 
+    def test_sem_categoria_em_cada_tema(self):
+        # A cor armazenada/reservada é uma só; só a de exibição muda no escuro (5.36).
+        self.assertEqual(db.COR_RESERVADA_SEM_CATEGORIA, "#888780")
+        with self.subTest(tema="claro"):
+            self.assertEqual(cores.Paleta("claro").sem_categoria, db.COR_RESERVADA_SEM_CATEGORIA)
+            self.assertEqual(cores.sem_categoria, db.COR_RESERVADA_SEM_CATEGORIA)
+        with self.subTest(tema="escuro"):
+            cinza_escuro = cores.Paleta("escuro").sem_categoria
+            self.assertNotEqual(cinza_escuro, db.COR_RESERVADA_SEM_CATEGORIA)
+            self.assertNotIn(cinza_escuro, db.PALETA_CORES_CATEGORIAS)
+            self.assertNotIn(cinza_escuro, db.CORES_CATEGORIAS_PRE_CRIADAS)
+
     def test_ct76_cinza_reservado_recusado_na_gravacao(self):
-        self.assertEqual(cores.sem_categoria, db.COR_RESERVADA_SEM_CATEGORIA)
         self.assertNotIn(db.COR_RESERVADA_SEM_CATEGORIA, db.PALETA_CORES_CATEGORIAS)
         with self.assertRaises(db.CorReservadaError):
             db.criar_categoria(self.uid, "Cinza", None, "#888780")
