@@ -10,3 +10,11 @@ database/backups/
 
 # Ambiente virtual do Python (criado localmente, ver README)
 .venv/
+
+# Serviço de códigos (servidor/): dependências, estado local do wrangler e
+# segredos locais. Só o modelo .dev.vars.example vai para o repositório.
+servidor/node_modules/
+servidor/.wrangler/
+servidor/.dev.vars
+servidor/.dev.vars.*
+!servidor/.dev.vars.example

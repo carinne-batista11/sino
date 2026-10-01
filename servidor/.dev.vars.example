@@ -1,0 +1,11 @@
+# Modelo dos segredos locais do serviço de códigos. Copie para .dev.vars
+# (ignorado pelo Git) e preencha somente na sua máquina. Nunca use valores
+# reais neste arquivo de exemplo nem os envie ao repositório.
+#
+# CHAVE_HMAC e CHAVE_ASSINATURA: 64 caracteres hexadecimais (32 bytes),
+# gerados localmente, por exemplo com:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+CHAVE_HMAC=
+CHAVE_ASSINATURA=
+# Chave da API da Resend (somente quando o envio real for autorizado).
+RESEND_API_KEY=

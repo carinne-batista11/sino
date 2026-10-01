@@ -1,0 +1,24 @@
+// Configuração local do serviço de códigos do Sino. Não contém account_id
+// nem segredos; os segredos ficam em .dev.vars (ignorado pelo Git) no
+// desenvolvimento local. Este serviço ainda não foi publicado.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sino-servico-codigos",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "send_metrics": false,
+  "durable_objects": {
+    "bindings": [
+      { "name": "DESTINO", "class_name": "DestinoDO" },
+      { "name": "LIMITE_IP", "class_name": "LimiteIpDO" },
+      { "name": "TETO_GLOBAL", "class_name": "TetoGlobalDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DestinoDO", "LimiteIpDO", "TetoGlobalDO"] }
+  ],
+  "vars": {
+    "REMETENTE": "Sino <onboarding@resend.dev>",
+    "KID_ASSINATURA": "dev-1"
+  }
+}
