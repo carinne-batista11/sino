@@ -6,6 +6,7 @@ Tela de login/cadastro + tela de Categorias (CRUD).
 import os
 import re
 import sys
+import time
 import traceback
 from calendar import monthrange
 from datetime import date
@@ -18,6 +19,7 @@ import db as database
 import aviso_sonoro
 import cores as modulo_cores
 import documentos
+import fluxos_codigo
 import limites
 
 MESES_PT = [
@@ -806,6 +808,42 @@ def tema_flet(tema):
     )
 
 
+class ServicoCodigos:
+    """Cliente do serviço de códigos de uma página, com o relógio que ele usa."""
+
+    def __init__(self, cliente, transporte=None, relogio=time.monotonic):
+        self.cliente = cliente
+        self.transporte = transporte
+        self.relogio = relogio
+
+    async def fechar(self):
+        if self.transporte is not None:
+            await self.transporte.fechar()
+
+
+def criar_servico_codigos():
+    """
+    Etapa 8: cliente do serviço de códigos, ou None se ele não estiver
+    disponível nesta instalação. O módulo do cliente (que usa `cryptography`)
+    só é importado aqui: sem a dependência ou sem configuração, cadastro,
+    alteração de e-mail e recuperação ficam indisponíveis, e o login continua
+    funcionando normalmente.
+    """
+    try:
+        import servico_codigos
+    except ImportError as erro:
+        fluxos_codigo.registrar_falha("carregamento do serviço de códigos", erro)
+        return None
+    configuracao = servico_codigos.configuracao_do_ambiente()
+    if configuracao is None:
+        return None
+    transporte = servico_codigos.TransporteHttpx()
+    return ServicoCodigos(servico_codigos.ClienteServicoCodigos(configuracao, transporte), transporte)
+
+
+RE_CODIGO = re.compile(r"[0-9]{6}")
+
+
 class SessaoSino:
     """
     Estado de UMA página do Sino (ERS v6.0, 5.36/5.38): o usuário
@@ -932,6 +970,141 @@ def main(page: ft.Page):
         )
 
     # ======================================================
+    #  CONFIRMAÇÃO POR CÓDIGO (Etapa 8): apoio comum às telas
+    # ======================================================
+    estado_servico = {"criado": False, "instancia": None}
+    operacoes_ativas = set()
+    avisos_ajustes = {"email_alterado": False}
+
+    def obter_servico():
+        if not estado_servico["criado"]:
+            estado_servico["criado"] = True
+            estado_servico["instancia"] = criar_servico_codigos()
+        return estado_servico["instancia"]
+
+    def novo_controle():
+        controle = fluxos_codigo.ControleOperacao(ao_encerrar=operacoes_ativas.discard)
+        operacoes_ativas.add(controle)
+        return controle
+
+    def encerrar_operacoes():
+        """Ao sair de uma tela: cancela pedidos em andamento e descarta as operações."""
+        for controle in list(operacoes_ativas):
+            controle.encerrar()
+
+    async def encerrar_sessao_da_pagina(e=None):
+        """
+        Fim da sessão do Flet: `on_disconnect` (sessões web) e `on_close`
+        (sessão encerrada). Encerra as operações, espera as gravações locais
+        em curso e fecha o transporte. O Flet não aguarda este handler: no
+        desktop, ao fechar a janela, ele dispara o evento "close" sem esperar
+        e cancela as tarefas em execução. A gravação local fica protegida
+        pela atomicidade da transação SQLite e pelo encerramento do loop e do
+        executor de threads; a validação real do fechamento continua pendente.
+        """
+        encerrar_operacoes()
+        await fluxos_codigo.aguardar_todas_as_gravacoes()
+        if estado_servico["instancia"] is not None:
+            await estado_servico["instancia"].fechar()
+
+    page.on_disconnect = encerrar_sessao_da_pagina
+    page.on_close = encerrar_sessao_da_pagina
+
+    def estilo_botao_primario(botao, habilitado=True):
+        botao.disabled = not habilitado
+        botao.bgcolor = cores.acao_primaria if habilitado else cores.botao_desabilitado_fundo
+        botao.color = cores.texto_sobre_acao if habilitado else cores.botao_desabilitado_texto
+
+    def mostrar_mensagem(controle_texto, conteudo):
+        """`conteudo` = (texto, é_erro) ou None (limpa)."""
+        if conteudo is None:
+            controle_texto.value = ""
+            return
+        controle_texto.value, eh_erro = conteudo
+        controle_texto.color = cores.texto_erro if eh_erro else cores.texto_sucesso
+        controle_texto.visible = True
+
+    def novo_campo_codigo():
+        return ft.TextField(label="Código", hint_text="000000", max_length=6, width=330,
+                            keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
+                            **estilo_campo_texto())
+
+    def codigo_digitado(campo):
+        """O código digitado (sem espaços comuns nas bordas), ou None se não tiver 6 dígitos."""
+        codigo = (campo.value or "").strip(" ")
+        return codigo if RE_CODIGO.fullmatch(codigo) else None
+
+    def logo_sino():
+        return ft.Container(
+            content=ft.Text("$ino", size=28, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
+            bgcolor=cores.fundo_marca, width=80, height=80, border_radius=40, alignment=ft.Alignment.CENTER,
+        )
+
+    class EtapaCodigo:
+        """
+        Etapa "digite o código" de tela inteira (cadastro e recuperação). As
+        ações rodam via page.run_task; Voltar fica disponível enquanto o
+        pedido ou a validação estão em andamento (cancela a tarefa e descarta
+        a operação) e só é desativado durante a gravação local.
+        """
+
+        def __init__(self, controle, titulo, explicacao, ao_confirmar, ao_reenviar, ao_voltar,
+                     rotulo_voltar, rotulo_confirmar="Confirmar"):
+            self.controle = controle
+            self._ao_confirmar = ao_confirmar
+            self._ao_reenviar = ao_reenviar
+            self.titulo = ft.Text(titulo, size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
+            self.explicacao = ft.Text(explicacao, size=13, color=cores.texto_secundario, width=330,
+                                      text_align=ft.TextAlign.CENTER)
+            self.campo = novo_campo_codigo()
+            self.mensagem = ft.Text("", width=330, text_align=ft.TextAlign.CENTER, color=cores.texto_sucesso)
+            self.botao_confirmar = ft.Button(content=rotulo_confirmar, width=330, on_click=self._clique_confirmar)
+            estilo_botao_primario(self.botao_confirmar, True)
+            self.botao_reenviar = ft.TextButton(content="Reenviar código", on_click=self._clique_reenviar,
+                                                style=ft.ButtonStyle(color=cores.acao_primaria))
+            self.botao_voltar = ft.TextButton(content=rotulo_voltar, on_click=lambda e: ao_voltar(),
+                                              style=ft.ButtonStyle(color=cores.texto_principal))
+
+        def tela(self, cabecalho):
+            return ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[ft.Container(height=20), cabecalho, ft.Container(height=16), self.titulo,
+                          self.explicacao, ft.Container(height=16), self.campo, ft.Container(height=8),
+                          self.botao_confirmar, self.mensagem, self.botao_reenviar, self.botao_voltar],
+            )
+
+        def ocupar(self, texto, permitir_voltar=True):
+            self.botao_reenviar.disabled = True
+            self.botao_voltar.disabled = not permitir_voltar
+            estilo_botao_primario(self.botao_confirmar, False)
+            mostrar_mensagem(self.mensagem, (texto, False))
+            page.update()
+
+        def terminar(self, conteudo):
+            self.botao_reenviar.disabled = False
+            self.botao_voltar.disabled = False
+            estilo_botao_primario(self.botao_confirmar, True)
+            mostrar_mensagem(self.mensagem, conteudo)
+            page.update()
+
+        def _clique_confirmar(self, e):
+            codigo = codigo_digitado(self.campo)
+            if codigo is None:
+                mostrar_mensagem(self.mensagem, (fluxos_codigo.MENSAGEM_CODIGO_FORMATO, True))
+                page.update()
+                return
+            if not self.controle.reservar():
+                return  # clique repetido ou tela já encerrada
+            self.ocupar("Confirmando…")
+            page.run_task(self.controle.executar, self._ao_confirmar, codigo)
+
+        def _clique_reenviar(self, e):
+            if not self.controle.reservar():
+                return
+            self.ocupar("Enviando novo código…")
+            page.run_task(self.controle.executar, self._ao_reenviar)
+
+    # ======================================================
     #  DOCUMENTOS: TERMOS DE USO E POLÍTICA DE PRIVACIDADE
     # ======================================================
     def mostrar_documento(chave, ao_voltar):
@@ -984,11 +1157,13 @@ def main(page: ft.Page):
     # ======================================================
     #  TELA DE LOGIN / CADASTRO
     # ======================================================
-    def mostrar_tela_login():
+    def mostrar_tela_login(mensagem_inicial=None):
+        encerrar_operacoes()
         aplicar_tema(modulo_cores.TEMA_PADRAO)  # autenticação sempre em Claro (5.36, P8)
         page.controls.clear()
         page.padding = 24
         modo_cadastro = [False]
+        estado_cadastro = {"controle": None}
 
         logo = ft.Container(
             content=ft.Text("$ino", size=28, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
@@ -1026,10 +1201,22 @@ def main(page: ft.Page):
             page.add(tela_autenticacao)
             page.update()
 
+        def cancelar_pedido_cadastro():
+            """Sair do formulário (trocar de modo, ler um documento) cancela o pedido de código em andamento."""
+            controle = estado_cadastro["controle"]
+            if controle is not None and controle.ativo:
+                controle.encerrar()
+                estilo_botao_primario(botao_principal, True)
+                mensagem.value = ""
+
+        def abrir_documento_do_cadastro(chave):
+            cancelar_pedido_cadastro()
+            mostrar_documento(chave, voltar_ao_formulario)
+
         def link_documento(chave):
             rotulo, _ = documentos.DOCUMENTOS[chave]
             return ft.TextButton(
-                content=f"Ler {rotulo}", on_click=lambda e: mostrar_documento(chave, voltar_ao_formulario),
+                content=f"Ler {rotulo}", on_click=lambda e: abrir_documento_do_cadastro(chave),
                 style=ft.ButtonStyle(color=cores.acao_primaria),
             )
 
@@ -1062,33 +1249,25 @@ def main(page: ft.Page):
                     mensagem.value = erro_senha
                     mensagem.color = cores.texto_erro
                 elif not campo_aceite_termos.value:
-                    # RF15: aceite é obrigatório para prosseguir -- criar_usuario
-                    # nem chega a ser chamada sem ele.
+                    # RF15: aceite é obrigatório para prosseguir -- o código nem
+                    # chega a ser pedido sem ele.
                     mensagem.value = (
                         "Você precisa aceitar os Termos de Uso e a Política de "
                         "Privacidade para criar sua conta."
                     )
                     mensagem.color = cores.texto_erro
                 else:
-                    sucesso, texto = database.criar_usuario(nome, email, senha, aceite_termos=True)
-                    mensagem.value = texto
-                    mensagem.color = cores.texto_sucesso if sucesso else cores.texto_erro
-                    if sucesso:
-                        # criar_usuario não retorna o id do novo usuário; buscamos via
-                        # verificar_login (mesmas credenciais, já validadas) para poder
-                        # inicializar o catálogo de categorias (RF14/5.11).
-                        novo_usuario = database.verificar_login(email, senha)
-                        if novo_usuario:
-                            try:
-                                database.inicializar_categorias_padrao(novo_usuario["id"])
-                            except Exception:
-                                # Não deixa uma falha aqui impedir a confirmação de que a
-                                # conta foi criada -- o cadastro em si já foi concluído.
-                                pass
-                        alternar_modo(None)
-                        mensagem.value = "Conta criada com sucesso! Faça login para continuar."
-                        mensagem.color = cores.texto_sucesso
-                        page.update()
+                    # Etapa 8 (RF01/5.31): a conta só é criada depois de confirmar
+                    # o e-mail por código. O formato vale para todo novo endereço.
+                    try:
+                        email_cadastro = database.validar_email_novo(campo_email.value or "")
+                    except database.EmailInvalidoError as ex:
+                        mensagem.value = str(ex)
+                        mensagem.color = cores.texto_erro
+                    else:
+                        iniciar_pedido_cadastro(nome, email_cadastro, senha)
+                        return
+
             else:
                 if not email or not senha:
                     mensagem.value = "Preencha e-mail e senha."
@@ -1105,6 +1284,117 @@ def main(page: ft.Page):
 
             page.update()
 
+        # ---------------------------------------------- cadastro com código
+        def iniciar_pedido_cadastro(nome, email, senha):
+            servico = obter_servico()
+            if servico is None:
+                mostrar_mensagem(mensagem, (fluxos_codigo.MENSAGEM_NAO_CONFIGURADO, True))
+                page.update()
+                return
+            anterior = estado_cadastro["controle"]
+            if anterior is not None and anterior.ativo and anterior.ocupado:
+                return  # clique repetido
+            controle = novo_controle()
+            estado_cadastro["controle"] = controle
+
+            def liberar_formulario(conteudo):
+                estilo_botao_primario(botao_principal, True)
+                mostrar_mensagem(mensagem, conteudo)
+                page.update()
+
+            controle.ao_falhar = liberar_formulario
+            controle.reservar()
+            estilo_botao_primario(botao_principal, False)
+            mostrar_mensagem(mensagem, ("Enviando código…", False))
+            page.update()
+            page.run_task(controle.executar, pedir_codigo_cadastro, controle, servico, nome, email, senha)
+
+        async def pedir_codigo_cadastro(controle, servico, nome, email, senha):
+            conteudo = None
+            foi_para_o_codigo = False
+            try:
+                if await controle.em_thread(database.email_em_uso, email):
+                    conteudo = ("Já existe uma conta com esse e-mail.", True)
+                    return
+                senha_validada = await controle.em_thread(database.hash_de_nova_senha, senha)
+                if not controle.ativo:
+                    return
+                operacao = servico.cliente.nova_operacao("cadastro", email)
+                controle.operacao = operacao
+                resultado = await servico.cliente.pedir_codigo(operacao)
+                if not controle.ativo:
+                    return
+                if type(resultado).__name__ == "CodigoSolicitado":
+                    campo_senha.value = ""  # o cadastro pendente guarda só a SenhaValidada
+                    foi_para_o_codigo = True
+                    mostrar_etapa_codigo_cadastro(controle, servico, operacao, nome, email, senha_validada)
+                    return
+                operacao.descartar()
+                controle.operacao = None
+                conteudo = fluxos_codigo.mensagem_do_pedido(resultado)
+            except database.SenhaInvalidaError as ex:
+                conteudo = (str(ex), True)
+            except Exception as ex:
+                fluxos_codigo.registrar_falha("pedido de código do cadastro", ex)
+                conteudo = (fluxos_codigo.MENSAGEM_FALHA_GENERICA, True)
+            finally:
+                if controle.ativo and not foi_para_o_codigo:
+                    estilo_botao_primario(botao_principal, True)
+                    mostrar_mensagem(mensagem, conteudo)
+                    page.update()
+
+        def mostrar_etapa_codigo_cadastro(controle, servico, operacao, nome, email, senha_validada):
+            def voltar(e=None):
+                if controle.em_gravacao:
+                    return  # gravando: o resultado real será mostrado
+                controle.encerrar()
+                estilo_botao_primario(botao_principal, True)
+                mensagem.value = ""
+                voltar_ao_formulario()
+
+            async def confirmar(codigo):
+                resultado = await servico.cliente.validar_codigo(operacao, codigo)
+                if not controle.ativo:
+                    return
+                if type(resultado).__name__ != "AutorizacaoVerificada":
+                    etapa.terminar(fluxos_codigo.mensagem_da_validacao(resultado))
+                    return
+                etapa.ocupar("Salvando…", permitir_voltar=False)
+                try:
+                    await controle.gravar(database.concluir_cadastro, resultado, nome, email,
+                                          senha_validada, servico.relogio)
+                except (database.EmailEmUsoError, database.EmailInvalidoError,
+                        database.AutorizacaoRecusadaError) as ex:
+                    if controle.ativo:
+                        etapa.terminar((str(ex), True))
+                    return
+                except Exception as ex:
+                    fluxos_codigo.registrar_falha("conclusão do cadastro", ex)
+                    if controle.ativo:
+                        etapa.terminar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                    return
+                if controle.ativo:  # gravado: nunca apresentado como cancelado
+                    mostrar_tela_login(("Conta criada com sucesso! Faça login para continuar.", False))
+
+            async def reenviar():
+                resultado = await servico.cliente.pedir_codigo(operacao)
+                if not controle.ativo:
+                    return
+                if type(resultado).__name__ == "CodigoSolicitado":
+                    etapa.terminar((f"Enviamos um novo código para {email}.", False))
+                else:
+                    etapa.terminar(fluxos_codigo.mensagem_do_pedido(resultado))
+
+            etapa = EtapaCodigo(
+                controle, titulo="Confirme seu e-mail",
+                explicacao=f"Enviamos um código de 6 dígitos para {email}. Digite-o abaixo para concluir o cadastro.",
+                ao_confirmar=confirmar, ao_reenviar=reenviar, ao_voltar=voltar, rotulo_voltar="Voltar",
+            )
+            controle.ao_falhar = etapa.terminar
+            page.controls.clear()
+            page.add(etapa.tela(logo_sino()))
+            page.update()
+
         botao_principal = ft.Button(
             content="Entrar",
             width=330,
@@ -1114,6 +1404,7 @@ def main(page: ft.Page):
         )
 
         def alternar_modo(e):
+            cancelar_pedido_cadastro()
             modo_cadastro[0] = not modo_cadastro[0]
             campo_nome.value = ""
             limite_nome_cadastro.sincronizar()
@@ -1127,6 +1418,7 @@ def main(page: ft.Page):
                 campo_nome.visible = True
                 links_documentos.visible = True
                 campo_aceite_termos.visible = True
+                link_esqueci.visible = False
                 botao_principal.content = "Criar conta"
                 texto_alternar.content = "Já tem conta? Entrar"
             else:
@@ -1136,12 +1428,16 @@ def main(page: ft.Page):
                 campo_nome.visible = False
                 links_documentos.visible = False
                 campo_aceite_termos.visible = False
+                link_esqueci.visible = True
                 botao_principal.content = "Entrar"
                 texto_alternar.content = "Não tem conta? Criar conta"
             mensagem.value = ""
             page.update()
 
         texto_alternar = ft.TextButton(content="Não tem conta? Criar conta", on_click=alternar_modo)
+        # Etapa 8 (RF39/5.35): recuperação a partir do login.
+        link_esqueci = ft.TextButton(content="Esqueci minha senha", on_click=lambda e: mostrar_tela_recuperacao(),
+                                     style=ft.ButtonStyle(color=cores.acao_primaria))
 
         tela_autenticacao = ft.Column(
             controls=[
@@ -1159,11 +1455,233 @@ def main(page: ft.Page):
                 ft.Container(height=8),
                 botao_principal,
                 mensagem,
+                link_esqueci,
                 texto_alternar,
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
+        if mensagem_inicial is not None:
+            mostrar_mensagem(mensagem, mensagem_inicial)
         page.add(tela_autenticacao)
+        page.update()
+
+    # ======================================================
+    #  RECUPERAÇÃO DE SENHA (Etapa 8: RF39, 5.35)
+    # ======================================================
+    def mostrar_tela_recuperacao():
+        """
+        Login -> Esqueci minha senha -> e-mail -> código -> nova senha ->
+        login. Sempre no tema Claro (P8). A resposta ao pedido é neutra: a tela
+        segue para o código com a mesma mensagem, exista ou não conta
+        verificada com o e-mail (sem conta, o pedido vai com `sem_envio` e
+        nenhum código chega). O formato do e-mail é conferido antes de
+        qualquer consulta à conta.
+        """
+        encerrar_operacoes()
+        aplicar_tema(modulo_cores.TEMA_PADRAO)
+        page.controls.clear()
+        page.overlay.clear()
+        page.padding = 24
+        controle = novo_controle()
+        estado = {"passo": 1, "email": None, "sem_envio": False, "autorizacao": None}
+
+        def campo_senha_nova(rotulo, ajuda=None):
+            return ft.TextField(label=rotulo, helper=ajuda, password=True, can_reveal_password=True, width=330,
+                                visible=False, color=cores.texto_principal, **estilo_campo_texto())
+
+        titulo = ft.Text("Redefinir senha", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
+        explicacao = ft.Text("Informe o e-mail da sua conta para receber um código.", size=13, width=330,
+                             color=cores.texto_secundario, text_align=ft.TextAlign.CENTER)
+        campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330,
+                                   color=cores.texto_principal, **estilo_campo_texto())
+        campo_cod = novo_campo_codigo()
+        campo_cod.visible = False
+        campo_nova = campo_senha_nova("Nova senha", ajuda=f"Mínimo de {database.SENHA_MINIMO} caracteres")
+        campo_confirmacao = campo_senha_nova("Confirmar nova senha")
+        mensagem = ft.Text("", width=330, text_align=ft.TextAlign.CENTER, color=cores.texto_sucesso)
+        botao = ft.Button(content="Enviar código", width=330)
+        estilo_botao_primario(botao, True)
+        botao_reenviar = ft.TextButton(content="Reenviar código", visible=False,
+                                       style=ft.ButtonStyle(color=cores.acao_primaria))
+        botao_voltar = ft.TextButton(content="Voltar ao login", style=ft.ButtonStyle(color=cores.texto_principal))
+
+        def limpar_senhas():
+            campo_nova.value = ""
+            campo_confirmacao.value = ""
+
+        def ir_para(passo, conteudo=None):
+            estado["passo"] = passo
+            campo_email.visible = passo == 1
+            campo_cod.visible = passo == 2
+            campo_nova.visible = campo_confirmacao.visible = passo == 3
+            botao_reenviar.visible = passo == 2
+            botao.content = {1: "Enviar código", 2: "Confirmar código", 3: "Redefinir senha"}[passo]
+            explicacao.value = {
+                1: "Informe o e-mail da sua conta para receber um código.",
+                2: f"Digite o código de 6 dígitos enviado para {estado['email']}.",
+                3: "Defina a nova senha da sua conta.",
+            }[passo]
+            if passo == 1:
+                estado["autorizacao"] = None
+                campo_cod.value = ""
+                limpar_senhas()
+            liberar(conteudo)
+
+        def ocupar(texto, permitir_voltar=True):
+            estilo_botao_primario(botao, False)
+            botao_reenviar.disabled = True
+            botao_voltar.disabled = not permitir_voltar
+            mostrar_mensagem(mensagem, (texto, False))
+            page.update()
+
+        def liberar(conteudo=None):
+            estilo_botao_primario(botao, True)
+            botao_reenviar.disabled = False
+            botao_voltar.disabled = False
+            mostrar_mensagem(mensagem, conteudo)
+            page.update()
+
+        def recomecar(conteudo):
+            if controle.operacao is not None:
+                controle.operacao.descartar()
+                controle.operacao = None
+            ir_para(1, conteudo)
+
+        def voltar(e=None):
+            if controle.em_gravacao:
+                return  # gravando: o resultado real será mostrado
+            controle.encerrar()
+            limpar_senhas()
+            mostrar_tela_login()
+
+        async def pedir(servico, email):
+            try:
+                conta_verificada = await controle.em_thread(database.existe_conta_verificada, email)
+            except Exception as ex:
+                fluxos_codigo.registrar_falha("consulta da recuperação", ex)
+                liberar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                return
+            if not controle.ativo:
+                return
+            operacao = servico.cliente.nova_operacao("recuperacao_senha", email)
+            controle.operacao = operacao
+            estado["email"], estado["sem_envio"] = email, not conta_verificada
+            resultado = await servico.cliente.pedir_codigo(operacao, sem_envio=estado["sem_envio"])
+            if not controle.ativo:
+                return
+            if type(resultado).__name__ == "CodigoSolicitado":
+                ir_para(2, fluxos_codigo.mensagem_do_pedido(resultado, recuperacao=True))
+                return
+            operacao.descartar()
+            controle.operacao = None
+            liberar(fluxos_codigo.mensagem_do_pedido(resultado, recuperacao=True))
+
+        async def reenviar(servico):
+            resultado = await servico.cliente.pedir_codigo(controle.operacao, sem_envio=estado["sem_envio"])
+            if controle.ativo:
+                liberar(fluxos_codigo.mensagem_do_pedido(resultado, recuperacao=True))
+
+        async def confirmar_codigo(servico, codigo):
+            resultado = await servico.cliente.validar_codigo(controle.operacao, codigo)
+            if not controle.ativo:
+                return
+            if type(resultado).__name__ == "AutorizacaoVerificada":
+                estado["autorizacao"] = resultado
+                ir_para(3, ("Código confirmado. Defina a nova senha.", False))
+                return
+            liberar(fluxos_codigo.mensagem_da_validacao(resultado))
+
+        async def redefinir(servico, nova):
+            autorizacao = estado["autorizacao"]
+            if autorizacao is None or not autorizacao.vigente(servico.relogio()):
+                recomecar((fluxos_codigo.MENSAGEM_EXPIRADA, True))
+                return
+            ocupar("Salvando…", permitir_voltar=False)
+            try:
+                await controle.gravar(database.redefinir_senha_por_autorizacao, autorizacao, estado["email"],
+                                      nova, servico.relogio)
+            except database.SenhaInvalidaError as ex:  # inválida ou igual à atual: a autorização segue válida
+                if controle.ativo:
+                    liberar((str(ex), True))
+                return
+            except database.AutorizacaoExpiradaError:
+                if controle.ativo:
+                    recomecar((fluxos_codigo.MENSAGEM_EXPIRADA, True))
+                return
+            except (database.AutorizacaoRecusadaError, database.ContaNaoEncontradaError,
+                    database.SenhaAlteradaDuranteOperacaoError, database.EmailInvalidoError):
+                if controle.ativo:
+                    recomecar(("Não foi possível redefinir a senha. Comece de novo.", True))
+                return
+            except Exception as ex:
+                fluxos_codigo.registrar_falha("redefinição de senha", ex)
+                if controle.ativo:
+                    liberar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                return
+            limpar_senhas()
+            if controle.ativo:  # gravado: nunca apresentado como cancelado
+                mostrar_tela_login(("Senha redefinida. Entre com a nova senha.", False))
+
+        def clique_principal(e):
+            servico = obter_servico()
+            passo = estado["passo"]
+            if passo == 1:
+                try:
+                    email = database.validar_email_novo(campo_email.value or "")  # antes de consultar a conta
+                except database.EmailInvalidoError as ex:
+                    liberar((str(ex), True))
+                    return
+                if servico is None:
+                    liberar((fluxos_codigo.MENSAGEM_NAO_CONFIGURADO, True))
+                    return
+                if not controle.reservar():
+                    return
+                ocupar("Enviando código…")
+                page.run_task(controle.executar, pedir, servico, email)
+            elif passo == 2:
+                codigo = codigo_digitado(campo_cod)
+                if codigo is None:
+                    liberar((fluxos_codigo.MENSAGEM_CODIGO_FORMATO, True))
+                    return
+                if not controle.reservar():
+                    return
+                ocupar("Confirmando…")
+                page.run_task(controle.executar, confirmar_codigo, servico, codigo)
+            else:
+                nova, confirmacao = campo_nova.value or "", campo_confirmacao.value or ""
+                if not nova or not confirmacao:
+                    liberar(("Preencha a nova senha e a confirmação.", True))
+                    return
+                if nova != confirmacao:
+                    liberar(("A confirmação não confere com a nova senha.", True))
+                    return
+                mensagem_nova = erro_de_nova_senha(nova)
+                if mensagem_nova:
+                    liberar((mensagem_nova, True))
+                    return
+                if not controle.reservar():
+                    return
+                ocupar("Salvando…", permitir_voltar=False)
+                page.run_task(controle.executar, redefinir, servico, nova)
+
+        def clique_reenviar(e):
+            if not controle.reservar():
+                return
+            ocupar("Enviando novo código…")
+            page.run_task(controle.executar, reenviar, obter_servico())
+
+        botao.on_click = clique_principal
+        botao_reenviar.on_click = clique_reenviar
+        botao_voltar.on_click = voltar
+        controle.ao_falhar = liberar
+
+        page.add(ft.Column(
+            data="tela_recuperacao",
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[ft.Container(height=20), logo_sino(), ft.Container(height=16), titulo, explicacao,
+                      ft.Container(height=16), campo_email, campo_cod, campo_nova, campo_confirmacao,
+                      ft.Container(height=8), botao, mensagem, botao_reenviar, botao_voltar],
+        ))
         page.update()
 
     # ======================================================
@@ -1172,6 +1690,7 @@ def main(page: ft.Page):
     def mostrar_tela_principal(mes_inicial=None):
         """`mes_inicial` = (ano, mes) a manter selecionado (ex.: ao voltar da
         edição aberta pelo lápis); sem ele, o mês atual."""
+        encerrar_operacoes()  # sai de qualquer operação com código em andamento
         page.controls.clear()
         page.padding = 0
 
@@ -3681,6 +4200,7 @@ def main(page: ft.Page):
     #  Protótipo 10. Somente consulta: nunca gera ocorrências (5.26).
     # ======================================================
     def mostrar_tela_grafico():
+        encerrar_operacoes()  # sai de qualquer operação com código em andamento
         page.controls.clear()
         page.overlay.clear()
         page.padding = 0
@@ -4066,6 +4586,7 @@ def main(page: ft.Page):
         atualizar()
 
     def mostrar_tela_categorias():
+        encerrar_operacoes()  # sai de qualquer operação com código em andamento
         page.controls.clear()
         page.padding = 0
 
@@ -4203,11 +4724,13 @@ def main(page: ft.Page):
     # ======================================================
     def mostrar_tela_ajustes():
         """
-        Protótipo 12, sem as ações das Etapas 8-9 (e-mail, excluir conta):
-        Conta (nome editável, e-mail só leitura), Segurança (Alterar senha),
+        Protótipo 12, sem a ação da Etapa 9 (excluir conta): Conta (nome
+        editável; e-mail com selo "Verificado" quando confirmado e Editar, que
+        exige a senha atual e o código no novo endereço), Segurança (Alterar senha),
         Aparência (Claro | Escuro), Sobre e privacidade (Termos de Uso e
         Política de Privacidade) e Sair da conta, com confirmação.
         """
+        encerrar_operacoes()  # sai de qualquer operação com código em andamento
         page.controls.clear()
         page.overlay.clear()
         page.padding = 0
@@ -4215,6 +4738,7 @@ def main(page: ft.Page):
         dados = database.obter_usuario(usuario_atual["id"]) or {}
         nome = dados.get("nome", usuario_atual["nome"] or "")
         email = dados.get("email", "")
+        email_verificado = bool(dados.get("email_verificado"))
 
         # ---------------------------------------------------------- auxiliares
         def circulo_icone(icone):
@@ -4428,6 +4952,194 @@ def main(page: ft.Page):
                 bgcolor=cores.fundo_dialogo,
             ))
 
+        # ---------------------------------------------------------- e-mail (RF36)
+        aviso_email = ft.Row(visible=avisos_ajustes["email_alterado"], spacing=6, controls=[
+            ft.Icon(ft.Icons.CHECK_CIRCLE, size=18, color=cores.acao_primaria),
+            ft.Text("E-mail alterado com sucesso.", size=13, color=cores.texto_principal),
+        ])
+        avisos_ajustes["email_alterado"] = False
+
+        def abrir_dialogo_email(e=None):
+            """
+            5.31/RF36: senha atual + novo e-mail -> código enviado ao novo
+            endereço -> conclusão. O e-mail atual vale até a conclusão. A senha
+            atual só é usada na conferência (sai do campo logo depois).
+            """
+            usuario_id = usuario_atual["id"]
+            controle = novo_controle()
+            estado = {"passo": 1, "pendencia": None, "novo": None}
+
+            campo_atual = ft.TextField(label="Senha atual", password=True, can_reveal_password=True, autofocus=True,
+                                       width=320, color=cores.texto_principal, **estilo_campo_texto())
+            campo_novo = ft.TextField(label="Novo e-mail", hint_text="voce@email.com", width=320,
+                                      color=cores.texto_principal, **estilo_campo_texto())
+            campo_cod = novo_campo_codigo()
+            campo_cod.width = 320
+            campo_cod.visible = False
+            explicacao = ft.Text("", size=13, color=cores.texto_secundario, visible=False, width=320)
+            mensagem = ft.Text("", size=12, visible=False, width=320, color=cores.texto_sucesso)
+            botao_principal = ft.Button(content="Enviar código")
+            estilo_botao_primario(botao_principal, True)
+            botao_reenviar = ft.TextButton(content="Reenviar código", visible=False,
+                                           style=ft.ButtonStyle(color=cores.acao_primaria))
+            botao_cancelar = ft.TextButton(content="Cancelar", style=estilo_botao_texto())
+
+            def ocupar(texto, permitir_cancelar=True):
+                estilo_botao_primario(botao_principal, False)
+                botao_reenviar.disabled = True
+                botao_cancelar.disabled = not permitir_cancelar
+                mostrar_mensagem(mensagem, (texto, False))
+                page.update()
+
+            def liberar(conteudo=None):
+                estilo_botao_primario(botao_principal, True)
+                botao_reenviar.disabled = False
+                botao_cancelar.disabled = False
+                mostrar_mensagem(mensagem, conteudo)
+                mensagem.visible = conteudo is not None
+                page.update()
+
+            def ir_para_codigo(conteudo):
+                estado["passo"] = 2
+                campo_atual.visible = campo_novo.visible = False
+                campo_cod.visible = botao_reenviar.visible = explicacao.visible = True
+                explicacao.value = f"Digite o código de 6 dígitos enviado para {estado['novo']}."
+                botao_principal.content = "Confirmar"
+                liberar(conteudo)
+
+            def cancelar(ev=None):
+                if controle.em_gravacao:
+                    return  # gravando: o resultado real será mostrado
+                controle.encerrar()
+                campo_atual.value = ""
+                page.pop_dialog()
+
+            async def pedir(servico, senha, novo):
+                try:
+                    pendencia = await controle.em_thread(database.conferir_senha_atual, usuario_id, senha)
+                except (database.SenhaAtualIncorretaError, database.ContaNaoEncontradaError) as ex:
+                    if controle.ativo:
+                        liberar((str(ex), True))
+                    return
+                except Exception as ex:
+                    fluxos_codigo.registrar_falha("conferência da senha atual", ex)
+                    if controle.ativo:
+                        liberar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                    return
+                if not controle.ativo:
+                    return
+                campo_atual.value = ""  # a senha não fica guardada: a pendência tem só a impressão
+                if novo.lower() == pendencia.email_original.lower():
+                    liberar((str(database.MesmoEmailError()), True))
+                    return
+                if await controle.em_thread(database.email_em_uso, novo, usuario_id):
+                    if controle.ativo:
+                        liberar((str(database.EmailEmUsoError()), True))
+                    return
+                if not controle.ativo:
+                    return
+                operacao = servico.cliente.nova_operacao("alteracao_email", novo)
+                controle.operacao = operacao
+                estado["pendencia"], estado["novo"] = pendencia, novo
+                resultado = await servico.cliente.pedir_codigo(operacao)
+                if not controle.ativo:
+                    return
+                if type(resultado).__name__ == "CodigoSolicitado":
+                    ir_para_codigo(fluxos_codigo.mensagem_do_pedido(resultado, email=novo))
+                    return
+                operacao.descartar()
+                controle.operacao = None
+                liberar(fluxos_codigo.mensagem_do_pedido(resultado))
+
+            async def reenviar(servico):
+                resultado = await servico.cliente.pedir_codigo(controle.operacao)
+                if not controle.ativo:
+                    return
+                if type(resultado).__name__ == "CodigoSolicitado":
+                    liberar((f"Enviamos um novo código para {estado['novo']}.", False))
+                else:
+                    liberar(fluxos_codigo.mensagem_do_pedido(resultado))
+
+            async def confirmar(servico, codigo):
+                resultado = await servico.cliente.validar_codigo(controle.operacao, codigo)
+                if not controle.ativo:
+                    return
+                if type(resultado).__name__ != "AutorizacaoVerificada":
+                    liberar(fluxos_codigo.mensagem_da_validacao(resultado))
+                    return
+                ocupar("Salvando…", permitir_cancelar=False)
+                try:
+                    await controle.gravar(database.alterar_email_verificado, resultado, estado["pendencia"],
+                                          estado["novo"], servico.relogio)
+                except (database.EmailEmUsoError, database.MesmoEmailError, database.EmailInvalidoError,
+                        database.EmailAlteradoDuranteOperacaoError, database.SenhaAlteradaDuranteOperacaoError,
+                        database.ContaNaoEncontradaError, database.AutorizacaoRecusadaError) as ex:
+                    if controle.ativo:
+                        liberar((str(ex), True))
+                    return
+                except Exception as ex:
+                    fluxos_codigo.registrar_falha("alteração de e-mail", ex)
+                    if controle.ativo:
+                        liberar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                    return
+                # Gravado: nunca apresentado como cancelado; só atualiza a tela
+                # se ela ainda é deste usuário.
+                if controle.ativo and usuario_atual["id"] == usuario_id:
+                    controle.encerrar()
+                    page.pop_dialog()
+                    avisos_ajustes["email_alterado"] = True
+                    mostrar_tela_ajustes()
+
+            def clique_principal(ev):
+                servico = obter_servico()
+                if estado["passo"] == 1:
+                    senha, novo_digitado = campo_atual.value or "", campo_novo.value or ""
+                    if not senha or not novo_digitado:
+                        liberar(("Preencha a senha atual e o novo e-mail.", True))
+                        return
+                    try:
+                        novo = database.validar_email_novo(novo_digitado)
+                    except database.EmailInvalidoError as ex:
+                        liberar((str(ex), True))
+                        return
+                    if servico is None:
+                        liberar((fluxos_codigo.MENSAGEM_NAO_CONFIGURADO, True))
+                        return
+                    if not controle.reservar():
+                        return
+                    ocupar("Enviando código…")
+                    page.run_task(controle.executar, pedir, servico, senha, novo)
+                else:
+                    codigo = codigo_digitado(campo_cod)
+                    if codigo is None:
+                        liberar((fluxos_codigo.MENSAGEM_CODIGO_FORMATO, True))
+                        return
+                    if not controle.reservar():
+                        return
+                    ocupar("Confirmando…")
+                    page.run_task(controle.executar, confirmar, servico, codigo)
+
+            def clique_reenviar(ev):
+                if not controle.reservar():
+                    return
+                ocupar("Enviando novo código…")
+                page.run_task(controle.executar, reenviar, obter_servico())
+
+            botao_principal.on_click = clique_principal
+            botao_reenviar.on_click = clique_reenviar
+            botao_cancelar.on_click = cancelar
+            controle.ao_falhar = liberar
+            aviso_email.visible = False
+
+            page.show_dialog(ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Alterar e-mail", color=cores.texto_principal),
+                content=ft.Column(tight=True, spacing=8,
+                                  controls=[campo_atual, campo_novo, explicacao, campo_cod, mensagem]),
+                actions=[botao_cancelar, botao_reenviar, botao_principal],
+                bgcolor=cores.fundo_dialogo,
+            ))
+
         # ---------------------------------------------------------- tema (RF40)
         aviso_tema = ft.Text("", size=12, color=cores.texto_erro, visible=False)
 
@@ -4492,7 +5204,24 @@ def main(page: ft.Page):
                                          side=ft.BorderSide(1, cores.acao_primaria)),
                 ),
             ]),
-            ft.Row(controls=[rotulo_e_valor("E-mail", email)]),
+            ft.Row(controls=[
+                ft.Column(expand=True, spacing=2, controls=[
+                    ft.Text("E-mail", size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                    ft.Row(wrap=True, spacing=8, controls=[
+                        ft.Text(email, size=14, color=cores.texto_principal, selectable=True),
+                        *([ft.Row(data="selo_verificado", tight=True, spacing=4, controls=[
+                            ft.Icon(ft.Icons.CHECK_CIRCLE, size=16, color=cores.acao_primaria),
+                            ft.Text("Verificado", size=13, color=cores.texto_sucesso),
+                        ])] if email_verificado else []),
+                    ]),
+                ]),
+                ft.OutlinedButton(
+                    content="Editar", icon=ft.Icons.EDIT, data="editar_email", on_click=abrir_dialogo_email,
+                    style=ft.ButtonStyle(color=cores.texto_principal, icon_color=cores.acao_primaria,
+                                         side=ft.BorderSide(1, cores.acao_primaria)),
+                ),
+            ]),
+            aviso_email,
         ])
         item_alterar_senha = ft.Container(
             data="abrir_alterar_senha", border_radius=10, padding=ft.Padding(0, 6, 0, 6),

@@ -14,6 +14,7 @@ import unittest
 
 import apoio_banco
 from apoio_banco import db
+from apoio_interface_codigos import ComServicoFalso
 from test_cores import MINIMO_TEXTO, contraste
 from test_sessao_tema import CLARO, ESCURO, TesteDeSessao, ft, percorrer
 from test_tela_principal import Evento
@@ -153,7 +154,7 @@ class TestDocumentosEmAjustes(TesteDeDocumentos):
         self.assert_cores_da_sessao(pagina, ESCURO)
 
 
-class TestDocumentosNoCadastro(TesteDeDocumentos):
+class TestDocumentosNoCadastro(ComServicoFalso, TesteDeDocumentos):
     def abrir_cadastro(self):
         pagina, sessao = self.abrir_app()
         alternar = next(b for b in self.controles(pagina, ft.TextButton) if b.content == "Não tem conta? Criar conta")
@@ -222,6 +223,11 @@ class TestDocumentosNoCadastro(TesteDeDocumentos):
 
         self.aceite(pagina).value = True
         self.clicar(pagina, criar)
+        pagina.executar_pendentes()
+        # Etapa 8: a conta só é criada depois do código do e-mail.
+        self.campo(pagina, "Código").value = self.servidor.ultimo_codigo("carla@sino.com")
+        self.clicar(pagina, self.botao(pagina, "Confirmar"))
+        pagina.executar_pendentes()
         linhas = self.consultar("SELECT termos_aceitos_em FROM usuarios WHERE email = 'carla@sino.com'")
         self.assertEqual(linhas, [(self.HOJE.isoformat(),)])
 

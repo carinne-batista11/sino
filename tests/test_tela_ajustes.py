@@ -89,14 +89,18 @@ class TestTelaAjustes(TesteDeAjustes):
         for ausente in ("Verificado", "Excluir conta"):
             self.assertNotIn(ausente, textos)
 
-    def test_email_so_leitura_e_um_unico_editar(self):
+    def test_email_tem_editar_proprio_e_conta_antiga_fica_sem_selo(self):
+        # Etapa 8: o e-mail ganha o seu Editar (código no novo endereço); a
+        # conta antiga de teste não é verificada e não tem selo nem "Verificar".
         pagina, _ = self.abrir_ajustes()
         editar = [b for b in self.na_tela(pagina, ft.OutlinedButton)]
-        self.assertEqual([b.content for b in editar], ["Editar"])
+        self.assertEqual([(b.content, b.data) for b in editar], [("Editar", None), ("Editar", "editar_email")])
+        self.assertFalse([c for c in self.na_tela(pagina) if getattr(c, "data", None) == "selo_verificado"])
         linha_email = [c for c in self.na_tela(pagina, ft.Row)   # a mais interna (pré-ordem)
                        if "bia@sino.com" in [t.value for t in percorrer(c) if isinstance(t, ft.Text)]][-1]
         self.assertFalse([c for c in percorrer(linha_email)
                           if getattr(c, "on_click", None) is not None])
+        self.assertNotIn("Verificar", [t.value for t in self.na_tela(pagina, ft.Text)])
 
     def test_nenhum_item_clicavel_sem_destino(self):
         pagina, _ = self.abrir_ajustes()

@@ -1,9 +1,11 @@
 """
 ERS v6.0, Etapa 7 (passo 2) — senha mínima no cadastro da interface (5.33,
 RF37; CT81, CT82): a tela reutiliza database.validar_nova_senha antes de
-chamar criar_usuario, preserva os campos e o aceite numa recusa, usa a senha
+qualquer outra coisa (desde a Etapa 8, antes de calcular o hash e de pedir o
+código do e-mail), preserva os campos e o aceite numa recusa, usa a senha
 exatamente como digitada e não aplica as regras novas ao login. Fluxos reais
-sobre páginas falsas e bancos temporários; nenhuma janela é aberta.
+sobre páginas falsas, bancos temporários e o serviço de códigos falso;
+nenhuma janela é aberta.
 """
 
 import hashlib
@@ -11,6 +13,7 @@ import unittest
 from unittest import mock
 
 from apoio_banco import db
+from apoio_interface_codigos import ComServicoFalso
 from test_sessao_tema import CLARO, TesteDeSessao, ft, main
 from test_tela_principal import Evento
 
@@ -20,7 +23,7 @@ MENSAGEM_ESPACOS = "A senha não pode conter espaços."
 MENSAGEM_ACEITE = "Você precisa aceitar os Termos de Uso e a Política de Privacidade para criar sua conta."
 
 
-class TesteDeCadastro(TesteDeSessao):
+class TesteDeCadastro(ComServicoFalso, TesteDeSessao):
     @staticmethod
     def clicar(pagina, controle):
         controle.on_click(Evento(pagina, controle))
@@ -46,21 +49,29 @@ class TesteDeCadastro(TesteDeSessao):
         return pagina, sessao
 
     def cadastrar(self, pagina, senha, aceite=True, email="carla@sino.com"):
+        """Preenche e envia; se o código for pedido, confirma com o código recebido."""
         campos = self.campos(pagina)
         campos["Nome completo"].value = "Carla"
         campos["E-mail"].value = email
         campos["Senha"].value = senha
         self.aceite(pagina).value = aceite
         criar = next(b for b in self.controles(pagina, ft.Button) if b.content == "Criar conta")
-        with mock.patch.object(main.database, "criar_usuario", wraps=db.criar_usuario) as criar_usuario:
+        with mock.patch.object(main.database, "hash_de_nova_senha", wraps=db.hash_de_nova_senha) as hash_senha:
             self.clicar(pagina, criar)
-        return criar_usuario
+            pagina.executar_pendentes()
+            codigo = self.servidor.ultimo_codigo(email)
+            if codigo is not None and "Confirme seu e-mail" in self.textos(pagina):
+                self.campo(pagina, "Código").value = codigo
+                self.clicar(pagina, self.botao(pagina, "Confirmar"))
+                pagina.executar_pendentes()
+        return hash_senha
 
     def usuarios_com_email(self, email="carla@sino.com"):
         return self.consultar("SELECT COUNT(*) FROM usuarios WHERE email = ?", (email,))[0][0]
 
-    def assert_recusado_sem_chamar(self, pagina, criar_usuario, mensagem, senha):
-        criar_usuario.assert_not_called()
+    def assert_recusado_sem_chamar(self, pagina, hash_senha, mensagem, senha):
+        hash_senha.assert_not_called()
+        self.assertEqual(self.servidor.pedidos, [])                    # nenhum código pedido
         erro = self.mensagem(pagina, mensagem)
         self.assertEqual(erro.color, CLARO["texto_erro"])
         self.assertEqual(self.usuarios_com_email(), 0)
@@ -88,26 +99,26 @@ class TestAjudaDaSenha(TesteDeCadastro):
 class TestSenhaNoCadastro(TesteDeCadastro):
     def test_ct81_sete_caracteres_recusados_sem_chamar_o_banco(self):
         pagina, _ = self.abrir_cadastro()
-        criar_usuario = self.cadastrar(pagina, "a" * 7)
-        self.assert_recusado_sem_chamar(pagina, criar_usuario, MENSAGEM_CURTA, "a" * 7)
+        hash_senha = self.cadastrar(pagina, "a" * 7)
+        self.assert_recusado_sem_chamar(pagina, hash_senha, MENSAGEM_CURTA, "a" * 7)
         self.assertIs(self.aceite(pagina).value, True)                 # aceite preservado
 
     def test_oito_caracteres_criam_a_conta(self):
         pagina, _ = self.abrir_cadastro()
-        criar_usuario = self.cadastrar(pagina, "a" * 8)
-        criar_usuario.assert_called_once_with("Carla", "carla@sino.com", "a" * 8, aceite_termos=True)
+        hash_senha = self.cadastrar(pagina, "a" * 8)
+        hash_senha.assert_called_once_with("a" * 8)
         self.assertEqual(self.usuarios_com_email(), 1)
         self.assertIn("Conta criada com sucesso! Faça login para continuar.", self.textos(pagina))
 
     def test_emoji_composto_conta_um(self):
         pagina, _ = self.abrir_cadastro()
         sete = "abcdef" + EMOJI_COMPOSTO                               # 9 pontos de código
-        criar_usuario = self.cadastrar(pagina, sete)
-        self.assert_recusado_sem_chamar(pagina, criar_usuario, MENSAGEM_CURTA, sete)
+        hash_senha = self.cadastrar(pagina, sete)
+        self.assert_recusado_sem_chamar(pagina, hash_senha, MENSAGEM_CURTA, sete)
 
         oito = "abcdefg" + EMOJI_COMPOSTO
-        criar_usuario = self.cadastrar(pagina, oito)
-        criar_usuario.assert_called_once()
+        hash_senha = self.cadastrar(pagina, oito)
+        hash_senha.assert_called_once()
         self.assertIsNotNone(db.verificar_login("carla@sino.com", oito))
 
     def test_qualquer_espaco_recusado(self):
@@ -115,33 +126,33 @@ class TestSenhaNoCadastro(TesteDeCadastro):
                       "senha\nboa1", "senha\u00a0boa1"):
             with self.subTest(senha=repr(senha)):
                 pagina, _ = self.abrir_cadastro()
-                criar_usuario = self.cadastrar(pagina, senha)
-                self.assert_recusado_sem_chamar(pagina, criar_usuario, MENSAGEM_ESPACOS, senha)
+                hash_senha = self.cadastrar(pagina, senha)
+                self.assert_recusado_sem_chamar(pagina, hash_senha, MENSAGEM_ESPACOS, senha)
 
     def test_senha_valida_enviada_exatamente_como_digitada(self):
         senha = "Senhá-Ç#1"
         pagina, _ = self.abrir_cadastro()
-        criar_usuario = self.cadastrar(pagina, senha)
-        criar_usuario.assert_called_once_with("Carla", "carla@sino.com", senha, aceite_termos=True)
+        hash_senha = self.cadastrar(pagina, senha)
+        hash_senha.assert_called_once_with(senha)
         self.assertIsNotNone(db.verificar_login("carla@sino.com", senha))
         self.assertIsNone(db.verificar_login("carla@sino.com", senha.lower()))
 
     def test_senha_invalida_e_aceite_desmarcado(self):
         pagina, _ = self.abrir_cadastro()
-        criar_usuario = self.cadastrar(pagina, "curta", aceite=False)
-        self.assert_recusado_sem_chamar(pagina, criar_usuario, MENSAGEM_CURTA, "curta")
+        hash_senha = self.cadastrar(pagina, "curta", aceite=False)
+        self.assert_recusado_sem_chamar(pagina, hash_senha, MENSAGEM_CURTA, "curta")
         self.assertIs(self.aceite(pagina).value, False)
 
     def test_aceite_continua_obrigatorio_com_senha_valida(self):  # RF15
         pagina, _ = self.abrir_cadastro()
-        criar_usuario = self.cadastrar(pagina, "senha-valida", aceite=False)
-        self.assert_recusado_sem_chamar(pagina, criar_usuario, MENSAGEM_ACEITE, "senha-valida")
+        hash_senha = self.cadastrar(pagina, "senha-valida", aceite=False)
+        self.assert_recusado_sem_chamar(pagina, hash_senha, MENSAGEM_ACEITE, "senha-valida")
 
     def test_corrigir_a_senha_depois_da_recusa(self):
         pagina, _ = self.abrir_cadastro()
         self.cadastrar(pagina, "curta")
-        criar_usuario = self.cadastrar(pagina, "agora-sim")
-        criar_usuario.assert_called_once()
+        hash_senha = self.cadastrar(pagina, "agora-sim")
+        hash_senha.assert_called_once()
         self.assertEqual(self.usuarios_com_email(), 1)
 
     def test_documentos_continuam_acessiveis_antes_do_aceite(self):

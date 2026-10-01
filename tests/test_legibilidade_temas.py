@@ -204,12 +204,18 @@ class TesteDeLegibilidade(TesteDeSessao):
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Anual"))
         self.registrar(pagina, "Gráfico anual", paleta)
 
+        self.executar("UPDATE usuarios SET email_verificado = 1")   # Etapa 8: selo "Verificado" visível
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Ajustes"))
         self.registrar(pagina, "Ajustes", paleta)
         alterar_senha = next(c for c in self.todos(pagina) if isinstance(c, ft.Container)
                              and c.data == "abrir_alterar_senha")
         self.clicar(pagina, alterar_senha)
         self.registrar(pagina, "Ajustes/Alterar senha", paleta)
+        self.fechar_dialogos(pagina)
+        editar_email = next(c for c in self.todos(pagina) if isinstance(c, ft.OutlinedButton)
+                            and c.data == "editar_email")
+        self.clicar(pagina, editar_email)
+        self.registrar(pagina, "Ajustes/Alterar e-mail", paleta)
         self.fechar_dialogos(pagina)
         for chave in ("termos", "politica"):
             item = next(c for c in self.todos(pagina) if isinstance(c, ft.Container) and c.data == f"abrir_{chave}")
