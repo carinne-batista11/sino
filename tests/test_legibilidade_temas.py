@@ -206,6 +206,11 @@ class TesteDeLegibilidade(TesteDeSessao):
 
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Ajustes"))
         self.registrar(pagina, "Ajustes", paleta)
+        alterar_senha = next(c for c in self.todos(pagina) if isinstance(c, ft.Container)
+                             and c.data == "abrir_alterar_senha")
+        self.clicar(pagina, alterar_senha)
+        self.registrar(pagina, "Ajustes/Alterar senha", paleta)
+        self.fechar_dialogos(pagina)
         for chave in ("termos", "politica"):
             item = next(c for c in self.todos(pagina) if isinstance(c, ft.Container) and c.data == f"abrir_{chave}")
             self.clicar(pagina, item)

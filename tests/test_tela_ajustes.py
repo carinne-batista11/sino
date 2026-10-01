@@ -1,7 +1,7 @@
 """
 ERS v6.0, Etapa 6 (passo 4) — tela Ajustes (8.7, protótipo 12): RF35 (nome),
-RF40 (tema), RF41 (documentos), RF42 (sair), com o e-mail só para leitura
-e sem as ações das Etapas 7-9. Fluxos reais da interface sobre páginas
+RF38 (seção Segurança), RF40 (tema), RF41 (documentos), RF42 (sair), com o
+e-mail só para leitura e sem as ações das Etapas 8-9. Fluxos reais da interface sobre páginas
 falsas e bancos temporários v7; nenhuma janela é aberta.
 """
 
@@ -81,11 +81,12 @@ class TestTelaAjustes(TesteDeAjustes):
     def test_conteudo_da_etapa_6(self):
         pagina, _ = self.abrir_ajustes()
         textos = self.textos_da_tela(pagina)
-        for esperado in ("Ajustes", "Conta", "Nome", "Bia", "E-mail", "bia@sino.com", "Aparência",
+        for esperado in ("Ajustes", "Conta", "Nome", "Bia", "E-mail", "bia@sino.com", "Segurança",
+                         "Alterar senha", "Aparência",
                          "Tema", "Claro", "Escuro", "Sobre e privacidade", "Termos de Uso",
                          "Política de Privacidade", "Conta e sessão", "Sair da conta"):
             self.assertIn(esperado, textos)
-        for ausente in ("Verificado", "Segurança", "Alterar senha", "Excluir conta"):
+        for ausente in ("Verificado", "Excluir conta"):
             self.assertNotIn(ausente, textos)
 
     def test_email_so_leitura_e_um_unico_editar(self):
@@ -102,7 +103,8 @@ class TestTelaAjustes(TesteDeAjustes):
         clicaveis = [c for c in self.na_tela(pagina) if getattr(c, "on_click", None) is not None]
         rotulos = sorted({t.value for c in clicaveis for t in percorrer(c) if isinstance(t, ft.Text)}
                          | {c.content for c in clicaveis if isinstance(c.content, str)})
-        self.assertEqual(rotulos, sorted(["Editar", "Claro", "Escuro", "Termos de Uso", "Política de Privacidade",
+        self.assertEqual(rotulos, sorted(["Editar", "Alterar senha", "Defina uma nova senha para sua conta.",
+                                          "Claro", "Escuro", "Termos de Uso", "Política de Privacidade",
                                           "Sair da conta", "Encerre sua sessão atual. Seus dados serão mantidos."]))
 
     def test_aba_ajustes_ativa_na_navegacao(self):

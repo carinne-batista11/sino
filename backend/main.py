@@ -399,6 +399,16 @@ def erro_de_limite(campo, texto, limite):
     return None
 
 
+def erro_de_nova_senha(senha):
+    """5.33: mensagem amigável se `senha` não puder ser definida (mesma regra
+    de `database.validar_nova_senha`); `None` quando pode. Nunca contém a senha."""
+    try:
+        database.validar_nova_senha(senha)
+    except database.SenhaInvalidaError as erro:
+        return str(erro)
+    return None
+
+
 def texto_contador(texto, limite):
     """Contador exibido junto ao campo, por grafemas (ex.: "12/30")."""
     return f"{limites.contar_caracteres(texto)}/{limite}"
@@ -1029,17 +1039,27 @@ def main(page: ft.Page):
         )
 
         def ao_clicar_botao_principal(e):
+            # A senha nunca é transformada (5.33): sem strip nem limite máximo;
+            # uma nova senha com espaços é recusada como veio. No login, as
+            # regras de nova senha não se aplicam (senhas anteriores, mesmo
+            # curtas ou com espaços, continuam entrando, CT82).
             email = campo_email.value.strip() if campo_email.value else ""
             senha = campo_senha.value if campo_senha.value else ""
 
             if modo_cadastro[0]:
                 nome = campo_nome.value.strip() if campo_nome.value else ""
                 erro_nome = erro_de_limite("nome_usuario", nome, limites.LIMITE_NOME_USUARIO)
+                erro_senha = erro_de_nova_senha(senha)
                 if not nome or not email or not senha:
                     mensagem.value = "Preencha nome, e-mail e senha."
                     mensagem.color = cores.texto_erro
                 elif erro_nome:
                     mensagem.value = erro_nome
+                    mensagem.color = cores.texto_erro
+                elif erro_senha:
+                    # 5.33/RF37: mesma regra do banco (database.validar_nova_senha);
+                    # campos e aceite ficam como estão para a correção.
+                    mensagem.value = erro_senha
                     mensagem.color = cores.texto_erro
                 elif not campo_aceite_termos.value:
                     # RF15: aceite é obrigatório para prosseguir -- criar_usuario
@@ -1103,6 +1123,7 @@ def main(page: ft.Page):
             if modo_cadastro[0]:
                 titulo.value = "Crie sua conta"
                 subtitulo.value = "Leva menos de um minuto"
+                campo_senha.helper = f"Mínimo de {database.SENHA_MINIMO} caracteres"
                 campo_nome.visible = True
                 links_documentos.visible = True
                 campo_aceite_termos.visible = True
@@ -1111,6 +1132,7 @@ def main(page: ft.Page):
             else:
                 titulo.value = "Bem-vindo de volta"
                 subtitulo.value = "Suas contas, sob controle."
+                campo_senha.helper = None
                 campo_nome.visible = False
                 links_documentos.visible = False
                 campo_aceite_termos.visible = False
@@ -4177,14 +4199,14 @@ def main(page: ft.Page):
         atualizar_lista()
 
     # ======================================================
-    #  TELA AJUSTES (ERS v6.0, 8.7; Etapa 6: RF35, RF40, RF41, RF42)
+    #  TELA AJUSTES (ERS v6.0, 8.7; RF35, RF38, RF40, RF41, RF42)
     # ======================================================
     def mostrar_tela_ajustes():
         """
-        Protótipo 12, sem as ações das Etapas 7-9 (e-mail, senha, excluir
-        conta): Conta (nome editável, e-mail só leitura), Aparência
-        (Claro | Escuro), Sobre e privacidade (Termos de Uso e Política de
-        Privacidade) e Sair da conta, com confirmação.
+        Protótipo 12, sem as ações das Etapas 8-9 (e-mail, excluir conta):
+        Conta (nome editável, e-mail só leitura), Segurança (Alterar senha),
+        Aparência (Claro | Escuro), Sobre e privacidade (Termos de Uso e
+        Política de Privacidade) e Sair da conta, com confirmação.
         """
         page.controls.clear()
         page.overlay.clear()
@@ -4308,6 +4330,104 @@ def main(page: ft.Page):
                 bgcolor=cores.fundo_dialogo,
             ))
 
+        # ---------------------------------------------------------- senha (RF38)
+        aviso_senha = ft.Row(visible=False, spacing=6, controls=[
+            ft.Icon(ft.Icons.CHECK_CIRCLE, size=18, color=cores.acao_primaria),
+            ft.Text("Senha alterada com sucesso.", size=13, color=cores.texto_principal),
+        ])
+
+        def abrir_dialogo_senha(e=None):
+            """
+            5.34: senha atual, nova senha e confirmação, ocultas e com opção de
+            mostrar. As senhas nunca são transformadas (a atual pode ser antiga
+            e conter espaços) e nunca aparecem em mensagens ou no terminal. Cada abertura cria campos
+            novos; Cancelar e o sucesso também os esvaziam.
+            """
+            def campo_senha(rotulo, ajuda=None, autofocus=False):
+                return ft.TextField(
+                    label=rotulo, helper=ajuda, password=True, can_reveal_password=True,
+                    autofocus=autofocus, width=320, color=cores.texto_principal,
+                    **estilo_campo_texto(),
+                )
+
+            campo_atual = campo_senha("Senha atual", autofocus=True)
+            campo_nova = campo_senha("Nova senha", ajuda=f"Mínimo de {database.SENHA_MINIMO} caracteres")
+            campo_confirmacao = campo_senha("Confirmar nova senha")
+            campos = (campo_atual, campo_nova, campo_confirmacao)
+            erro = ft.Text("", size=12, color=cores.texto_erro, visible=False)
+            botao_salvar = ft.Button(content="Salvar")
+
+            def atualizar_botao_salvar():
+                habilitado = all(c.value for c in campos)
+                botao_salvar.disabled = not habilitado
+                botao_salvar.bgcolor = cores.acao_primaria if habilitado else cores.botao_desabilitado_fundo
+                botao_salvar.color = cores.texto_sobre_acao if habilitado else cores.botao_desabilitado_texto
+
+            def ao_mudar(ev):
+                erro.visible = False
+                atualizar_botao_salvar()
+                page.update()
+
+            def mostrar_erro(mensagem):
+                erro.value = mensagem
+                erro.visible = True
+                page.update()
+
+            def descartar_campos():
+                for campo in campos:
+                    campo.value = ""
+
+            def cancelar(ev):
+                descartar_campos()
+                page.pop_dialog()
+
+            def salvar(ev):
+                atual, nova, confirmacao = (c.value or "" for c in campos)
+                if not (atual and nova and confirmacao):
+                    return
+                if nova != confirmacao:
+                    mostrar_erro("A confirmação não confere com a nova senha.")
+                    return
+                mensagem_nova = erro_de_nova_senha(nova)
+                if mensagem_nova:
+                    mostrar_erro(mensagem_nova)
+                    return
+                try:
+                    alterada = database.alterar_senha(usuario_atual["id"], atual, nova)
+                except (database.SenhaAtualIncorretaError, database.SenhaInvalidaError) as ex:
+                    mostrar_erro(str(ex))  # atual incorreta, nova inválida ou igual à atual
+                    return
+                except Exception as ex:
+                    # Só o tipo da falha vai para o terminal: nenhuma senha em logs.
+                    print(f"Sino: falha ao alterar a senha ({type(ex).__name__}).", file=sys.stderr)
+                    mostrar_erro("Não foi possível alterar a senha. Tente novamente.")
+                    return
+                if not alterada:
+                    mostrar_erro("Não encontramos a sua conta. Saia e entre novamente.")
+                    return
+                descartar_campos()
+                page.pop_dialog()
+                aviso_senha.visible = True
+                page.update()
+
+            for campo in campos:
+                campo.on_change = ao_mudar
+            botao_salvar.on_click = salvar
+            atualizar_botao_salvar()
+            aviso_senha.visible = False
+
+            page.show_dialog(ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Alterar senha", color=cores.texto_principal),
+                content=ft.Column(tight=True, spacing=8, controls=[*campos, erro]),
+                actions=[
+                    ft.TextButton(content="Cancelar", style=estilo_botao_texto(), on_click=cancelar),
+                    botao_salvar,
+                ],
+                on_dismiss=lambda ev: descartar_campos(),
+                bgcolor=cores.fundo_dialogo,
+            ))
+
         # ---------------------------------------------------------- tema (RF40)
         aviso_tema = ft.Text("", size=12, color=cores.texto_erro, visible=False)
 
@@ -4374,6 +4494,17 @@ def main(page: ft.Page):
             ]),
             ft.Row(controls=[rotulo_e_valor("E-mail", email)]),
         ])
+        item_alterar_senha = ft.Container(
+            data="abrir_alterar_senha", border_radius=10, padding=ft.Padding(0, 6, 0, 6),
+            on_click=abrir_dialogo_senha, ink=True,
+            content=ft.Row(spacing=12, controls=[
+                rotulo_e_valor("Alterar senha", "Defina uma nova senha para sua conta.", descricao=True),
+                ft.Icon(ft.Icons.CHEVRON_RIGHT, size=22, color=cores.texto_secundario),
+            ]),
+        )
+        secao_seguranca = secao(ft.Icons.LOCK, "Segurança", "Mantenha sua conta protegida.", [
+            ft.Column(spacing=6, controls=[item_alterar_senha, aviso_senha]),
+        ])
         secao_aparencia = secao(ft.Icons.PALETTE, "Aparência", "Escolha o tema do aplicativo.", [
             ft.Row(wrap=True, run_spacing=8, alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
                 ft.Column(spacing=2, controls=[
@@ -4426,7 +4557,8 @@ def main(page: ft.Page):
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[ft.Column(
                     data="tela_ajustes", col={"xs": 12, "md": 10, "xl": 8}, spacing=12,
-                    controls=[cabecalho, secao_conta, secao_aparencia, secao_documentos, secao_sessao],
+                    controls=[cabecalho, secao_conta, secao_seguranca, secao_aparencia, secao_documentos,
+                              secao_sessao],
                 )],
             )),
         ])

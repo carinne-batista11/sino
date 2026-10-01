@@ -25,15 +25,15 @@ class TestUsuarios(TesteComBancoTemporario):
 
     def test_email_duplicado_e_recusado(self):
         self.criar_usuario(email="ana@sino.com")
-        sucesso, _ = db.criar_usuario("Outra", "ana@sino.com", "x", aceite_termos=True)
+        sucesso, _ = db.criar_usuario("Outra", "ana@sino.com", "outra-senha", aceite_termos=True)
         self.assertFalse(sucesso)
 
     def test_senha_armazenada_com_pbkdf2_e_salt_individual(self):
-        self.criar_usuario(email="a@sino.com", senha="mesma")
-        self.criar_usuario(email="b@sino.com", senha="mesma")
+        self.criar_usuario(email="a@sino.com", senha="mesma-senha")
+        self.criar_usuario(email="b@sino.com", senha="mesma-senha")
         hash_a, hash_b = self.hash_armazenado("a@sino.com"), self.hash_armazenado("b@sino.com")
         self.assertTrue(hash_a.startswith(f"{db.PBKDF2_ALGORITMO}${db.PBKDF2_ITERACOES}$"))
-        self.assertNotIn("mesma", hash_a)
+        self.assertNotIn("mesma-senha", hash_a)
         self.assertNotEqual(hash_a, hash_b)
 
     def test_login(self):

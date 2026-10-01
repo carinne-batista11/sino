@@ -1263,6 +1263,56 @@ def _verificar_senha(senha, senha_hash_armazenada):
     return secrets.compare_digest(hash_calculado, senha_hash_armazenada)
 
 
+# ERS v6.0, 5.33/RF37 (Etapa 7): regras para toda senha DEFINIDA a partir da
+# v6.0 -- cadastro, alteração e, na Etapa 8, recuperação. A senha nunca é
+# transformada (sem strip nem normalização): uma nova senha com qualquer
+# espaço em branco é recusada como veio; o mínimo conta caracteres
+# percebidos, com o mesmo mecanismo dos limites de texto (T5). O login e a
+# conferência da senha atual NÃO aplicam estas regras: senhas anteriores,
+# mesmo curtas ou com espaços, continuam valendo (CT82).
+SENHA_MINIMO = 8
+
+
+class SenhaInvalidaError(ValueError):
+    """Nova senha recusada. A mensagem é amigável e nunca contém a senha."""
+
+
+class SenhaCurtaError(SenhaInvalidaError):
+    def __init__(self):
+        super().__init__(f"A senha deve ter pelo menos {SENHA_MINIMO} caracteres.")
+
+
+class SenhaComEspacosError(SenhaInvalidaError):
+    def __init__(self):
+        super().__init__("A senha não pode conter espaços.")
+
+
+class SenhaAtualIncorretaError(ValueError):
+    def __init__(self):
+        super().__init__("A senha atual está incorreta.")
+
+
+class SenhaIgualAtualError(SenhaInvalidaError):
+    def __init__(self):
+        super().__init__("A nova senha deve ser diferente da atual.")
+
+
+def validar_nova_senha(senha):
+    """
+    5.33: levanta `SenhaInvalidaError` (ou uma subclasse) para entrada que
+    não é texto, senha com qualquer espaço em branco (espaço, tabulação,
+    quebra de linha, espaço não separável...; em qualquer posição) ou com
+    menos de `SENHA_MINIMO` caracteres percebidos. Devolve a senha intacta.
+    """
+    if not isinstance(senha, str):
+        raise SenhaInvalidaError("A senha precisa ser um texto.")
+    if any(caractere.isspace() for caractere in senha):
+        raise SenhaComEspacosError()
+    if contar_caracteres(senha) < SENHA_MINIMO:
+        raise SenhaCurtaError()
+    return senha
+
+
 def criar_usuario(nome, email, senha, aceite_termos=False):
     """
     RF15: `termos_aceitos_em` só é gravado quando `aceite_termos` é True --
@@ -1273,12 +1323,19 @@ def criar_usuario(nome, email, senha, aceite_termos=False):
     consulta prévia por lower(email) mantém a regra também em bancos v5
     ainda não migrados; em bancos v6, o índice `idx_usuarios_email_ci` a
     garante na gravação. O e-mail é gravado como informado.
+
+    5.33 (Etapa 7): a senha segue `validar_nova_senha`; recusada, nenhuma
+    conta é criada e a mensagem amigável volta no mesmo contrato.
     """
     if not aceite_termos:
         return False, "É necessário aceitar os Termos de Uso e a Política de Privacidade."
     try:
         validar_limite("nome_usuario", nome, LIMITE_NOME_USUARIO)  # 5.23
     except LimiteDeCaracteresError as erro:
+        return False, str(erro)
+    try:
+        validar_nova_senha(senha)
+    except SenhaInvalidaError as erro:
         return False, str(erro)
 
     conexao = conectar()
@@ -1399,6 +1456,45 @@ def alterar_nome_usuario(usuario_id, nome):
         cursor = conexao.execute("UPDATE usuarios SET nome = ? WHERE id = ?", (nome, usuario_id))
         conexao.commit()
         return nome if cursor.rowcount == 1 else None
+    finally:
+        conexao.close()
+
+
+def alterar_senha(usuario_id, senha_atual, nova_senha):
+    """
+    RF38/5.34: troca a senha do usuário, em uma única transação, nesta ordem:
+
+      * usuário inexistente -> devolve False;
+      * senha atual incorreta (ou que não é texto) -> SenhaAtualIncorretaError;
+      * nova senha inválida (`validar_nova_senha`) -> SenhaInvalidaError;
+      * nova senha igual à atual -> SenhaIgualAtualError.
+
+    Em qualquer recusa ou falha nada é gravado. A nova senha é guardada no
+    formato PBKDF2 (RNF05), inclusive quando a atual ainda estava no formato
+    legado. A confirmação da nova senha é responsabilidade da interface.
+    Devolve True quando a senha é alterada.
+    """
+    conexao = conectar()
+    conexao.isolation_level = None  # controle explícito da transação
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+        linha = cursor.execute("SELECT senha_hash FROM usuarios WHERE id = ?", (usuario_id,)).fetchone()
+        if linha is None:
+            cursor.execute("ROLLBACK;")
+            return False
+        senha_hash_atual = linha[0]
+        if not isinstance(senha_atual, str) or not _verificar_senha(senha_atual, senha_hash_atual):
+            raise SenhaAtualIncorretaError()
+        validar_nova_senha(nova_senha)
+        if _verificar_senha(nova_senha, senha_hash_atual):
+            raise SenhaIgualAtualError()
+        cursor.execute("UPDATE usuarios SET senha_hash = ? WHERE id = ?", (_gerar_hash_senha(nova_senha), usuario_id))
+        cursor.execute("COMMIT;")
+        return True
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
     finally:
         conexao.close()
 

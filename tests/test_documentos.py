@@ -13,6 +13,7 @@ import sys
 import unittest
 
 import apoio_banco
+from apoio_banco import db
 from test_cores import MINIMO_TEXTO, contraste
 from test_sessao_tema import CLARO, ESCURO, TesteDeSessao, ft, percorrer
 from test_tela_principal import Evento
@@ -50,6 +51,28 @@ class TestConteudoAprovado(unittest.TestCase):
         self.assertIn("não existe a opção de excluir o usuário", documentos.TERMOS_DE_USO)
         self.assertIn("demais informações não são criptografadas", documentos.POLITICA_DE_PRIVACIDADE)
         self.assertIn("remove os dados de todos os usuários daquela instalação", documentos.POLITICA_DE_PRIVACIDADE)
+        self.assertIn("**não estão disponíveis**: alterar o e-mail, recuperar uma senha esquecida e excluir o "
+                      "usuário com todos os seus dados.", documentos.POLITICA_DE_PRIVACIDADE)
+
+    def test_regras_de_senha_da_etapa_7(self):  # 5.33, 5.34
+        termos = documentos.TERMOS_DE_USO
+        self.assertIn(f"Toda nova senha precisa ter **pelo menos {db.SENHA_MINIMO} caracteres** e não pode "
+                      "conter espaços. Senhas criadas antes dessa regra continuam permitindo a entrada no "
+                      "aplicativo.", termos)
+        for frase_antiga in ("formada apenas por espaços", "inclusive espaços", "exatamente como você a digita"):
+            self.assertNotIn(frase_antiga, termos)
+        self.assertIn("Em Ajustes, você pode alterar sua senha informando a senha atual e confirmando a nova, "
+                      "que precisa ser diferente da atual.", termos)
+        self.assertIn("alterar seu nome e sua senha e escolher o tema", documentos.POLITICA_DE_PRIVACIDADE)
+
+    def test_alterar_senha_nao_aparece_como_indisponivel(self):
+        self.assertNotIn("alterar o e-mail ou a senha", documentos.TERMOS_DE_USO)
+        self.assertNotIn("alterar ou recuperar a senha", documentos.POLITICA_DE_PRIVACIDADE)
+        for chave, (_, texto) in documentos.DOCUMENTOS.items():
+            with self.subTest(chave):
+                for paragrafo in texto.split("\n\n"):
+                    if "não estão disponíveis" in paragrafo or "não é possível" in paragrafo:
+                        self.assertNotRegex(paragrafo, r"alterar (o e-mail ou )?a senha|alterar ou recuperar")
 
 
 class TesteDeDocumentos(TesteDeSessao):

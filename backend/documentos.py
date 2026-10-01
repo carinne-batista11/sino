@@ -40,9 +40,11 @@ O Sino não oferece orientação financeira, contábil ou jurídica.
 
 Para usar o Sino, você informa nome, e-mail e senha. O e-mail é usado para entrar no aplicativo; nesta versão, o Sino **não verifica** se o endereço existe ou pertence a você e não envia e-mails.
 
-Nesta versão, **não é possível recuperar uma senha esquecida**, nem alterar o e-mail ou a senha pelo aplicativo. Guarde sua senha com cuidado.
+Toda nova senha precisa ter **pelo menos 8 caracteres** e não pode conter espaços. Senhas criadas antes dessa regra continuam permitindo a entrada no aplicativo.
 
-Em Ajustes, você pode alterar seu nome e escolher o tema (Claro ou Escuro).
+Em Ajustes, você pode alterar sua senha informando a senha atual e confirmando a nova, que precisa ser diferente da atual. Nesta versão, **não é possível recuperar uma senha esquecida** nem alterar o e-mail pelo aplicativo. Guarde sua senha com cuidado.
+
+Em Ajustes, você também pode alterar seu nome e escolher o tema (Claro ou Escuro).
 
 ## 5. Seus cuidados
 
@@ -126,9 +128,9 @@ O aviso sonoro de "limite atingido" usa programas de som do próprio computador.
 
 ## 8. O que você pode fazer com suas informações
 
-No aplicativo, você pode ver, editar e excluir suas contas financeiras e categorias, alterar seu nome e escolher o tema.
+No aplicativo, você pode ver, editar e excluir suas contas financeiras e categorias, alterar seu nome e sua senha e escolher o tema.
 
-Nesta versão, **não estão disponíveis**: alterar o e-mail, alterar ou recuperar a senha, e excluir o usuário com todos os seus dados.
+Nesta versão, **não estão disponíveis**: alterar o e-mail, recuperar uma senha esquecida e excluir o usuário com todos os seus dados.
 
 Ao excluir um item, ele deixa de aparecer no aplicativo. As cópias de segurança anteriores (item 6) não são alteradas, e o próprio arquivo do banco pode manter vestígios técnicos da informação apagada até que esse espaço seja reutilizado.
 
