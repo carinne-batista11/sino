@@ -11,6 +11,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vitest";
 import { INTERVALO_REENVIO_MS, TETO_GLOBAL_DIA } from "../../src/config";
+import { emailValido, normalizarEmail } from "../../src/email";
 import { criarApp } from "../../src/http";
 import {
   PREFIXO_ASSINATURA,
@@ -80,6 +81,8 @@ function vetores() {
       { motivo: "finalidade_desconhecida", token: assinarBruto(conteudo({ ...base, fin: "login" })) },
       { motivo: "contexto_maiusculo", token: assinarBruto(conteudo({ ...base, ctx: base.ctx.toUpperCase() })) },
       { motivo: "formato", token: `${payload}.${assinatura}.extra` },
+      // jti com bits de sobra não nulos (22 caracteres terminando em B).
+      { motivo: "jti_nao_canonico", token: assinarBruto(conteudo({ ...base, jti: `${base.jti.slice(0, 21)}B` })) },
     ],
   };
 }
@@ -266,5 +269,60 @@ async function transcricoes() {
 describe("transcrições do contrato", () => {
   it("coincidem com o arquivo compartilhado", async () => {
     conferirArquivo("transcricoes.json", await transcricoes());
+  });
+});
+
+// ------------------------------------------------------------------ e-mails
+
+const ENTRADAS_EMAIL = [
+  "pessoa@exemplo.com",
+  "  Pessoa@Exemplo.COM  ",
+  "PESSOA+tag@Sub.Example.ORG",
+  "a@b",
+  `${"a".repeat(64)}@${"b".repeat(185)}.com`, // 254 caracteres
+  `${"a".repeat(64)}@${"b".repeat(186)}.com`, // 255 caracteres
+  ` ${"a".repeat(64)}@${"b".repeat(185)}.com `, // 254 depois de aparar
+  "\"aspas\"@exemplo.com",
+  "",
+  "   ",
+  "sem-arroba.exemplo.com",
+  "a@@b",
+  "a@b@c",
+  "@exemplo.com",
+  "pessoa@",
+  "pes soa@exemplo.com",
+  "josé@exemplo.com",
+  "pessoa@exemplo.çom",
+  "\u212Aelvin@exemplo.com", // K de Kelvin: minúscula Unicode viraria "k"
+  "\u0130stanbul@exemplo.com",
+  "pessoa@exemplo.com\u00a0", // espaço não separável na borda
+  "\u3000pessoa@exemplo.com", // espaço ideográfico na borda
+  "\tpessoa@exemplo.com",
+  "pessoa@exemplo.com\n",
+  "pessoa@exemplo.com\u001f",
+  "\u001cpessoa@exemplo.com",
+  "pessoa@exemplo.com\u007f",
+];
+
+describe("formato de e-mail compartilhado", () => {
+  it("coincide com o arquivo compartilhado", () => {
+    const casos = ENTRADAS_EMAIL.map((entrada) => {
+      const valido = emailValido(entrada);
+      return { entrada, valido, normalizado: valido ? normalizarEmail(entrada) : null };
+    });
+    expect(casos.filter((c) => c.valido).map((c) => c.normalizado)).toEqual([
+      "pessoa@exemplo.com",
+      "pessoa@exemplo.com",
+      "pessoa+tag@sub.example.org",
+      "a@b",
+      `${"a".repeat(64)}@${"b".repeat(185)}.com`,
+      `${"a".repeat(64)}@${"b".repeat(185)}.com`,
+      "\"aspas\"@exemplo.com",
+    ]);
+    conferirArquivo("emails.json", {
+      descricao: "Formato de e-mail dos fluxos com código: aparar só espaços U+0020 nas bordas; "
+        + "ASCII imprimível, exatamente um @, partes não vazias, até 254; minúsculas ASCII.",
+      casos,
+    });
   });
 });

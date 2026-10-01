@@ -4,6 +4,7 @@
 // que um desafio sem reserva global registrada não autoriza.
 
 import { REPETIR_APOS_S, type Finalidade } from "./config";
+import { emailAparado, normalizarEmail } from "./email";
 import type { Enviador } from "./envio/enviador";
 import { montarMensagem } from "./envio/mensagens";
 import { assinarAutorizacao } from "./nucleo/autorizacao";
@@ -62,9 +63,7 @@ export interface Resposta {
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-export function normalizarEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+export { normalizarEmail };
 
 /** Os 8 grupos de um IPv6 (com um IPv4 final convertido em dois grupos), ou null. */
 function gruposIpv6(ip: string): number[] | null {
@@ -160,7 +159,7 @@ export async function pedirDesafio(deps: Dependencias, e: EntradaPedido): Promis
     if (r.tipo === "repeticao") return r.encerrado ? ENCERRADO : { status: 202, corpo };
     // Resposta neutra e imediata; o envio (se houver) acontece depois.
     if (r.codigo !== null) {
-      deps.emSegundoPlano(executarEnvio(deps, destino, r.desafioId, e.finalidade, e.email.trim(), r.codigo));
+      deps.emSegundoPlano(executarEnvio(deps, destino, r.desafioId, e.finalidade, emailAparado(e.email), r.codigo));
     }
     return { status: 202, corpo };
   }
@@ -185,7 +184,7 @@ export async function pedirDesafio(deps: Dependencias, e: EntradaPedido): Promis
   }
 
   // O envio é aguardado para informar falhas.
-  const estado = await executarEnvio(deps, destino, r.desafioId, e.finalidade, e.email.trim(), r.codigo as string);
+  const estado = await executarEnvio(deps, destino, r.desafioId, e.finalidade, emailAparado(e.email), r.codigo as string);
   return statusDoEnvio(estado, corpo, falhaEnvio);
 }
 

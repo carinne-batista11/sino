@@ -61,10 +61,21 @@ gerado pelo aplicativo para cada ação do usuário.
 * `contexto`: SHA-256, em hexadecimal minúsculo, do texto UTF-8
   `finalidade + "\x1f" + e-mail normalizado + "\x1f" + nonce em hexadecimal
   minúsculo`, com nonce de 32 bytes aleatórios gerado pelo aplicativo para cada
-  operação e mantido só em memória. E-mail normalizado: sem espaços nas bordas
-  e em minúsculas. O serviço não recalcula o contexto; só o devolve assinado.
-* `email`: até 254 caracteres, sem espaços, com um único `@`. O serviço compara
-  endereços em minúsculas; a mensagem é enviada ao endereço como informado.
+  operação e mantido só em memória. E-mail normalizado: conforme o formato
+  abaixo (sem os espaços comuns das bordas e em minúsculas ASCII). O serviço não recalcula o contexto; só o devolve assinado.
+* `email`: formato único dos fluxos com código, igual no serviço, no aplicativo
+  e na camada de dados local (casos em `servidor/test/conformidade/emails.json`):
+  * nas bordas, removem-se **somente** espaços comuns (U+0020); qualquer outro
+    espaço ou caractere de controle torna o endereço inválido;
+  * depois disso: só ASCII imprimível (U+0021 a U+007E), exatamente um `@`,
+    partes local e de domínio não vazias e até 254 caracteres;
+  * comparação em minúsculas ASCII (idênticas em JavaScript, Python e no
+    `lower()` do SQLite); a mensagem é enviada ao endereço sem os espaços das
+    bordas, com as maiúsculas como informadas.
+  E-mails antigos fora desse formato não são alterados e continuam entrando no
+  aplicativo; só não podem ser usados em novos cadastros, alterações ou
+  recuperações. Na recuperação, a recusa por formato acontece antes de
+  qualquer consulta à conta e é igual para qualquer endereço.
 * `segredo` (S): fica só na memória do aplicativo e precisa acompanhar cada
   validação. O serviço guarda apenas o hash.
 * `sem_envio`: só é aceito em `recuperacao_senha`. O aplicativo o envia como
@@ -155,7 +166,9 @@ Formato: `<payload>.<assinatura>`, ambos em base64url sem preenchimento.
   * `fin`: finalidade; `ctx`: o `contexto` enviado no pedido;
   * `iat`: segundos UTC da validação; `exp`: segundos UTC do `expira_em` original
     do desafio (arredondado para baixo);
-  * `jti`: identificador único, para o registro local de uso único.
+  * `jti`: identificador único, para o registro local de uso único: 16 bytes
+    aleatórios em base64url canônico (22 caracteres; o último é `A`, `Q`, `g`
+    ou `w`, porque os 4 bits de sobra são zero).
 * `assinatura`: Ed25519 sobre os bytes de `"sino-autorizacao-v1." + payload`.
   O Ed25519 é determinístico: a repetição devolve exatamente a mesma autorização.
 
@@ -263,7 +276,11 @@ Referência: `backend/servico_codigos.py` (cliente do aplicativo) e
 * Autorização: conferida antes de ser usada (formato, tamanhos, assinatura com
   a chave pública do `kid`, finalidade e contexto da operação, validade). O uso
   único do `jti` é registrado pelo aplicativo na mesma transação local da
-  operação (migração v8).
+  operação (tabela `autorizacoes_usadas`, schema v8), que confere de novo a
+  finalidade, o e-mail vinculado e a validade antes e depois de obter o
+  bloqueio do banco e imediatamente antes de gravar. Registros com `expira_em`
+  menor que o `iat` assinado da autorização sendo consumida são apagados na
+  mesma transação; sem uma autorização verificada, nada é apagado.
 
 ## Conformidade
 

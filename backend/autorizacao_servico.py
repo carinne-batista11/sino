@@ -30,7 +30,9 @@ FINALIDADES = ("cadastro", "alteracao_email", "recuperacao_senha")
 _RE_TOKEN = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 _RE_BASE64URL = re.compile(r"[A-Za-z0-9_-]*")
 RE_KID = re.compile(r"[A-Za-z0-9_.-]{1,64}")
-_RE_JTI = re.compile(r"[A-Za-z0-9_-]{22}")
+# jti: 16 bytes em base64url canônico (22 caracteres; os 4 bits de sobra do
+# último são zero, então ele só pode ser A, Q, g ou w).
+_RE_JTI = re.compile(r"[A-Za-z0-9_-]{21}[AQgw]")
 _RE_CONTEXTO = re.compile(r"[0-9a-f]{64}")
 
 

@@ -249,8 +249,37 @@ def _base64url(dados):
     return base64.urlsafe_b64encode(dados).rstrip(b"=").decode("ascii")
 
 
-def normalizar_email(email):
-    return email.strip().lower()
+# Formato de e-mail dos fluxos com código, igual ao do serviço
+# (servidor/src/email.ts) e ao da camada de dados (database/db.py): aparam-se
+# só espaços comuns (U+0020) nas bordas; depois, só ASCII imprimível, um único
+# "@", partes não vazias e até 254 caracteres. Comparação em minúsculas ASCII.
+TAMANHO_MAXIMO_EMAIL = 254
+_RE_EMAIL = re.compile(r"[\x21-\x3f\x41-\x7e]+@[\x21-\x3f\x41-\x7e]+")
+
+
+class EmailInvalidoError(ValueError):
+    def __init__(self):
+        super().__init__("Informe um e-mail válido.")
+
+
+def aparar_email(texto):
+    """Remove só espaços comuns (U+0020) das bordas (sem str.strip, que é mais amplo)."""
+    return texto.strip(" ")
+
+
+def validar_email(texto):
+    """Devolve o e-mail sem espaços nas bordas, ou levanta EmailInvalidoError."""
+    if type(texto) is not str:
+        raise EmailInvalidoError()
+    email = aparar_email(texto)
+    if len(email) > TAMANHO_MAXIMO_EMAIL or not _RE_EMAIL.fullmatch(email):
+        raise EmailInvalidoError()
+    return email
+
+
+def normalizar_email(texto):
+    """Forma de comparação (valida antes): sem espaços nas bordas, minúsculas ASCII."""
+    return validar_email(texto).lower()
 
 
 def calcular_contexto(finalidade, email_normalizado, nonce):
@@ -268,11 +297,11 @@ class OperacaoCodigo:
     def __init__(self, finalidade, email, aleatorio):
         if finalidade not in FINALIDADES:
             raise ValueError("finalidade desconhecida")
-        if not isinstance(email, str) or not email.strip():
-            raise ValueError("e-mail obrigatório")
+        # Mesmo formato nas três finalidades, antes de qualquer requisição:
+        # na recuperação, a recusa por formato não depende de haver conta.
         self.finalidade = finalidade
-        self.email = email.strip()
-        self.email_normalizado = normalizar_email(email)
+        self.email = validar_email(email)
+        self.email_normalizado = self.email.lower()
         nonce = aleatorio(BYTES_NONCE)
         self.contexto = calcular_contexto(finalidade, self.email_normalizado, nonce)
         self._segredo = _base64url(aleatorio(BYTES_SEGREDO))
@@ -369,12 +398,16 @@ class RespostaInvalida:
 class AutorizacaoVerificada:
     """
     Autorização conferida. O uso único do `jti` e a gravação local ficam com a
-    camada de dados (migração v8); `vigente()` deve ser conferido de novo no
-    momento de gravar.
+    camada de dados (database/db.py, tabela autorizacoes_usadas), que confere
+    de novo a finalidade, o vínculo com o e-mail da operação e `vigente()` no
+    momento de gravar. `iat_utc_s` (assinado) é a referência de horário do
+    servidor usada na limpeza segura dos registros vencidos.
     """
     jti: str
     finalidade: str
     exp_utc_s: int
+    iat_utc_s: int
+    email_normalizado: str
     prazo_monotonico: float
 
     def vigente(self, agora_monotonico):
@@ -680,7 +713,8 @@ class ClienteServicoCodigos:
                 operacao._encerrar_desafio()
                 return DesafioEncerrado()
             return AutorizacaoVerificada(
-                jti=conteudo.jti, finalidade=conteudo.finalidade, exp_utc_s=conteudo.exp, prazo_monotonico=prazo,
+                jti=conteudo.jti, finalidade=conteudo.finalidade, exp_utc_s=conteudo.exp,
+                iat_utc_s=conteudo.iat, email_normalizado=operacao.email_normalizado, prazo_monotonico=prazo,
             )
         if status == 422:
             _erro(corpo, "codigo_invalido", "tentativas_restantes")

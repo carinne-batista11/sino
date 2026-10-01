@@ -338,6 +338,9 @@ class TestValidacao(unittest.IsolatedAsyncioTestCase):
         aut = await self.cliente.validar_codigo(self.op, "042137")
         self.assertEqual(aut.jti, "anRpLWRlLXRlc3RlLTAwMQ")
         self.assertEqual((aut.finalidade, aut.exp_utc_s), ("cadastro", EXP_S))
+        # Para a camada de dados: iat assinado (limpeza) e e-mail vinculado à operação.
+        self.assertEqual(aut.iat_utc_s, AGORA_SERVIDOR_MS // 1000)
+        self.assertEqual(aut.email_normalizado, "pessoa@exemplo.com")
         req = self.transporte.requisicoes[1]
         self.assertEqual(req.url, f"{URL_BASE}/v1/desafios/{DESAFIO}/validacao")
         self.assertEqual(list(json.loads(req.corpo)), ["email", "segredo", "codigo"])
@@ -389,6 +392,11 @@ class TestValidacao(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await self.cliente.validar_codigo(self.op, "123456"), sc.DesafioEncerrado())
                 self.assertIsNone(self.op.desafio_id)
                 self.assertEqual(await self.cliente.validar_codigo(self.op, "123456"), sc.DesafioEncerrado())
+
+    async def test_jti_nao_canonico_e_recusado(self):
+        self.transporte.roteiro.append(autorizacao_ok(self.op, jti="anRpLWRlLXRlc3RlLTAwMB"))
+        with capturar_stderr():
+            self.assertEqual(await self.cliente.validar_codigo(self.op, "123456"), sc.RespostaInvalida())
 
     async def test_tentativas_restantes_estritas(self):
         for valor in (True, 4.0, 6, -1, "4"):

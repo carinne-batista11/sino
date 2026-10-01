@@ -64,7 +64,7 @@ class TesteMigracaoV7(AuxiliaresBancoV6):
         self.assertEqual(resultado["ocorrencias_provaveis"], [101])  # editada, vaga pela competência
         self.assert_schema_v7(self.caminho_v5)
         self.assertEqual(self.dados_v5(self.caminho_v5), dados_antes)
-        self.assertTrue(db.validar_schema_atual(self.caminho_v5)["ok"])
+        self.assertTrue(self.validar_schema_v7(self.caminho_v5)["ok"])
 
         # posição = ordem (vencimento, id); vaga = vencimento
         self.assertEqual(self.posicoes(20), [(100, 1, "2026-08-31", "2026-08-31"),
@@ -110,7 +110,7 @@ class TesteMigracaoV7(AuxiliaresBancoV6):
         db.migrar_schema_v7(self.caminho_v5)
         for tabela in ("usuarios", "categorias", "series_recorrencia", "contas"):
             self.assertEqual(self.colunas(self.caminho_v5, tabela), self.colunas(self.caminho_banco, tabela))
-        self.assert_schema_v7(self.caminho_banco)
+        self.assert_schema_v8(self.caminho_banco)
 
     def test_operacoes_funcionam_sobre_o_banco_migrado(self):
         self.criar_v6()

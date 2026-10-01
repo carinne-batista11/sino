@@ -37,6 +37,8 @@ describe("POST /v1/desafios", () => {
     ["finalidade desconhecida", { ...CORPO, finalidade: "login" }, {}],
     ["e-mail com espaço", { ...CORPO, email: "a b@c.d" }, {}],
     ["e-mail sem @", { ...CORPO, email: "pessoa.exemplo.com" }, {}],
+    ["e-mail fora do ASCII", { ...CORPO, email: "josé@exemplo.com" }, {}],
+    ["e-mail com espaço não separável na borda", { ...CORPO, email: "pessoa@exemplo.com\u00a0" }, {}],
     ["contexto curto", { ...CORPO, contexto: "abc" }, {}],
     ["segredo curto", { ...CORPO, segredo: "abc" }, {}],
     ["sem_envio no cadastro", { ...CORPO, sem_envio: true }, {}],

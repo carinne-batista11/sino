@@ -2,6 +2,7 @@
 // estrita da entrada e respostas JSON sem dados sensíveis.
 
 import { FINALIDADES, type Finalidade } from "./config";
+import { emailValido } from "./email";
 import { pedirDesafio, validarDesafio, type Dependencias, type Resposta } from "./fluxos";
 import { registrarFalha } from "./nucleo/registro";
 
@@ -13,11 +14,7 @@ const RE_DESAFIO = /^[A-Za-z0-9_-]{22}$/;
 const RE_ROTA_VALIDACAO = /^\/v1\/desafios\/([^/]+)\/validacao$/;
 const TAMANHO_MAXIMO_CORPO = 4096;
 
-export function emailValido(email: unknown): email is string {
-  if (typeof email !== "string") return false;
-  const e = email.trim();
-  return e.length >= 3 && e.length <= 254 && !/\s/.test(e) && /^[^@]+@[^@]+$/.test(e);
-}
+export { emailValido };
 
 function json(r: Resposta): Response {
   return new Response(JSON.stringify(r.corpo), {

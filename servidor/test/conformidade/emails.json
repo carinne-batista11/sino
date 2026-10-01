@@ -1,0 +1,140 @@
+{
+  "descricao": "Formato de e-mail dos fluxos com código: aparar só espaços U+0020 nas bordas; ASCII imprimível, exatamente um @, partes não vazias, até 254; minúsculas ASCII.",
+  "casos": [
+    {
+      "entrada": "pessoa@exemplo.com",
+      "valido": true,
+      "normalizado": "pessoa@exemplo.com"
+    },
+    {
+      "entrada": "  Pessoa@Exemplo.COM  ",
+      "valido": true,
+      "normalizado": "pessoa@exemplo.com"
+    },
+    {
+      "entrada": "PESSOA+tag@Sub.Example.ORG",
+      "valido": true,
+      "normalizado": "pessoa+tag@sub.example.org"
+    },
+    {
+      "entrada": "a@b",
+      "valido": true,
+      "normalizado": "a@b"
+    },
+    {
+      "entrada": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com",
+      "valido": true,
+      "normalizado": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com"
+    },
+    {
+      "entrada": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": " aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com ",
+      "valido": true,
+      "normalizado": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com"
+    },
+    {
+      "entrada": "\"aspas\"@exemplo.com",
+      "valido": true,
+      "normalizado": "\"aspas\"@exemplo.com"
+    },
+    {
+      "entrada": "",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "   ",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "sem-arroba.exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "a@@b",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "a@b@c",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "pessoa@",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "pes soa@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "josé@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "pessoa@exemplo.çom",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "Kelvin@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "İstanbul@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "pessoa@exemplo.com ",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "　pessoa@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "\tpessoa@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "pessoa@exemplo.com\n",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "pessoa@exemplo.com\u001f",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "\u001cpessoa@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    },
+    {
+      "entrada": "pessoa@exemplo.com",
+      "valido": false,
+      "normalizado": null
+    }
+  ]
+}

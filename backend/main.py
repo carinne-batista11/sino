@@ -720,9 +720,9 @@ def parse_valor(texto):
 
 def preparar_banco_ou_exibir_erro(page, cores=modulo_cores):
     """
-    ERS v6.0, Etapas 1 e 2b: garante o banco no schema atual (v7) antes de
+    ERS v6.0, Etapas 1, 2b e 8: garante o banco no schema atual (v8) antes de
     qualquer tela que dependa dele (database.preparar_banco: cria, migra
-    v5 -> v6 -> v7 com backup ou reconhece que já está atualizado). Em caso de falha, o traceback
+    v5 -> v6 -> v7 -> v8 com backup ou reconhece que já está atualizado). Em caso de falha, o traceback
     completo vai para o terminal, a usuária vê só uma mensagem genérica e o
     retorno False impede que o app siga para o login.
 
@@ -761,7 +761,7 @@ def preparar_banco_ou_exibir_erro(page, cores=modulo_cores):
         return False
 
     if resultado["situacao"] == "migrado":
-        for versao, chave in (("v6", "migracao"), ("v7", "migracao_v7")):
+        for versao, chave in (("v6", "migracao"), ("v7", "migracao_v7"), ("v8", "migracao_v8")):
             migracao = resultado.get(chave)
             if migracao and migracao.get("executado"):
                 print(f"Sino: banco migrado para a {versao}. Backup pré-migração: {migracao['backup']}")

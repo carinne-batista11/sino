@@ -5,7 +5,9 @@ database.py — Camada de banco de dados do Sino (v2)
 import sqlite3
 import hashlib
 import os
+import re
 import secrets
+import time
 from datetime import date, datetime, timedelta
 from calendar import monthrange
 
@@ -32,12 +34,14 @@ def conectar():
 
 def criar_tabelas():
     """
-    Cria o schema atual (v7: ERS v6.0, 9.2, mais a posição lógica das
-    ocorrências da Etapa 2b) em um banco novo. Em um banco que já existe,
+    Cria o schema atual (v8: ERS v6.0, 9.2, a posição lógica das ocorrências
+    da Etapa 2b e o registro de autorizações usadas da Etapa 8) em um banco
+    novo. Em um banco que já existe,
     `CREATE TABLE IF NOT EXISTS` não acrescenta colunas; por isso os índices
     de e-mail e de posição e o `user_version` só são gravados quando
     `usuarios` nasce nesta chamada. Um banco v5/v6 existente permanece
-    intocado até `migrar_schema_v6()`/`migrar_schema_v7()` (com backup).
+    intocado até `migrar_schema_v6()`/`migrar_schema_v7()`/`migrar_schema_v8()`
+    (com backup).
 
     Tudo roda em uma única transação (em modo legado, o sqlite3 do Python
     faria autocommit de cada DDL): um banco novo nunca fica com as tabelas
@@ -151,6 +155,7 @@ def _criar_tabelas_v6(cursor, banco_novo):
     if banco_novo:
         cursor.execute(f"CREATE UNIQUE INDEX {INDICE_EMAIL_CI} ON usuarios(lower(email));")
         cursor.execute(f"CREATE UNIQUE INDEX {INDICE_POSICAO} ON contas(serie_id, posicao);")
+        _criar_tabela_autorizacoes(cursor)
         cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_ATUAL};")
 
 
@@ -487,16 +492,44 @@ COLUNAS_V5 = {
 # (a vaga da grade que a ocorrência ocupa) e `series_recorrencia.posicao_ancora`
 # (posição onde a grade atual foi ancorada). Mesmo formato de COLUNAS_V6.
 VERSAO_SCHEMA_V7 = 7
-VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V7
 INDICE_POSICAO = "idx_contas_serie_posicao"
 COLUNAS_V7 = (
     ("contas", "posicao", "INTEGER", ("INTEGER", 0, None)),
     ("contas", "data_prevista", "TEXT", ("TEXT", 0, None)),
     ("series_recorrencia", "posicao_ancora", "INTEGER", ("INTEGER", 0, None)),
 )
+# Etapa 8 (v8): registro local das autorizações do serviço de códigos já
+# usadas (uso único do jti; docs/contrato-servico-codigos.md). Sem dados
+# pessoais: o jti é aleatório e não há ligação com o usuário. `jti` é NOT NULL
+# explícito (num TEXT PRIMARY KEY o SQLite aceitaria NULL) e canônico: 16
+# bytes em base64url, 22 caracteres, o último em A/Q/g/w (bits de sobra zero).
+VERSAO_SCHEMA_V8 = 8
+VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V8
+TABELA_AUTORIZACOES = "autorizacoes_usadas"
+INDICE_AUTORIZACOES_EXPIRA = "idx_autorizacoes_expira"
+DDL_AUTORIZACOES = """
+CREATE TABLE autorizacoes_usadas (
+    jti TEXT NOT NULL PRIMARY KEY
+        CHECK (length(jti) = 22
+               AND jti NOT GLOB '*[^A-Za-z0-9_-]*'
+               AND substr(jti, 22, 1) IN ('A', 'Q', 'g', 'w')),
+    finalidade TEXT NOT NULL
+        CHECK (finalidade IN ('cadastro', 'alteracao_email', 'recuperacao_senha')),
+    expira_em INTEGER NOT NULL
+        CHECK (typeof(expira_em) = 'integer' AND expira_em > 0)
+)
+"""
+DDL_INDICE_AUTORIZACOES = f"CREATE INDEX {INDICE_AUTORIZACOES_EXPIRA} ON autorizacoes_usadas(expira_em)"
+# (cid, nome, tipo, notnull, default, pk) esperados em PRAGMA table_info.
+COLUNAS_AUTORIZACOES = (
+    (0, "jti", "TEXT", 1, None, 1),
+    (1, "finalidade", "TEXT", 1, None, 0),
+    (2, "expira_em", "INTEGER", 1, None, 0),
+)
+FINALIDADES_AUTORIZACAO = ("cadastro", "alteracao_email", "recuperacao_senha")
 # user_version que esta versão do app sabe tratar: 0 (bancos anteriores ao
-# controle de versão, validados estruturalmente como v5), 6 e 7.
-VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7)
+# controle de versão, validados estruturalmente como v5), 6, 7 e 8.
+VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8)
 
 
 class ColisaoDeEmailError(RuntimeError):
@@ -543,6 +576,23 @@ class SchemaV7IncompativelError(RuntimeError):
         self.problemas = problemas
         super().__init__(
             "Migração v7 abortada: schema incompatível ("
+            + "; ".join(problemas)
+            + "). Nenhuma alteração foi feita."
+        )
+
+
+class SchemaV8IncompativelError(RuntimeError):
+    """
+    O banco não está no estado que a migração v8 aceita: anterior à v7,
+    `autorizacoes_usadas` (ou o índice dela) com definição diferente, com
+    dados fora do formato, ou ausente/incompatível num banco já declarado
+    v8. Nada é alterado e nenhum backup é criado.
+    """
+
+    def __init__(self, problemas):
+        self.problemas = problemas
+        super().__init__(
+            "Migração v8 abortada: schema incompatível ("
             + "; ".join(problemas)
             + "). Nenhuma alteração foi feita."
         )
@@ -698,7 +748,7 @@ def _verificar_schema_v6(cursor):
     resultado["ok"] = (
         all(resultado[f"{tabela}.{coluna}"] == "valida" for tabela, coluna, _, _ in COLUNAS_V6)
         and resultado["indice_email_ci"] == "valido"
-        and resultado["user_version"] in (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7)
+        and resultado["user_version"] in (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8)
         and resultado["integridade"] == ["ok"]
         and not resultado["violacoes_fk"]
     )
@@ -861,6 +911,7 @@ class BancoNaoPreparadoError(RuntimeError):
     def __init__(self, validacao):
         self.validacao = validacao
         v7 = "indice_posicao" in validacao
+        v8 = "tabela_autorizacoes" in validacao
         colunas = COLUNAS_V6 + (COLUNAS_V7 if v7 else ())
         falhas = [f"{tabela}.{coluna}" for tabela, coluna, _, _ in colunas
                   if validacao.get(f"{tabela}.{coluna}") != "valida"]
@@ -868,9 +919,18 @@ class BancoNaoPreparadoError(RuntimeError):
             falhas.append("indice_email_ci")
         if v7 and validacao.get("indice_posicao") != "valido":
             falhas.append("indice_posicao")
-        versoes_aceitas = (VERSAO_SCHEMA_ATUAL,) if v7 else (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7)
+        if v8:
+            versoes_aceitas = (VERSAO_SCHEMA_V8,)
+        elif v7:
+            versoes_aceitas = (validacao.get("versao_esperada", VERSAO_SCHEMA_V7),)
+        else:
+            versoes_aceitas = (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8)
         if validacao.get("user_version") not in versoes_aceitas:
             falhas.append("user_version")
+        if v8 and validacao.get("tabela_autorizacoes") != "valida":
+            falhas.append("tabela_autorizacoes")
+        if v8 and validacao.get("autorizacoes_invalidas"):
+            falhas.append("autorizacoes_invalidas")
         if validacao.get("integridade") != ["ok"]:
             falhas.append("integridade")
         if validacao.get("violacoes_fk"):
@@ -898,10 +958,12 @@ def _estado_indice_posicao(cursor):
     return "valido" if colunas == ["serie_id", "posicao"] else "incompativel"
 
 
-def _verificar_schema_v7(cursor):
+def _verificar_schema_v7(cursor, versao_esperada=VERSAO_SCHEMA_V7):
     """Checagens da v6 + colunas/índice da v7, posições preenchidas, nenhuma
-    coluna fora do schema conhecido (M1) e user_version 7."""
+    coluna fora do schema conhecido (M1) e user_version = `versao_esperada`
+    (7; a v8 reaproveita estas checagens com 8)."""
     resultado = _verificar_schema_v6(cursor)
+    resultado["versao_esperada"] = versao_esperada
     resultado["colunas_fora_do_schema"] = _divergencias_schema_v5(cursor)
     for tabela, coluna, _, esperado in COLUNAS_V7:
         resultado[f"{tabela}.{coluna}"] = _estado_coluna_v6(cursor, tabela, coluna, esperado)
@@ -919,7 +981,7 @@ def _verificar_schema_v7(cursor):
         resultado["ok"]
         and colunas_v7_validas
         and resultado["indice_posicao"] == "valido"
-        and resultado["user_version"] == VERSAO_SCHEMA_V7
+        and resultado["user_version"] == versao_esperada
         and resultado.get("ocorrencias_sem_posicao") == 0
         and resultado.get("series_sem_posicao_ancora") == 0
         and not resultado["colunas_fora_do_schema"]
@@ -927,20 +989,99 @@ def _verificar_schema_v7(cursor):
     return resultado
 
 
+def _normalizar_ddl(sql):
+    return " ".join((sql or "").replace("\n", " ").split()).rstrip(";").strip()
+
+
+def _estado_tabela_autorizacoes(cursor):
+    """
+    'ausente', 'valida' ou 'incompativel'. Válida = tabela com o DDL exato
+    (todas as restrições, comparado sem diferenças de espaçamento), colunas
+    exatas em PRAGMA table_info, o índice por expira_em exato, nenhum outro
+    índice além do da chave primária e nenhum gatilho sobre a tabela.
+    """
+    cursor.execute("SELECT type, sql FROM sqlite_master WHERE name = ?", (TABELA_AUTORIZACOES,))
+    objeto = cursor.fetchone()
+    if objeto is None:
+        cursor.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (INDICE_AUTORIZACOES_EXPIRA,))
+        return "ausente" if cursor.fetchone() is None else "incompativel"
+    if objeto[0] != "table" or _normalizar_ddl(objeto[1]) != _normalizar_ddl(DDL_AUTORIZACOES):
+        return "incompativel"
+    cursor.execute(f"PRAGMA table_info({TABELA_AUTORIZACOES})")
+    if tuple(tuple(linha) for linha in cursor.fetchall()) != COLUNAS_AUTORIZACOES:
+        return "incompativel"
+    cursor.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? ORDER BY name",
+        (TABELA_AUTORIZACOES,),
+    )
+    indices = cursor.fetchall()
+    explicitos = [(nome, sql) for nome, sql in indices if sql is not None]
+    automaticos = [nome for nome, sql in indices if sql is None]
+    if (len(explicitos) != 1 or explicitos[0][0] != INDICE_AUTORIZACOES_EXPIRA
+            or _normalizar_ddl(explicitos[0][1]) != _normalizar_ddl(DDL_INDICE_AUTORIZACOES)):
+        return "incompativel"
+    cursor.execute(f"PRAGMA index_list({TABELA_AUTORIZACOES})")
+    # (seq, name, unique, origin, partial)
+    lista = {linha[1]: linha for linha in cursor.fetchall()}
+    if set(lista) != {INDICE_AUTORIZACOES_EXPIRA, *automaticos} or len(automaticos) != 1:
+        return "incompativel"
+    if lista[automaticos[0]][3] != "pk" or lista[INDICE_AUTORIZACOES_EXPIRA][2:5] != (0, "c", 0):
+        return "incompativel"
+    cursor.execute(f"PRAGMA index_info({INDICE_AUTORIZACOES_EXPIRA})")
+    if [linha[2] for linha in cursor.fetchall()] != ["expira_em"]:
+        return "incompativel"
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?", (TABELA_AUTORIZACOES,))
+    if cursor.fetchone() is not None:
+        return "incompativel"
+    return "valida"
+
+
+def _autorizacoes_invalidas(cursor):
+    """Linhas que não seguem o formato estrito (as restrições do DDL não pegam
+    tudo, ex.: texto numérico convertido pela afinidade INTEGER)."""
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) FROM {TABELA_AUTORIZACOES}
+        WHERE typeof(jti) != 'text' OR length(jti) != 22
+           OR jti GLOB '*[^A-Za-z0-9_-]*' OR substr(jti, 22, 1) NOT IN ('A', 'Q', 'g', 'w')
+           OR typeof(finalidade) != 'text'
+           OR finalidade NOT IN ('cadastro', 'alteracao_email', 'recuperacao_senha')
+           OR typeof(expira_em) != 'integer' OR expira_em <= 0
+        """
+    )
+    return cursor.fetchone()[0]
+
+
+def _verificar_schema_v8(cursor):
+    """Checagens da v7 (com user_version 8) + tabela de autorizações exata e
+    com dados no formato estrito."""
+    resultado = _verificar_schema_v7(cursor, versao_esperada=VERSAO_SCHEMA_V8)
+    resultado["tabela_autorizacoes"] = _estado_tabela_autorizacoes(cursor)
+    resultado["autorizacoes_invalidas"] = (
+        _autorizacoes_invalidas(cursor) if resultado["tabela_autorizacoes"] == "valida" else None
+    )
+    resultado["ok"] = (
+        resultado["ok"]
+        and resultado["tabela_autorizacoes"] == "valida"
+        and resultado["autorizacoes_invalidas"] == 0
+    )
+    return resultado
+
+
 def validar_schema_atual(caminho_banco=None):
     """
-    Checagens do schema atual (v7): tudo o que `validar_migracao_v6()`
+    Checagens do schema atual (v8): tudo o que `validar_migracao_v6()`
     verifica, mais as colunas e o índice da posição lógica, nenhuma
     ocorrência de série sem posição/vaga, nenhuma coluna fora do schema
-    conhecido e `user_version = 7`. Só consulta
-    o banco (FileNotFoundError se não existir).
+    conhecido, a tabela `autorizacoes_usadas` exata e com dados válidos e
+    `user_version = 8`. Só consulta o banco (FileNotFoundError se não existir).
     """
     caminho_banco = caminho_banco or NOME_DO_BANCO
     if not os.path.exists(caminho_banco):
         raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
     conexao = sqlite3.connect(caminho_banco)
     try:
-        return _verificar_schema_v7(conexao.cursor())
+        return _verificar_schema_v8(conexao.cursor())
     finally:
         conexao.close()
 
@@ -1064,10 +1205,10 @@ def migrar_schema_v7(caminho_banco=None):
             if estado == "incompativel":
                 problemas.append(f"{item} com definição diferente da esperada")
 
-        if versao == VERSAO_SCHEMA_V7:
+        if versao >= VERSAO_SCHEMA_V7:  # v8 também tem todos os itens da v7
             completos = all(e in ("valida", "valido") for e in estados_v7.values())
             if not completos:
-                problemas.append("user_version 7 sem todos os itens da v7")
+                problemas.append(f"user_version {versao} sem todos os itens da v7")
             if problemas:
                 raise SchemaV7IncompativelError(problemas)
             cursor.execute("ROLLBACK;")
@@ -1136,6 +1277,114 @@ def migrar_schema_v7(caminho_banco=None):
     return {"executado": True, "backup": caminho_backup, "ocorrencias_provaveis": provaveis}
 
 
+def _dados_v7(cursor):
+    """Todas as linhas das quatro tabelas com as colunas v5+v6+v7 (RNF08 na v8)."""
+    dados = {}
+    for tabela, colunas in COLUNAS_V5.items():
+        colunas = list(colunas) + [c for t, c, _, _ in COLUNAS_V6 + COLUNAS_V7 if t == tabela]
+        cursor.execute(f"SELECT {', '.join(colunas)} FROM {tabela} ORDER BY id")
+        dados[tabela] = cursor.fetchall()
+    return dados
+
+
+def migrar_schema_v8(caminho_banco=None):
+    """
+    Migração v7 -> v8 (Etapa 8): tabela `autorizacoes_usadas` e seu índice.
+    Aditiva (RNF08): nenhuma tabela ou coluna existente é alterada.
+
+    Tudo dentro de `BEGIN IMMEDIATE`. Antes de qualquer escrita e sem backup:
+      * `user_version` não suportada (VersaoDeBancoNaoSuportadaError) ou
+        anterior à 7 (SchemaV8IncompativelError -- a v7 vem antes);
+      * banco v8: a tabela precisa existir, exata e com dados válidos;
+        senão SchemaV8IncompativelError. Íntegro: {"executado": False,
+        "motivo": "já migrado"};
+      * banco v7: a tabela ausente é o esperado e é criada. Se já existir,
+        não se presume que veio de uma migração interrompida (a migração é
+        atômica): só é reaproveitada se o DDL, o índice e os dados
+        estiverem exatamente no formato; qualquer divergência é recusada;
+      * banco v7 que não passa na própria validação: BancoNaoPreparadoError.
+    Depois: backup com integrity_check, criação, `user_version = 8`,
+    validação (schema v8, contagens e dados v7 idênticos) e COMMIT. Qualquer
+    falha reverte tudo; o backup, se já criado, permanece no disco.
+
+    Retorna {"executado": True, "backup": caminho, "tabela_reaproveitada": bool}.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+
+    conexao = sqlite3.connect(caminho_banco)
+    caminho_backup = None
+    try:
+        conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+
+        versao = _exigir_versao_suportada(cursor)
+        if versao < VERSAO_SCHEMA_V7:
+            raise SchemaV8IncompativelError(
+                [f"user_version {versao}: o banco precisa passar pela migração v7 antes da v8"]
+            )
+        estado = _estado_tabela_autorizacoes(cursor)
+        invalidas = _autorizacoes_invalidas(cursor) if estado == "valida" else 0
+
+        if versao == VERSAO_SCHEMA_V8:
+            if estado != "valida":
+                raise SchemaV8IncompativelError([f"banco v8 com {TABELA_AUTORIZACOES} {estado}"])
+            if invalidas:
+                raise SchemaV8IncompativelError([f"{invalidas} registro(s) de autorização fora do formato"])
+            verificacao = _verificar_schema_v8(cursor)
+            if not verificacao["ok"]:
+                raise BancoNaoPreparadoError(verificacao)
+            cursor.execute("ROLLBACK;")
+            return {"executado": False, "motivo": "já migrado", "backup": None}
+
+        if estado == "incompativel":
+            raise SchemaV8IncompativelError(
+                [f"{TABELA_AUTORIZACOES} ou {INDICE_AUTORIZACOES_EXPIRA} com definição diferente da esperada"]
+            )
+        if invalidas:
+            raise SchemaV8IncompativelError([f"{invalidas} registro(s) de autorização fora do formato"])
+        validacao_v7 = _verificar_schema_v7(cursor)
+        if not validacao_v7["ok"]:
+            raise BancoNaoPreparadoError(validacao_v7)
+
+        # Lido por outra conexão: o RESERVED lock deste BEGIN IMMEDIATE ainda
+        # permite leitura e garante que nada muda entre o backup e as alterações.
+        caminho_backup = criar_backup(caminho_banco, rotulo="v8")
+        if not _verificar_integridade_backup(caminho_backup):
+            raise RuntimeError(
+                f"Backup pré-migração v8 falhou no integrity_check ({caminho_backup}); "
+                "migração abortada."
+            )
+
+        contagens_antes = _contagens(cursor)
+        dados_antes = _dados_v7(cursor)
+
+        if estado == "ausente":
+            _criar_tabela_autorizacoes(cursor)
+        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V8};")
+
+        verificacao = _verificar_schema_v8(cursor)
+        if (not verificacao["ok"] or _contagens(cursor) != contagens_antes
+                or _dados_v7(cursor) != dados_antes):
+            raise RuntimeError("Validação pós-migração v8 falhou; alterações revertidas.")
+
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+    return {"executado": True, "backup": caminho_backup, "tabela_reaproveitada": estado == "valida"}
+
+
+def _criar_tabela_autorizacoes(cursor):
+    cursor.execute(DDL_AUTORIZACOES)
+    cursor.execute(DDL_INDICE_AUTORIZACOES)
+
+
 def _banco_existente_vazio(caminho_banco):
     """
     Só leitura. Recusa `user_version` não suportada (VersaoDeBancoNaoSuportadaError)
@@ -1154,20 +1403,21 @@ def _banco_existente_vazio(caminho_banco):
 def preparar_banco():
     """
     Garante, na inicialização do app, que `NOME_DO_BANCO` está no schema
-    atual (v7), reutilizando `criar_tabelas()`, `migrar_schema_v6()`,
-    `migrar_schema_v7()` e `validar_schema_atual()`:
+    atual (v8), reutilizando `criar_tabelas()`, `migrar_schema_v6()`,
+    `migrar_schema_v7()`, `migrar_schema_v8()` e `validar_schema_atual()`:
 
       * `user_version` fora de VERSOES_SUPORTADAS (ex.: banco de uma versão
         futura): `VersaoDeBancoNaoSuportadaError` antes de qualquer escrita;
       * banco inexistente, ou arquivo sem nenhuma tabela: `criar_tabelas()`
-        gera o schema v7 direto, sem backup -> situação "criado";
+        gera o schema v8 direto, sem backup -> situação "criado";
       * banco que já passa em `validar_schema_atual()`: nada é gravado, nem
         lock de escrita é pedido -> "atual";
-      * banco v5 (ou v6 incompleto): `migrar_schema_v6()` e depois
-        `migrar_schema_v7()` -- duas transações e dois backups. Se a v7
-        falhar, o banco fica em v6 válido (com o backup v6) e a próxima
-        inicialização retoma a partir dele;
-      * banco v6: só `migrar_schema_v7()` -> "migrado".
+      * banco v5 (ou v6 incompleto): `migrar_schema_v6()`, `migrar_schema_v7()`
+        e `migrar_schema_v8()` -- uma transação e um backup por etapa. Se uma
+        etapa falhar, o banco fica na última versão válida (com o backup
+        dela) e a próxima inicialização retoma a partir dali;
+      * banco v6: `migrar_schema_v7()` e `migrar_schema_v8()`; banco v7: só
+        `migrar_schema_v8()` -> "migrado".
 
     `criar_tabelas()` nunca é chamada sobre um banco existente. Ao final, o
     banco precisa passar em `validar_schema_atual()`; caso contrário,
@@ -1176,26 +1426,28 @@ def preparar_banco():
     reparo silencioso, e quem chama decide como interromper o app.
 
     Retorna {"situacao": "criado" | "migrado" | "atual",
-             "migracao": dict | None (v6), "migracao_v7": dict | None}.
+             "migracao": dict | None (v6), "migracao_v7": dict | None,
+             "migracao_v8": dict | None}.
     """
     caminho_banco = NOME_DO_BANCO
-    migracao_v6 = migracao_v7 = None
+    migracao_v6 = migracao_v7 = migracao_v8 = None
     if not os.path.exists(caminho_banco) or _banco_existente_vazio(caminho_banco):
         criar_tabelas()
         situacao = "criado"
     elif validar_schema_atual(caminho_banco)["ok"]:
-        return {"situacao": "atual", "migracao": None, "migracao_v7": None}
+        return {"situacao": "atual", "migracao": None, "migracao_v7": None, "migracao_v8": None}
     else:
         if not validar_migracao_v6(caminho_banco)["ok"]:
             migracao_v6 = migrar_schema_v6(caminho_banco)
         migracao_v7 = migrar_schema_v7(caminho_banco)
-        executou = any(m is not None and m["executado"] for m in (migracao_v6, migracao_v7))
+        migracao_v8 = migrar_schema_v8(caminho_banco)
+        executou = any(m is not None and m["executado"] for m in (migracao_v6, migracao_v7, migracao_v8))
         situacao = "migrado" if executou else "atual"
 
     validacao = validar_schema_atual(caminho_banco)
     if not validacao["ok"]:
         raise BancoNaoPreparadoError(validacao)
-    return {"situacao": situacao, "migracao": migracao_v6, "migracao_v7": migracao_v7}
+    return {"situacao": situacao, "migracao": migracao_v6, "migracao_v7": migracao_v7, "migracao_v8": migracao_v8}
 
 
 # RNF05: PBKDF2-HMAC-SHA256 (stdlib, sem dependência nova) com salt aleatório
@@ -1499,6 +1751,394 @@ def alterar_senha(usuario_id, senha_atual, nova_senha):
         conexao.close()
 
 
+# ======================================================================
+#  Etapa 8: operações confirmadas por código (consomem a autorização)
+# ======================================================================
+#
+# O serviço de códigos confirma o acesso ao e-mail com uma autorização
+# assinada, conferida pelo cliente (backend/servico_codigos.py). Aqui ela é
+# consumida: o jti é gravado em `autorizacoes_usadas` na MESMA transação da
+# operação (cadastro, alteração de e-mail, redefinição de senha) -- ou tudo
+# é gravado, ou nada, e a autorização continua sem uso.
+#
+# A camada de dados não importa o cliente nem o `cryptography`: recebe o
+# objeto da autorização verificada e confere, por atributos, finalidade,
+# vínculo com o e-mail da operação e validade (relógio monotônico, injetável
+# nos testes) antes do bloqueio, logo após o BEGIN IMMEDIATE e imediatamente
+# antes da gravação final. Limite conhecido: quem altera o código do app ou
+# edita o banco contorna qualquer conferência local.
+
+_RE_JTI_CANONICO = re.compile(r"[A-Za-z0-9_-]{21}[AQgw]")
+
+# Formato de e-mail dos fluxos com código (novos endereços), igual ao do
+# serviço (servidor/src/email.ts) e ao do cliente (backend/servico_codigos.py):
+# aparam-se só espaços comuns (U+0020) nas bordas; depois, só ASCII
+# imprimível, um único "@", partes não vazias e até 254 caracteres. Em ASCII,
+# as minúsculas de Python, JavaScript e do lower() do SQLite coincidem, o que
+# mantém a unicidade por lower(email) coerente com o vínculo da autorização.
+# E-mails antigos não são alterados e continuam entrando (P2).
+TAMANHO_MAXIMO_EMAIL = 254
+_RE_EMAIL = re.compile(r"[\x21-\x3f\x41-\x7e]+@[\x21-\x3f\x41-\x7e]+")
+
+
+class AutorizacaoRecusadaError(ValueError):
+    """A confirmação por código não corresponde a esta operação."""
+
+    def __init__(self, mensagem="A confirmação por código não corresponde a esta operação. Comece de novo."):
+        super().__init__(mensagem)
+
+
+class AutorizacaoExpiradaError(AutorizacaoRecusadaError):
+    def __init__(self):
+        super().__init__("O código expirou. Solicite um novo código.")
+
+
+class AutorizacaoJaUsadaError(AutorizacaoRecusadaError):
+    def __init__(self):
+        super().__init__("Este código já foi usado. Solicite um novo código.")
+
+
+class EmailInvalidoError(ValueError):
+    def __init__(self):
+        super().__init__("Informe um e-mail válido.")
+
+
+def aparar_email(texto):
+    """Remove só espaços comuns (U+0020) das bordas (sem str.strip, que é mais amplo)."""
+    return texto.strip(" ") if isinstance(texto, str) else ""
+
+
+def validar_email_novo(texto):
+    """E-mail sem espaços nas bordas e no formato dos fluxos com código, ou EmailInvalidoError."""
+    if type(texto) is not str:
+        raise EmailInvalidoError()
+    email = aparar_email(texto)
+    if len(email) > TAMANHO_MAXIMO_EMAIL or not _RE_EMAIL.fullmatch(email):
+        raise EmailInvalidoError()
+    return email
+
+
+class EmailEmUsoError(ValueError):
+    def __init__(self):
+        super().__init__("Já existe uma conta com esse e-mail.")
+
+
+class MesmoEmailError(ValueError):
+    def __init__(self):
+        super().__init__("Esse já é o e-mail da sua conta.")
+
+
+class EmailAlteradoDuranteOperacaoError(ValueError):
+    def __init__(self):
+        super().__init__("O e-mail da conta mudou durante a operação. Comece de novo.")
+
+
+class SenhaAlteradaDuranteOperacaoError(ValueError):
+    def __init__(self):
+        super().__init__("A senha da conta mudou durante a operação. Comece de novo.")
+
+
+class ContaNaoEncontradaError(ValueError):
+    def __init__(self):
+        super().__init__("Não foi possível concluir a operação para esta conta. Comece de novo.")
+
+
+class SenhaValidada:
+    """
+    Contrato interno do cadastro: senha nova já aprovada por
+    `validar_nova_senha` e convertida em hash PBKDF2, criada só por
+    `hash_de_nova_senha`. Permite que o cadastro pendente guarde apenas o
+    hash (nunca a senha em texto) e que `concluir_cadastro` não aceite um
+    hash qualquer em texto. Organiza o contrato entre as camadas; não é uma
+    barreira contra código modificado ou acesso direto ao banco.
+    """
+
+    __slots__ = ("_senha_hash",)
+
+    def __init__(self, senha_hash):
+        self._senha_hash = senha_hash
+
+    def __repr__(self):
+        return "SenhaValidada(<oculta>)"
+
+
+def hash_de_nova_senha(senha):
+    """5.33: valida a nova senha (SenhaInvalidaError) e devolve SenhaValidada."""
+    validar_nova_senha(senha)
+    return SenhaValidada(_gerar_hash_senha(senha))
+
+
+def _impressao_senha(senha_hash):
+    return hashlib.sha256((senha_hash or "").encode("utf-8")).hexdigest()
+
+
+class PendenciaAlteracaoEmail:
+    """
+    Estado de uma alteração de e-mail entre a conferência da senha atual e a
+    conclusão: usuário, e-mail original (exatamente como gravado) e a
+    impressão do hash da senha. Não guarda a senha. O repr não mostra o
+    e-mail nem a impressão.
+    """
+
+    __slots__ = ("usuario_id", "email_original", "impressao_senha")
+
+    def __init__(self, usuario_id, email_original, impressao_senha):
+        self.usuario_id = usuario_id
+        self.email_original = email_original
+        self.impressao_senha = impressao_senha
+
+    def __repr__(self):
+        return f"PendenciaAlteracaoEmail(usuario_id={self.usuario_id!r})"
+
+
+def email_em_uso(email, exceto_usuario_id=None):
+    """Há outra conta com esse e-mail (sem diferenciar maiúsculas)? Só leitura."""
+    conexao = conectar()
+    try:
+        linha = conexao.execute(
+            "SELECT 1 FROM usuarios WHERE lower(email) = lower(?) AND (? IS NULL OR id != ?)",
+            (aparar_email(email), exceto_usuario_id, exceto_usuario_id),
+        ).fetchone()
+    finally:
+        conexao.close()
+    return linha is not None
+
+
+def existe_conta_verificada(email):
+    """
+    Há conta com esse e-mail e e-mail verificado? Decide o `sem_envio` da
+    recuperação. Só leitura. O formato é conferido antes de consultar a
+    conta (EmailInvalidoError), igual para qualquer endereço.
+    """
+    email = validar_email_novo(email)
+    conexao = conectar()
+    try:
+        linha = conexao.execute(
+            "SELECT 1 FROM usuarios WHERE lower(email) = lower(?) AND email_verificado = 1",
+            (email,),
+        ).fetchone()
+    finally:
+        conexao.close()
+    return linha is not None
+
+
+def conferir_senha_atual(usuario_id, senha):
+    """
+    Início da alteração de e-mail: confere a senha atual (aceita senhas
+    antigas, em qualquer formato -- CT82) e devolve a PendenciaAlteracaoEmail.
+    SenhaAtualIncorretaError se não conferir; ContaNaoEncontradaError se o
+    usuário não existir.
+    """
+    conexao = conectar()
+    try:
+        linha = conexao.execute("SELECT email, senha_hash FROM usuarios WHERE id = ?", (usuario_id,)).fetchone()
+    finally:
+        conexao.close()
+    if linha is None:
+        raise ContaNaoEncontradaError()
+    email, senha_hash = linha
+    if not isinstance(senha, str) or not _verificar_senha(senha, senha_hash):
+        raise SenhaAtualIncorretaError()
+    return PendenciaAlteracaoEmail(usuario_id, email, _impressao_senha(senha_hash))
+
+
+def _dados_da_autorizacao(autorizacao, finalidade, email):
+    """Confere tipos e vínculo da autorização com a operação (sem a validade)."""
+    jti = getattr(autorizacao, "jti", None)
+    fin = getattr(autorizacao, "finalidade", None)
+    exp = getattr(autorizacao, "exp_utc_s", None)
+    iat = getattr(autorizacao, "iat_utc_s", None)
+    vinculado = getattr(autorizacao, "email_normalizado", None)
+    if not (
+        type(jti) is str and _RE_JTI_CANONICO.fullmatch(jti)
+        and fin == finalidade and finalidade in FINALIDADES_AUTORIZACAO
+        and type(exp) is int and type(iat) is int and 0 < iat <= exp
+        and type(vinculado) is str and type(email) is str
+        and vinculado == email.lower()
+        and callable(getattr(autorizacao, "vigente", None))
+    ):
+        raise AutorizacaoRecusadaError()
+    return jti, exp, iat
+
+
+def _conferir_vigencia(autorizacao, relogio):
+    if autorizacao.vigente(relogio()) is not True:
+        raise AutorizacaoExpiradaError()
+
+
+def _consumir_autorizacao(autorizacao, finalidade, email, relogio, preparar):
+    """
+    Executa uma operação confirmada por código em uma única transação:
+
+      1. confere a autorização (formato, finalidade, vínculo e validade);
+      2. BEGIN IMMEDIATE e confere a validade de novo;
+      3. `preparar(cursor)` lê e valida (recusas não consomem nada) e
+         devolve a função de gravação;
+      4. confere a validade imediatamente antes de gravar;
+      5. grava o jti (uso único: chave primária), executa a gravação e
+         apaga registros com expira_em < iat assinado (referência confiável
+         do horário do servidor; nunca antes da expiração real);
+      6. COMMIT. Qualquer erro desfaz tudo e a autorização segue sem uso.
+    """
+    jti, exp, iat = _dados_da_autorizacao(autorizacao, finalidade, email)
+    _conferir_vigencia(autorizacao, relogio)
+    conexao = conectar()
+    conexao.isolation_level = None  # controle explícito da transação
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+        _conferir_vigencia(autorizacao, relogio)
+        gravar = preparar(cursor)
+        _conferir_vigencia(autorizacao, relogio)
+        try:
+            cursor.execute(
+                f"INSERT INTO {TABELA_AUTORIZACOES} (jti, finalidade, expira_em) VALUES (?, ?, ?)",
+                (jti, finalidade, exp),
+            )
+        except sqlite3.IntegrityError as erro:
+            raise AutorizacaoJaUsadaError() from erro
+        resultado = gravar(cursor)
+        cursor.execute(f"DELETE FROM {TABELA_AUTORIZACOES} WHERE expira_em < ?", (iat,))
+        cursor.execute("COMMIT;")
+        return resultado
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+
+def concluir_cadastro(autorizacao, nome, email, senha, relogio=time.monotonic):
+    """
+    RF01/5.31 (Etapa 8): cria o usuário depois da confirmação do e-mail por
+    código, com `email_verificado = 1`, `termos_aceitos_em` na data da
+    conclusão (o aceite é exigido pela tela antes de pedir o código) e o
+    catálogo de categorias -- tudo na transação que consome a autorização.
+
+    `senha` precisa ser a SenhaValidada de `hash_de_nova_senha` (hash em texto
+    é recusado). Recusas: TypeError (senha), ValueError/LimiteDeCaracteresError
+    (nome), EmailInvalidoError, EmailEmUsoError, AutorizacaoRecusadaError (e
+    subclasses).
+    Devolve o id do novo usuário.
+    """
+    if type(senha) is not SenhaValidada:
+        raise TypeError("a senha do cadastro precisa vir de hash_de_nova_senha()")
+    nome = (nome or "").strip() if isinstance(nome, str) else ""
+    if not nome:
+        raise ValueError("O nome é obrigatório.")
+    validar_limite("nome_usuario", nome, LIMITE_NOME_USUARIO)
+    email = validar_email_novo(email)
+
+    def preparar(cursor):
+        if cursor.execute("SELECT 1 FROM usuarios WHERE lower(email) = lower(?)", (email,)).fetchone():
+            raise EmailEmUsoError()
+
+        def gravar(cursor):
+            try:
+                cursor.execute(
+                    "INSERT INTO usuarios (nome, email, senha_hash, termos_aceitos_em, email_verificado) "
+                    "VALUES (?, ?, ?, ?, 1)",
+                    (nome, email, senha._senha_hash, date.today().isoformat()),
+                )
+            except sqlite3.IntegrityError as erro:
+                raise EmailEmUsoError() from erro
+            usuario_id = cursor.lastrowid
+            _inserir_categorias_padrao(cursor, usuario_id)
+            return usuario_id
+
+        return gravar
+
+    return _consumir_autorizacao(autorizacao, "cadastro", email, relogio, preparar)
+
+
+def alterar_email_verificado(autorizacao, pendencia, novo_email, relogio=time.monotonic):
+    """
+    RF36/5.31 (Etapa 8): troca o e-mail depois da senha atual
+    (`conferir_senha_atual`) e da confirmação do novo endereço por código.
+    O e-mail atual vale até este COMMIT. Recusas, sem consumir a
+    autorização: EmailInvalidoError, ContaNaoEncontradaError, EmailAlteradoDuranteOperacaoError
+    (o e-mail mudou, inclusive só em maiúsculas), SenhaAlteradaDuranteOperacaoError,
+    MesmoEmailError, EmailEmUsoError (CT111). Devolve o novo e-mail gravado.
+    """
+    if type(pendencia) is not PendenciaAlteracaoEmail:
+        raise TypeError("a alteração de e-mail precisa da pendência de conferir_senha_atual()")
+    novo_email = validar_email_novo(novo_email)
+
+    def preparar(cursor):
+        linha = cursor.execute(
+            "SELECT email, senha_hash FROM usuarios WHERE id = ?", (pendencia.usuario_id,),
+        ).fetchone()
+        if linha is None:
+            raise ContaNaoEncontradaError()
+        email_atual, senha_hash = linha
+        if email_atual != pendencia.email_original:
+            raise EmailAlteradoDuranteOperacaoError()
+        if not secrets.compare_digest(_impressao_senha(senha_hash), pendencia.impressao_senha):
+            raise SenhaAlteradaDuranteOperacaoError()
+        if novo_email.lower() == email_atual.lower():
+            raise MesmoEmailError()
+        if cursor.execute(
+            "SELECT 1 FROM usuarios WHERE lower(email) = lower(?) AND id != ?",
+            (novo_email, pendencia.usuario_id),
+        ).fetchone():
+            raise EmailEmUsoError()
+
+        def gravar(cursor):
+            try:
+                cursor.execute(
+                    "UPDATE usuarios SET email = ?, email_verificado = 1 WHERE id = ? AND email = ?",
+                    (novo_email, pendencia.usuario_id, pendencia.email_original),
+                )
+            except sqlite3.IntegrityError as erro:
+                raise EmailEmUsoError() from erro
+            if cursor.rowcount != 1:
+                raise EmailAlteradoDuranteOperacaoError()
+            return novo_email
+
+        return gravar
+
+    return _consumir_autorizacao(autorizacao, "alteracao_email", novo_email, relogio, preparar)
+
+
+def redefinir_senha_por_autorizacao(autorizacao, email, nova_senha, relogio=time.monotonic):
+    """
+    RF39/5.35 (Etapa 8): define a nova senha depois da confirmação por
+    código. Recusa e-mail fora do formato (EmailInvalidoError) antes de
+    consultar a conta. Exige conta com esse e-mail VERIFICADO. A nova senha segue
+    `validar_nova_senha` e precisa ser diferente da atual (também comparada
+    com hashes antigos); essas recusas (SenhaInvalidaError,
+    SenhaIgualAtualError) não consomem a autorização, que segue válida até o
+    prazo original. Devolve o id do usuário.
+    """
+    email = validar_email_novo(email)  # formato antes de consultar a conta
+    validar_nova_senha(nova_senha)
+    novo_hash = _gerar_hash_senha(nova_senha)  # antes do bloqueio: PBKDF2 é custoso
+
+    def preparar(cursor):
+        linha = cursor.execute(
+            "SELECT id, senha_hash FROM usuarios WHERE lower(email) = lower(?) AND email_verificado = 1",
+            (email,),
+        ).fetchone()
+        if linha is None:
+            raise ContaNaoEncontradaError()
+        usuario_id, senha_hash = linha
+        if _verificar_senha(nova_senha, senha_hash):
+            raise SenhaIgualAtualError()
+
+        def gravar(cursor):
+            cursor.execute(
+                "UPDATE usuarios SET senha_hash = ? WHERE id = ? AND senha_hash = ?",
+                (novo_hash, usuario_id, senha_hash),
+            )
+            if cursor.rowcount != 1:
+                raise SenhaAlteradaDuranteOperacaoError()
+            return usuario_id
+
+        return gravar
+
+    return _consumir_autorizacao(autorizacao, "recuperacao_senha", email, relogio, preparar)
+
+
 def definir_tema(usuario_id, tema):
     """
     RF40/5.36: grava a preferência de tema do usuário ("claro" ou
@@ -1715,13 +2355,7 @@ def inicializar_categorias_padrao(usuario_id):
 
         try:
             cursor.execute("BEGIN;")
-            ids_criados = []
-            for indice, (nome, icone) in enumerate(CATEGORIAS_PRE_CRIADAS):
-                cursor.execute(
-                    "INSERT INTO categorias (usuario_id, nome, icone, cor) VALUES (?, ?, ?, ?)",
-                    (usuario_id, nome, icone, CORES_CATEGORIAS_PRE_CRIADAS[indice]),
-                )
-                ids_criados.append(cursor.lastrowid)
+            ids_criados = _inserir_categorias_padrao(cursor, usuario_id)
             cursor.execute("COMMIT;")
         except Exception:
             cursor.execute("ROLLBACK;")
@@ -1729,6 +2363,18 @@ def inicializar_categorias_padrao(usuario_id):
     finally:
         conexao.close()
 
+    return ids_criados
+
+
+def _inserir_categorias_padrao(cursor, usuario_id):
+    """Insere o catálogo pré-criado na transação de quem chama; devolve os ids."""
+    ids_criados = []
+    for indice, (nome, icone) in enumerate(CATEGORIAS_PRE_CRIADAS):
+        cursor.execute(
+            "INSERT INTO categorias (usuario_id, nome, icone, cor) VALUES (?, ?, ?, ?)",
+            (usuario_id, nome, icone, CORES_CATEGORIAS_PRE_CRIADAS[indice]),
+        )
+        ids_criados.append(cursor.lastrowid)
     return ids_criados
 
 

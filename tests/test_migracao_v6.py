@@ -140,13 +140,30 @@ class AuxiliaresBancoV6(TesteComBancoTemporario):
         self.assertEqual(indices.get(db.INDICE_EMAIL_CI), 1)
         self.assertEqual(self.sql(caminho, "PRAGMA user_version")[0][0], versao)
 
-    def assert_schema_v7(self, caminho):
-        """Schema atual: tudo da v6 + posição lógica (Etapa 2b), user_version 7."""
-        self.assert_schema_v6(caminho, versao=7)
+    def assert_schema_v7(self, caminho, versao=7):
+        """Tudo da v6 + posição lógica (Etapa 2b), com a user_version indicada."""
+        self.assert_schema_v6(caminho, versao=versao)
         for (tabela, coluna), definicao in COLUNAS_V7.items():
             self.assertEqual(self.colunas(caminho, tabela).get(coluna), definicao, f"{tabela}.{coluna}")
         indices = {linha[1]: linha[2] for linha in self.sql(caminho, "PRAGMA index_list(contas)")}
         self.assertEqual(indices.get(db.INDICE_POSICAO), 1)
+
+    def assert_schema_v8(self, caminho):
+        """Schema atual: tudo da v7 + autorizacoes_usadas (Etapa 8), user_version 8."""
+        self.assert_schema_v7(caminho, versao=8)
+        conexao = sqlite3.connect(caminho)
+        try:
+            self.assertEqual(db._estado_tabela_autorizacoes(conexao.cursor()), "valida")
+        finally:
+            conexao.close()
+
+    def validar_schema_v7(self, caminho):
+        """Validação da v7 como versão final (antes da migração v8)."""
+        conexao = sqlite3.connect(caminho)
+        try:
+            return db._verificar_schema_v7(conexao.cursor())
+        finally:
+            conexao.close()
 
 
 class TesteMigracaoV6(AuxiliaresBancoV6):
@@ -240,9 +257,9 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
     # ------------------------------------------------------------------
     #  Banco novo e criar_tabelas()
     # ------------------------------------------------------------------
-    def test_banco_novo_ja_nasce_v7_e_migracao_v6_nao_faz_nada(self):
-        # Etapa 2b: criar_tabelas() cria o schema atual (v7), que contém a v6.
-        self.assert_schema_v7(self.caminho_banco)
+    def test_banco_novo_ja_nasce_v8_e_migracao_v6_nao_faz_nada(self):
+        # Etapa 8: criar_tabelas() cria o schema atual (v8), que contém a v6 e a v7.
+        self.assert_schema_v8(self.caminho_banco)
         self.assertTrue(db.validar_migracao_v6(self.caminho_banco)["ok"])
         self.assertTrue(db.validar_schema_atual(self.caminho_banco)["ok"])
 
