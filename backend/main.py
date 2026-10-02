@@ -1003,9 +1003,10 @@ def main(page: ft.Page):
         (sessão encerrada). Encerra as operações, espera as gravações locais
         em curso e fecha o transporte. O Flet não aguarda este handler: no
         desktop, ao fechar a janela, ele dispara o evento "close" sem esperar
-        e cancela as tarefas em execução. A gravação local fica protegida
-        pela atomicidade da transação SQLite e pelo encerramento do loop e do
-        executor de threads; a validação real do fechamento continua pendente.
+        e o `asyncio.run` cancela as tarefas pendentes. A gravação local é um
+        futuro do executor fora desse cancelamento (ControleOperacao.gravar)
+        e fica protegida pela atomicidade da transação SQLite; a validação
+        manual do fechamento com essa correção continua pendente.
         """
         encerrar_operacoes()
         await fluxos_codigo.aguardar_todas_as_gravacoes()

@@ -6,10 +6,15 @@ gravação concluída nunca é tratada como cancelada). Sem Flet, rede ou banco.
 """
 
 import asyncio
+import contextvars
 import io
+import os
+import subprocess
+import sys
 import threading
 import unittest
 from contextlib import redirect_stderr
+from unittest import mock
 
 import apoio_servico  # noqa: F401 -- coloca backend/ no caminho
 
@@ -251,6 +256,165 @@ class TestControleOperacao(unittest.IsolatedAsyncioTestCase):
         liberar.set()
         await espera
         self.assertEqual(await tarefa, "ok")
+
+
+class TestGravacaoNoEncerramento(unittest.IsolatedAsyncioTestCase):
+    """
+    Regressão da validação manual do fechamento (Etapa 8): ao fechar a janela
+    durante uma gravação, o asyncio.run do Flet cancela todas as Tasks; a
+    gravação era uma Task e, cancelada, fazia o laço de `gravar` girar sem
+    ceder ao loop (processo preso a 100% de CPU depois do COMMIT).
+    """
+
+    def limitar_voltas(self, limite=50):
+        """Falha em vez de travar o teste se `gravar` repetir o shield sem fim."""
+        original = asyncio.shield
+        voltas = [0]
+
+        def shield_contado(alvo):
+            voltas[0] += 1
+            if voltas[0] > limite:
+                raise RuntimeError("giro: shield repetido sem fim")
+            return original(alvo)
+
+        patcher = mock.patch.object(fc.asyncio, "shield", shield_contado)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return voltas
+
+    async def iniciar_gravacao(self, controle, funcao):
+        comecou = threading.Event()
+
+        def gravacao():
+            comecou.set()
+            return funcao()
+
+        tarefa = asyncio.create_task(controle.gravar(gravacao))
+        await asyncio.to_thread(comecou.wait, 5)
+        [futuro] = controle._gravacoes
+        return tarefa, futuro
+
+    async def test_contexto_e_propagado_para_a_thread(self):
+        variavel = contextvars.ContextVar("sino_teste")
+        variavel.set("da tela")
+        self.assertEqual(await fc.ControleOperacao().gravar(variavel.get), "da tela")
+
+    async def test_gravacao_nao_e_uma_task_cancelada_pelo_encerramento(self):
+        self.limitar_voltas()
+        controle = fc.ControleOperacao()
+        liberar = threading.Event()
+        tarefa, futuro = await self.iniciar_gravacao(controle, lambda: liberar.wait(5) and "id-3")
+        eh_task = isinstance(futuro, asyncio.Task)
+        # o que o asyncio.run faz ao encerrar: cancela todas as Tasks pendentes
+        for pendente in asyncio.all_tasks():
+            if pendente is not asyncio.current_task():
+                pendente.cancel()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        futuro_cancelado, tarefa_terminou = futuro.cancelled(), tarefa.done()
+        liberar.set()
+        # aguardar antes de conferir: com o limitador ativo, um giro termina em erro, não trava
+        with self.assertRaises(asyncio.CancelledError):
+            await tarefa
+        self.assertFalse(eh_task)
+        self.assertFalse(futuro_cancelado)
+        self.assertFalse(tarefa_terminou)  # a tarefa da tela esperou a thread
+        self.assertEqual(controle.resultado_gravacao, "id-3")  # resultado real preservado
+        self.assertTrue(controle.gravacao_concluida)
+        self.assertFalse(controle.em_gravacao)
+
+    async def test_futuro_cancelado_propaga_o_cancelamento_sem_girar(self):
+        voltas = self.limitar_voltas()
+        controle = fc.ControleOperacao()
+        liberar = threading.Event()
+        self.addCleanup(liberar.set)
+        tarefa, futuro = await self.iniciar_gravacao(controle, lambda: liberar.wait(5))
+        saida = io.StringIO()
+        with redirect_stderr(saida):
+            futuro.cancel()  # ex.: executor encerrado
+            with self.assertRaises(asyncio.CancelledError):
+                await tarefa
+        self.assertLessEqual(voltas[0], 2)
+        self.assertIsNone(controle.resultado_gravacao)
+        self.assertFalse(controle.gravacao_concluida)
+        self.assertFalse(controle.em_gravacao)
+        self.assertIn("gravação sem confirmação no encerramento (CancelledError)", saida.getvalue())
+
+    async def test_tarefa_e_futuro_cancelados_juntos_nao_giram(self):
+        voltas = self.limitar_voltas()
+        controle = fc.ControleOperacao()
+        liberar = threading.Event()
+        self.addCleanup(liberar.set)
+        tarefa, futuro = await self.iniciar_gravacao(controle, lambda: liberar.wait(5))
+        with redirect_stderr(io.StringIO()):
+            tarefa.cancel()   # cancelamento da tarefa que aguarda: continua esperando
+            for _ in range(5):
+                await asyncio.sleep(0)
+            self.assertFalse(tarefa.done())
+            futuro.cancel()   # cancelamento do próprio futuro: encerra a espera
+            with self.assertRaises(asyncio.CancelledError):
+                await tarefa
+        self.assertLessEqual(voltas[0], 3)
+
+    async def test_aguardar_todas_as_gravacoes_com_futuro_cancelado(self):
+        self.limitar_voltas()
+        controle = fc.ControleOperacao()
+        liberar = threading.Event()
+        self.addCleanup(liberar.set)
+        tarefa, futuro = await self.iniciar_gravacao(controle, lambda: liberar.wait(5))
+        with redirect_stderr(io.StringIO()):
+            futuro.cancel()
+            await asyncio.wait_for(fc.aguardar_todas_as_gravacoes(), 2)
+            with self.assertRaises(asyncio.CancelledError):
+                await tarefa
+
+
+ENCERRAMENTO_DURANTE_GRAVACAO = r"""
+import asyncio, sys, threading, time
+sys.path.insert(0, sys.argv[1])
+import fluxos_codigo as fc
+
+falhar = sys.argv[2] == "falha"
+controle = fc.ControleOperacao()
+
+def gravar():
+    time.sleep(0.5)
+    print("thread: gravação concluída", flush=True)
+    if falhar:
+        raise RuntimeError("detalhe sensível")
+    return "id-1"
+
+async def main():
+    async def acao():
+        await controle.gravar(gravar)
+    asyncio.get_running_loop().create_task(controle.executar(acao))
+    await asyncio.sleep(0.1)   # a janela fecha durante a gravação: main retorna
+
+asyncio.run(main())
+print("asyncio.run terminou:", type(controle.resultado_gravacao).__name__, controle.resultado_gravacao
+      if not falhar else "", flush=True)
+"""
+
+
+class TestAsyncioRunDuranteGravacao(unittest.TestCase):
+    """O cenário real em subprocesso com prazo: um giro aparece como tempo esgotado."""
+
+    def rodar(self, modo):
+        backend = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend")
+        return subprocess.run([sys.executable, "-c", ENCERRAMENTO_DURANTE_GRAVACAO, backend, modo],
+                              capture_output=True, text=True, timeout=15)
+
+    def test_encerra_depois_de_concluir_a_gravacao(self):
+        r = self.rodar("ok")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["thread: gravação concluída", "asyncio.run terminou: str id-1"])
+
+    def test_falha_da_gravacao_e_preservada_e_registrada_so_pelo_tipo(self):
+        r = self.rodar("falha")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines()[-1].strip(), "asyncio.run terminou: RuntimeError")
+        self.assertIn("gravação concluída após o fechamento da tela (RuntimeError)", r.stderr)
+        self.assertNotIn("sensível", r.stderr)
 
 
 if __name__ == "__main__":

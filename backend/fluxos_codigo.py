@@ -15,6 +15,7 @@ cadastro, alteração de e-mail e recuperação de senha. Sem Flet.
 """
 
 import asyncio
+import contextvars
 import math
 import sys
 
@@ -161,15 +162,25 @@ class ControleOperacao:
 
     async def gravar(self, funcao, *args):
         """
-        Gravação local fora do loop, protegida: a tarefa da thread fica com
-        referência forte e é aguardada até o fim mesmo se a tarefa da tela for
+        Gravação local fora do loop, protegida: o futuro da thread fica com
+        referência forte e é aguardado até o fim mesmo se a tarefa da tela for
         cancelada (shield sozinho não faz a tarefa externa esperar). Devolve o
         resultado ou levanta a exceção real da gravação. Se a tarefa da tela
         foi cancelada, guarda o resultado real em `resultado_gravacao` e
         propaga o cancelamento sem tocar na tela.
+
+        A gravação é um futuro do executor (`run_in_executor`, com o contexto
+        copiado como em `asyncio.to_thread`), não uma Task: ao fechar a janela
+        o Flet encerra o `asyncio.run`, que cancela todas as Tasks pendentes;
+        este futuro fica de fora e a tarefa da tela continua esperando a
+        thread terminar. Se o próprio futuro for cancelado (ex.: executor
+        encerrado), não há mais resultado a esperar: o cancelamento é
+        propagado na hora -- a transação SQLite segue atômica na thread.
         """
         self.em_gravacao = True
-        gravacao = asyncio.ensure_future(asyncio.to_thread(funcao, *args))
+        loop = asyncio.get_running_loop()
+        contexto = contextvars.copy_context()
+        gravacao = loop.run_in_executor(None, contexto.run, funcao, *args)
         for conjunto in (self._gravacoes, _GRAVACOES):
             conjunto.add(gravacao)
             gravacao.add_done_callback(conjunto.discard)
@@ -179,12 +190,19 @@ class ControleOperacao:
                 try:
                     resultado = await asyncio.shield(gravacao)
                     break
-                except asyncio.CancelledError:
-                    if gravacao.done() and not gravacao.cancelled():
-                        resultado = gravacao.result()  # a exceção real, se houver, sobe daqui
-                        break
-                    cancelada = True  # a tela foi cancelada: continua esperando a thread
-        except asyncio.CancelledError:  # pragma: no cover -- defensivo
+                except asyncio.CancelledError as cancelamento:
+                    if not gravacao.done():
+                        cancelada = True  # só a tarefa da tela foi cancelada: continua esperando a thread
+                        continue
+                    if gravacao.cancelled():
+                        # O próprio futuro foi cancelado: esperar de novo giraria
+                        # sem ceder ao loop. Resultado desconhecido.
+                        self.resultado_gravacao = None
+                        registrar_falha("gravação sem confirmação no encerramento", cancelamento)
+                        raise
+                    resultado = gravacao.result()  # a exceção real, se houver, sobe daqui
+                    break
+        except asyncio.CancelledError:
             raise
         except BaseException as erro:
             self.resultado_gravacao = erro
@@ -224,12 +242,18 @@ async def aguardar_todas_as_gravacoes():
     Usado no fim da sessão do Flet: espera qualquer gravação local ainda em
     curso. Não há garantia de que o Flet aguarde quem chama esta função: no
     desktop, ao fechar a janela, o evento de fim de sessão é disparado sem
-    espera e as tarefas em execução são canceladas. Nesse caso, a gravação
-    depende da atomicidade da transação SQLite e do encerramento do loop e do
-    executor de threads (validação real do fechamento: pendente).
+    espera e o `asyncio.run` cancela as tarefas pendentes. As gravações são
+    futuros do executor (fora desse cancelamento) e a tarefa da tela espera
+    a thread; a atomicidade vem da transação SQLite. Validação: interrupção
+    brusca em pontos definidos aprovada; fechamento da janela durante a
+    gravação com esta correção ainda não validado manualmente.
     """
     for gravacao in list(_GRAVACOES):
         try:
             await asyncio.shield(gravacao)
+        except asyncio.CancelledError as cancelamento:
+            if not gravacao.cancelled():
+                raise  # quem aguarda foi cancelado
+            registrar_falha("gravação sem confirmação no encerramento", cancelamento)
         except Exception as erro:  # noqa: BLE001
             registrar_falha("gravação aguardada no encerramento", erro)
