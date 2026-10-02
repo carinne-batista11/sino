@@ -1,17 +1,22 @@
 """
 Caixa de mensagens de desenvolvimento (servidor/ferramentas/caixa_dev.py),
-usada só na validação manual com o serviço local. Sem rede: as funções de
-leitura, gravação e geração de chaves são testadas diretamente.
+usada na validação manual e no modo de demonstração. As funções de leitura,
+gravação, abertura e geração de chaves são testadas diretamente; o receptor
+HTTP só em 127.0.0.1, porta efêmera (sem rede externa).
 """
 
 import contextlib
+import http.client
 import io
 import json
 import os
 import stat
+import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import HTTPServer
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servidor", "ferramentas"))
@@ -101,6 +106,84 @@ class TestPastaEChaves(unittest.TestCase):
             self.assertNotIn("CHAVE_ASSINATURA", ler(os.path.join(pasta, "app_dev.env")))
             with self.assertRaises(SystemExit):
                 cd.gerar_chaves(pasta)  # não sobrescreve
+
+
+class ProcessoFalso:
+    def __init__(self, codigo=0, demora=False):
+        self.codigo, self.demora = codigo, demora
+
+    def wait(self, timeout=None):
+        if self.demora:
+            raise subprocess.TimeoutExpired("xdg-open", timeout)
+        return self.codigo
+
+
+class TestAbrirMensagem(unittest.TestCase):
+    CAMINHO = "/caixa/0001_abcd_120000.txt"
+
+    def abrir(self, popen):
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            tarefa = cd.abrir_mensagem(1, self.CAMINHO, popen=popen, espera_s=0)
+            if tarefa is not None:
+                tarefa.join(2)
+        return saida.getvalue()
+
+    def test_abre_com_xdg_open_sem_aviso(self):
+        chamadas = []
+        saida = self.abrir(lambda args, **kw: chamadas.append(args) or ProcessoFalso(0))
+        self.assertEqual(chamadas, [["xdg-open", self.CAMINHO]])
+        self.assertEqual(saida, "")
+
+    def test_editor_ainda_aberto_conta_como_aberto(self):
+        self.assertEqual(self.abrir(lambda args, **kw: ProcessoFalso(demora=True)), "")
+
+    def test_falha_so_informa_o_caminho(self):
+        def sem_abridor(args, **kw):
+            raise FileNotFoundError("xdg-open")
+        for popen in (sem_abridor, lambda args, **kw: ProcessoFalso(3)):
+            saida = self.abrir(popen)
+            self.assertIn("não foi possível abrir a mensagem 1 automaticamente; abra manualmente: " + self.CAMINHO, saida)
+
+
+class TestReceptorComAbertura(unittest.TestCase):
+    """Receptor real em 127.0.0.1 (porta efêmera): abre só mensagens novas, depois de responder."""
+
+    def setUp(self):
+        pasta = tempfile.TemporaryDirectory(prefix="sino_caixa_")
+        self.addCleanup(pasta.cleanup)
+        self.caixa = pasta.name
+        self.abertas = []
+        self.servidor = HTTPServer(("127.0.0.1", 0), cd.criar_receptor(self.caixa, self.abrir))
+        threading.Thread(target=self.servidor.serve_forever, daemon=True).start()
+        self.addCleanup(self.servidor.server_close)
+        self.addCleanup(self.servidor.shutdown)
+
+    def abrir(self, numero, caminho):
+        self.abertas.append((numero, os.path.basename(caminho)))
+        if numero == 2:
+            raise RuntimeError("abridor quebrado")
+
+    def enviar(self, mensagem):
+        conexao = http.client.HTTPConnection("127.0.0.1", self.servidor.server_address[1], timeout=5)
+        try:
+            corpo = json.dumps(mensagem).encode()
+            conexao.request("POST", "/mensagens", corpo, {"Content-Type": "application/json"})
+            return conexao.getresponse().status
+        finally:
+            conexao.close()
+
+    def test_abre_so_mensagens_novas_e_falha_ao_abrir_nao_e_falha_de_entrega(self):
+        with contextlib.redirect_stdout(io.StringIO()) as saida:
+            self.assertEqual(self.enviar(MENSAGEM), 200)
+            self.assertEqual(self.enviar(MENSAGEM), 200)  # repetição: não abre de novo
+            self.assertEqual(self.enviar({**MENSAGEM, "chave": "sino/cadastro/d2"}), 200)
+            self.servidor.shutdown()  # o receptor abre depois de responder: espera o último pedido terminar
+        self.assertEqual([n for n, _ in self.abertas], [1, 2])
+        self.assertTrue(all(nome.startswith(f"{n:04d}_") for n, nome in self.abertas))
+        self.assertEqual(len(os.listdir(self.caixa)), 2)
+        self.assertIn("falha ao abrir a mensagem 2 (RuntimeError)", saida.getvalue())
+        self.assertNotIn("042137", saida.getvalue())
 
 
 if __name__ == "__main__":

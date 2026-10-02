@@ -930,7 +930,8 @@ def main(page: ft.Page):
     page.dark_theme = tema_flet("escuro")
     aplicar_tema(modulo_cores.TEMA_PADRAO)
 
-    page.title = "Sino"
+    demonstracao = fluxos_codigo.modo_demonstracao()
+    page.title = fluxos_codigo.TITULO_DEMONSTRACAO if demonstracao else "Sino"
     page.window.width = 380
     page.window.height = 760
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
@@ -1040,6 +1041,17 @@ def main(page: ft.Page):
         codigo = (campo.value or "").strip(" ")
         return codigo if RE_CODIGO.fullmatch(codigo) else None
 
+    def aviso_demonstracao():
+        """Faixa do modo de demonstração (lista vazia fora dele) no topo das telas com código."""
+        if not demonstracao:
+            return []
+        return [ft.Container(
+            data="aviso_demonstracao",
+            content=ft.Text(fluxos_codigo.AVISO_DEMONSTRACAO, size=12, weight=ft.FontWeight.BOLD,
+                            color=cores.texto_sobre_destaque, text_align=ft.TextAlign.CENTER),
+            bgcolor=cores.fundo_cabecalho_destaque, padding=8, border_radius=8,
+        )]
+
     def logo_sino():
         return ft.Container(
             content=ft.Text("$ino", size=28, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
@@ -1074,7 +1086,7 @@ def main(page: ft.Page):
         def tela(self, cabecalho):
             return ft.Column(
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER, **ROLAGEM_DE_TELA,
-                controls=[ft.Container(height=20), cabecalho, ft.Container(height=16), self.titulo,
+                controls=[*aviso_demonstracao(), ft.Container(height=20), cabecalho, ft.Container(height=16), self.titulo,
                           self.explicacao, ft.Container(height=16), self.campo, ft.Container(height=8),
                           self.botao_confirmar, self.mensagem, self.botao_reenviar, self.botao_voltar],
             )
@@ -1447,6 +1459,7 @@ def main(page: ft.Page):
 
         tela_autenticacao = ft.Column(
             controls=[
+                *aviso_demonstracao(),
                 ft.Container(height=20),
                 logo,
                 ft.Container(height=16),
@@ -1685,8 +1698,8 @@ def main(page: ft.Page):
         page.add(ft.Column(
             data="tela_recuperacao",
             horizontal_alignment=ft.CrossAxisAlignment.CENTER, **ROLAGEM_DE_TELA,
-            controls=[ft.Container(height=20), logo_sino(), ft.Container(height=16), titulo, explicacao,
-                      ft.Container(height=16), campo_email, campo_cod, campo_nova, campo_confirmacao,
+            controls=[*aviso_demonstracao(), ft.Container(height=20), logo_sino(), ft.Container(height=16),
+                      titulo, explicacao, ft.Container(height=16), campo_email, campo_cod, campo_nova, campo_confirmacao,
                       ft.Container(height=8), botao, mensagem, botao_reenviar, botao_voltar],
         ))
         page.update()
@@ -5142,7 +5155,8 @@ def main(page: ft.Page):
                 modal=True,
                 title=ft.Text("Alterar e-mail", color=cores.texto_principal),
                 content=ft.Column(tight=True, spacing=8,
-                                  controls=[campo_atual, campo_novo, explicacao, campo_cod, mensagem]),
+                                  controls=[*aviso_demonstracao(), campo_atual, campo_novo, explicacao,
+                                            campo_cod, mensagem]),
                 actions=[botao_cancelar, botao_reenviar, botao_principal],
                 bgcolor=cores.fundo_dialogo,
             ))

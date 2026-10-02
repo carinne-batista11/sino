@@ -17,6 +17,8 @@ cadastro, alteração de e-mail e recuperação de senha. Sem Flet.
 import asyncio
 import contextvars
 import math
+import os
+import re
 import sys
 
 MENSAGEM_RECUPERACAO_NEUTRA = (
@@ -32,6 +34,20 @@ MENSAGEM_CONCLUIDA_SEM_ATUALIZAR = "A operação foi concluída, mas a tela não
 
 # Gravações locais em andamento em todo o processo: referência forte até o fim.
 _GRAVACOES = set()
+
+
+# Modo de demonstração (só desenvolvimento): os códigos vão para a caixa local
+# deste computador (servidor/ferramentas/demonstracao.py), não para
+# o e-mail. Só vale com a variável explícita E o serviço em 127.0.0.1.
+TITULO_DEMONSTRACAO = "Sino — Demonstração"
+AVISO_DEMONSTRACAO = "Modo de demonstração — códigos recebidos neste computador"
+_RE_SERVICO_LOCAL = re.compile(r"http://127\.0\.0\.1:[0-9]{1,5}/?")
+
+
+def modo_demonstracao(ambiente=None):
+    ambiente = os.environ if ambiente is None else ambiente
+    return (ambiente.get("SINO_MODO_DEMONSTRACAO") == "1"
+            and _RE_SERVICO_LOCAL.fullmatch(ambiente.get("SINO_SERVICO_URL") or "") is not None)
 
 
 def registrar_falha(contexto, erro):
