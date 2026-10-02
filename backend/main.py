@@ -843,6 +843,11 @@ def criar_servico_codigos():
 
 RE_CODIGO = re.compile(r"[0-9]{6}")
 
+# Telas de autenticação (login/cadastro, código, recuperação): a coluna ocupa
+# a altura da janela e rola quando o conteúdo passa dela -- campos do
+# cadastro + mensagem de erro longa não cabem nos 760 px (Etapa 8).
+ROLAGEM_DE_TELA = {"scroll": ft.ScrollMode.AUTO, "expand": True}
+
 
 class SessaoSino:
     """
@@ -1067,7 +1072,7 @@ def main(page: ft.Page):
 
         def tela(self, cabecalho):
             return ft.Column(
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER, **ROLAGEM_DE_TELA,
                 controls=[ft.Container(height=20), cabecalho, ft.Container(height=16), self.titulo,
                           self.explicacao, ft.Container(height=16), self.campo, ft.Container(height=8),
                           self.botao_confirmar, self.mensagem, self.botao_reenviar, self.botao_voltar],
@@ -1459,6 +1464,7 @@ def main(page: ft.Page):
                 texto_alternar,
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            **ROLAGEM_DE_TELA,
         )
         if mensagem_inicial is not None:
             mostrar_mensagem(mensagem, mensagem_inicial)
@@ -1677,7 +1683,7 @@ def main(page: ft.Page):
 
         page.add(ft.Column(
             data="tela_recuperacao",
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER, **ROLAGEM_DE_TELA,
             controls=[ft.Container(height=20), logo_sino(), ft.Container(height=16), titulo, explicacao,
                       ft.Container(height=16), campo_email, campo_cod, campo_nova, campo_confirmacao,
                       ft.Container(height=8), botao, mensagem, botao_reenviar, botao_voltar],
