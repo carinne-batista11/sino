@@ -39,7 +39,7 @@ class TestConteudoAprovado(unittest.TestCase):
         for chave, (_, texto) in documentos.DOCUMENTOS.items():
             with self.subTest(chave):
                 self.assertIn(AUTORIA, texto)
-                self.assertIn("Última atualização: 30/09/2026", texto)
+                self.assertIn("Última atualização: 02/10/2026", texto)
                 self.assertIn(CONTATO, texto)
                 self.assertNotIn("PENDENTE", texto)
 
@@ -48,12 +48,43 @@ class TestConteudoAprovado(unittest.TestCase):
         self.assertTrue(documentos.POLITICA_DE_PRIVACIDADE.startswith("# Política de Privacidade do Sino\n"))
 
     def test_limitacoes_atuais_declaradas(self):
-        self.assertIn("não é possível recuperar uma senha esquecida", documentos.TERMOS_DE_USO)
         self.assertIn("não existe a opção de excluir o usuário", documentos.TERMOS_DE_USO)
         self.assertIn("demais informações não são criptografadas", documentos.POLITICA_DE_PRIVACIDADE)
         self.assertIn("remove os dados de todos os usuários daquela instalação", documentos.POLITICA_DE_PRIVACIDADE)
-        self.assertIn("**não estão disponíveis**: alterar o e-mail, recuperar uma senha esquecida e excluir o "
-                      "usuário com todos os seus dados.", documentos.POLITICA_DE_PRIVACIDADE)
+        self.assertIn("Nesta versão, **não está disponível** excluir o usuário com todos os seus dados.",
+                      documentos.POLITICA_DE_PRIVACIDADE)
+
+    def test_codigos_por_email_da_etapa_8(self):  # 5.31, 5.32, 5.35
+        termos, politica = documentos.TERMOS_DE_USO, documentos.POLITICA_DE_PRIVACIDADE
+        # o que deixou de ser verdade não pode continuar declarado
+        self.assertNotIn("**não verifica** se o endereço existe", termos)
+        self.assertNotIn("não é possível recuperar uma senha esquecida", termos)
+        self.assertNotIn("não estão disponíveis**: alterar o e-mail", politica)
+        # regras 5.32 iguais às do serviço
+        self.assertIn("Cada código vale por 10 minutos, aceita até 5 tentativas e só pode ser usado uma vez; "
+                      "um novo código pode ser pedido depois de 60 segundos e invalida o anterior.", termos)
+        # estado atual: serviço não publicado, login local
+        self.assertIn("**Nesta versão, o serviço ainda não foi publicado para uso por outras pessoas**", termos)
+        self.assertIn("Entrar com uma conta já existente continua funcionando sem o serviço.", termos)
+        self.assertIn("**Nesta versão, o serviço de códigos ainda não foi publicado para uso por outras pessoas.**",
+                      politica)
+        # forma de guarda conferida no código do serviço e da caixa de demonstração
+        self.assertNotIn("só em forma protegida", politica)
+        self.assertIn("resumos de mão única (HMAC-SHA256)", politica)
+        self.assertIn("Isso não é criptografia reversível", politica)
+        self.assertIn("gravada como **texto legível** em um arquivo com acesso restrito", politica)
+        self.assertIn("não comprova acesso ao endereço informado", politica)
+        # demonstração: tratamento local, sem afirmação absoluta; envio real x demonstração; neutralidade limitada
+        for texto in (termos, politica):
+            self.assertNotIn("nada sai dele", texto)
+            self.assertIn("os dados do fluxo de códigos são tratados localmente, sem envio ao provedor de e-mail",
+                          texto)
+        self.assertIn("informar o código recebido demonstra acesso à mensagem enviada àquele endereço", termos)
+        self.assertIn("apenas conclui o fluxo demonstrativo e não comprova acesso ao e-mail", termos)
+        self.assertIn("não revela se o endereço corresponde a uma conta que pode recuperar a senha", termos)
+        self.assertNotIn("sempre a mesma", termos)
+        self.assertIn("Esta política será atualizada antes da publicação.", politica)
+        self.assertIn("O Sino não envia nome, senha, informações financeiras nem o arquivo do banco.", politica)
 
     def test_regras_de_senha_da_etapa_7(self):  # 5.33, 5.34
         termos = documentos.TERMOS_DE_USO

@@ -7,6 +7,7 @@
 **Data:** 23 de setembro de 2026
 **Versão anterior:** 5.0 (fechada e auditada em 22/09/2026)
 **Status:** Especificação fechada. Todas as decisões de produto estão tomadas (seção 13.1); restam apenas decisões técnicas de implementação (seção 13.2).
+**Atualização de estado (02/10/2026):** situação da Etapa 8 registrada em 13.3. Nenhuma regra foi alterada.
 
 ---
 
@@ -408,13 +409,15 @@ A estratégia técnica de exclusão e dos relacionamentos no banco é decisão t
 
 # 6. Requisitos Funcionais
 
-**Implementação:** ✅ implementado · 🔨 a implementar na v6.0 · ⏸️ fora do escopo / não aplicável.
+**Implementação:** ✅ implementado · 🧪 implementado, com validação final pendente (ver 13.3) · 🔨 a implementar na v6.0 · ⏸️ fora do escopo / não aplicável.
+
+Nesta atualização (02/10/2026) só foram revisados os marcadores da Etapa 8 (RF01, RF36, RF39); os das Etapas 1–7 ainda não foram revisados.
 
 ## 6.1 Requisitos vigentes (RF01–RF29)
 
 | ID | Descrição | Situação | Impl. |
 |---|---|---|---|
-| RF01 | Criar conta de usuário com nome, e-mail verificado por código e senha de no mínimo 8 caracteres. | v6 alterado (5.31, 5.33) | 🔨 |
+| RF01 | Criar conta de usuário com nome, e-mail verificado por código e senha de no mínimo 8 caracteres. | v6 alterado (5.31, 5.33) | 🧪 |
 | RF02 | Login com e-mail e senha. | v5 | ✅ |
 | RF03 | Associar as contas financeiras ao usuário logado. | v5 | ✅ |
 | RF04 | Cadastrar conta com nome, valor, vencimento, categoria e, opcionalmente, descrição. | v6 alterado (5.22) | 🔨 |
@@ -454,10 +457,10 @@ A estratégia técnica de exclusão e dos relacionamentos no banco é decisão t
 | RF33 | Validar os limites de caracteres de nome do usuário, nome da conta, nome da categoria e descrição. | 5.23 | 🔨 |
 | RF34 | Exibir a tela Gráfico com navegação mensal/anual, total do período, total pago e estado de período vazio. | 5.24, 5.26, 5.30 | 🔨 |
 | RF35 | Exibir e permitir alterar o nome do usuário em Ajustes. | 5.23 | 🔨 |
-| RF36 | Exibir e permitir alterar o e-mail, com verificação por código. | 5.31, 5.32 | 🔨 |
+| RF36 | Exibir e permitir alterar o e-mail, com verificação por código. | 5.31, 5.32 | 🧪 |
 | RF37 | Exigir senha com no mínimo 8 caracteres sempre que uma senha for definida. | 5.33 | 🔨 |
 | RF38 | Permitir alterar a senha em Ajustes. | 5.34 | 🔨 |
-| RF39 | Permitir recuperar a senha por código enviado ao e-mail, a partir do Login. | 5.35 | 🔨 |
+| RF39 | Permitir recuperar a senha por código enviado ao e-mail, a partir do Login. | 5.35 | 🧪 |
 | RF40 | Permitir escolher tema Claro ou Escuro. | 5.36 | 🔨 |
 | RF41 | Permitir consultar Termos de Uso e Política de Privacidade em Ajustes. | 5.37 | 🔨 |
 | RF42 | Permitir sair da conta sem remover dados. | 5.38 | 🔨 |
@@ -609,7 +612,7 @@ Os nomes são proposta de referência. Ajustes que não mudem o comportamento es
 | `usuarios` | limite de 70 caracteres em `nome` (campo já existente e obrigatório) | 5.23 |
 | `usuarios` | indicador de e-mail verificado | 5.31 |
 | `usuarios` | preferência de tema (padrão: claro) | 5.36 |
-| nova (ex.: `codigos_verificacao`) | usuário, finalidade (verificação de e-mail / recuperação de senha), código armazenado de forma segura (ex.: hash), e-mail de destino, expiração, tentativas, utilizado | 5.32 |
+| nova (ex.: `codigos_verificacao`) | usuário, finalidade (verificação de e-mail / recuperação de senha), código armazenado de forma segura (ex.: hash), e-mail de destino, expiração, tentativas, utilizado | 5.32 — implementado de outra forma: os códigos ficam no serviço; localmente, `autorizacoes_usadas` (schema v8). Ver 13.3 |
 | a definir | representação de "Sem categoria" | T1 |
 
 Toda migração segue RNF08, com backup prévio.
@@ -763,8 +766,39 @@ Ficam a critério da implementação, desde que o comportamento especificado sej
 * **T1** Representação interna de "Sem categoria" (NULL ou outra solução). Antes da implementação, confirmar que nenhuma categoria existente usa um cinza da paleta atual.
 * **T2** Estratégia de exclusão da conta de usuário e dos relacionamentos no banco (contas, séries, categorias, códigos de verificação).
 * **T3** Paleta definitiva do tema escuro, respeitando 5.36 e RNF09.
-* **T4** Serviço de envio de e-mail: escolha entre SMTP e API e do provedor, desde que haja opção gratuita adequada ao projeto e que os segredos sigam RNF11.
+* **T4** Serviço de envio de e-mail: escolha entre SMTP e API e do provedor, desde que haja opção gratuita adequada ao projeto e que os segredos sigam RNF11. Situação em 02/10/2026: serviço próprio de códigos com envio pela API da Resend, implementado e ainda não publicado (13.3).
 * **T5** Forma de contar o caractere percebido (por exemplo, por agrupamentos de grafemas), aplicada igualmente na interface e na gravação.
+
+## 13.3 Estado da Etapa 8 (02/10/2026)
+
+Registro de situação, sem mudança de regra. Detalhes técnicos no [contrato do serviço](contrato-servico-codigos.md); validações em [validacao-etapa8.md](validacao-etapa8.md).
+
+**Resumo:** a **entrega local de códigos** (serviço no próprio computador, caixa de desenvolvimento e modo de demonstração) está **concluída e validada**. A **publicação para outras pessoas** (serviço publicado, entrega real de e-mails, hospedagem e revisões) está **pendente**. A Etapa 8, como um todo, **não está concluída**.
+
+**Implementado**
+
+* Serviço próprio de códigos (`servidor/`, TypeScript em Cloudflare Workers com Durable Objects): gera, envia e confere os códigos com as regras de 5.32 e limites contra abuso; envio pela API da Resend. Não conhece contas, senhas nem dados financeiros.
+* O app recebe uma autorização assinada (Ed25519), conferida localmente, e registra o uso único em `autorizacoes_usadas` (schema v8), na mesma transação da operação.
+* Cadastro com verificação (RF01), alteração de e-mail com senha atual e código (RF36) e recuperação de senha em três passos, com resposta neutra (RF39). O login continua local (e-mail e senha conferidos no computador).
+* Textos dos e-mails definidos em `servidor/src/envio/mensagens.ts`; limites e retenção do serviço definidos no contrato v1.
+* Sem o serviço configurado, cadastro, alteração de e-mail e recuperação mostram "A confirmação por e-mail não está disponível nesta instalação." e não são concluídos; o login funciona. Nesta versão não há endereço nem chave de produção configurados no app.
+* Correção: fechar a janela durante uma gravação local não deixa mais o processo preso; a gravação termina de forma atômica. Não há fechamento seguro da janela (`prevent_close`), previsto na Etapa 10.
+* Ferramentas de desenvolvimento: caixa local de mensagens e modo de demonstração (`servidor/README.md`). Na demonstração, a conta fica com o e-mail verificado no banco demonstrativo, mas isso **não comprova** acesso ao endereço.
+
+**Entrega local de códigos — concluída e validada**
+
+* Testes automáticos do app e do serviço.
+* Validação manual com o serviço local e a caixa de desenvolvimento (cadastro, recuperação, alteração de e-mail, código errado, tentativas esgotadas, reenvio, expiração recusada pelo app, neutralidade, rolagem, carregamento e cancelamento), fechamento durante gravação e demonstração local, com as ressalvas registradas em [validacao-etapa8.md](validacao-etapa8.md).
+* Casos de teste: CT90, CT91, CT93, CT94, CT110 e CT113 também validados manualmente; CT92, CT111 e CT112 cobertos pelos testes automáticos.
+
+**Publicação para outras pessoas — pendente**
+
+* Entrega real de e-mails pela Resend, hospedagem e publicação do serviço.
+* Decisões: empresa de hospedagem e responsável pela operação do serviço publicado; domínio e remetente de envio; tratamento e retenção dos dados pelos provedores de hospedagem e de envio; limites adicionais contra abuso.
+* Termos de Uso e Política de Privacidade atualizados em 02/10/2026, aguardando revisão da autora e revisão jurídica.
+* P9 (sem versionamento dos documentos nem novo aceite) continua valendo; precisa ser revista **antes do uso por outras pessoas**, porque o texto mudou de forma relevante na Etapa 8.
+* O cadastro continua dependente do serviço de códigos; em desenvolvimento, o caminho documentado é o modo de demonstração. Não há cadastro sem verificação.
+* Etapa 10: fechamento seguro da janela, pendências de UX da Etapa 8 (falha transitória na gravação exige novo código, formulário editável durante o envio, contador do reenvio, confirmação de senha no cadastro) e RNF09.
 
 ---
 
@@ -824,3 +858,4 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 4.1 | 27/08/2026 | Revisão documental (RF09, RF17, pendência do RF05). |
 | 5.0 | 01/09/2026 – 22/09/2026 | Nova arquitetura de séries, recorrência mensal/anual sem arrasto, data de pagamento, categorias com emoji e cor, banner de atraso, decisão D7 (Encerrar recorrência) e auditoria final pós-implementação. |
 | 6.0 | 23/09/2026 | Tela Principal com todas as contas e atalho de edição, Ver status, Detalhes reformulada, descrição e limites de campos, tela Gráfico (RF21–RF23), Ajustes, verificação de e-mail por código, senha mínima, alterar e recuperar senha, excluir conta, tema claro/escuro. Escopo de edição das séries estendido a categoria e descrição. Decisões de produto P1–P10 fechadas. |
+| 6.0 (estado) | 02/10/2026 | Registro do estado da Etapa 8 (13.3), marcadores de RF01, RF36 e RF39 e nota sobre `codigos_verificacao` em 9.2 e T4; nenhuma regra alterada. |

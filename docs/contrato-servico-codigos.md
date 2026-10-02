@@ -282,6 +282,32 @@ Referência: `backend/servico_codigos.py` (cliente do aplicativo) e
   menor que o `iat` assinado da autorização sendo consumida são apagados na
   mesma transação; sem uma autorização verificada, nada é apagado.
 
+## Desenvolvimento (fora do contrato de produção)
+
+Para testes manuais e demonstrações sem enviar e-mails, existe uma entrada só
+de desenvolvimento (`servidor/src/dev.ts`, configuração
+`servidor/wrangler.dev.jsonc`, usada apenas com `wrangler dev`). Ela segue
+este contrato em tudo — endpoints, formatos, regras, limites, retenção e
+autorização assinada —, com estas diferenças:
+
+* as mensagens não vão para a Resend: são entregues a um receptor local
+  (`servidor/ferramentas/caixa_dev.py`) em `http://127.0.0.1:<porta>`, que as
+  grava em arquivos fora do projeto; resposta 2xx do receptor conta como envio
+  aceito, outra resposta ou receptor fora do ar como falha, tempo esgotado como
+  resultado incerto;
+* `RESEND_API_KEY` não é exigida; `CHAVE_HMAC` e `CHAVE_ASSINATURA` são
+  geradas localmente para cada pasta de teste;
+* o serviço escuta só em `127.0.0.1`, e a configuração aceita um atraso
+  artificial de 0 a 15 s antes de cada entrega, para observar o carregamento
+  nas telas.
+
+A entrada de produção (`servidor/src/index.ts`, `servidor/wrangler.jsonc`) não
+importa nada disso, e os testes conferem essa separação. Nada impede
+tecnicamente um `wrangler deploy -c wrangler.dev.jsonc`: essa configuração
+**não deve ser publicada**. O modo de demonstração do aplicativo
+(`servidor/ferramentas/demonstracao.py`) usa esta entrada; um e-mail
+confirmado por ela não comprova acesso ao endereço.
+
 ## Conformidade
 
 `servidor/test/conformidade/autorizacao.json` (vetores de assinatura) e
