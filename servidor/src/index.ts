@@ -14,20 +14,21 @@ export type { Env } from "./objetos";
 
 const RE_KID = /^[A-Za-z0-9_.-]{1,64}$/;
 
-export function segredosDoAmbiente(env: Env): Segredos | null {
+/** `exigirResend` = false só na entrada de desenvolvimento (src/dev.ts), que não usa a Resend. */
+export function segredosDoAmbiente(env: Env, exigirResend = true): Segredos | null {
   const chaveHmac = chaveDeHex(env.CHAVE_HMAC);
   const chaveAssinatura = chaveDeHex(env.CHAVE_ASSINATURA);
   const kid = env.KID_ASSINATURA ?? "";
-  if (!chaveHmac || !chaveAssinatura || !RE_KID.test(kid) || !env.RESEND_API_KEY) return null;
+  if (!chaveHmac || !chaveAssinatura || !RE_KID.test(kid) || (exigirResend && !env.RESEND_API_KEY)) return null;
   return { chaveHmac, chaveAssinatura, kid };
 }
 
 export function dependenciasDoAmbiente(
   env: Env,
   emSegundoPlano: (tarefa: Promise<unknown>) => void,
-  substituir: { enviador?: Enviador; relogio?: () => number } = {},
+  substituir: { enviador?: Enviador; relogio?: () => number; segredos?: Segredos | null } = {},
 ): Dependencias {
-  const segredos = segredosDoAmbiente(env);
+  const segredos = substituir.segredos !== undefined ? substituir.segredos : segredosDoAmbiente(env);
   if (!segredos) registrarEvento("serviço sem configuração completa; respondendo indisponível");
   return {
     segredos,

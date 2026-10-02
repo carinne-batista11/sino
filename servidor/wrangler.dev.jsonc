@@ -1,0 +1,33 @@
+// Configuração SÓ DE DESENVOLVIMENTO do serviço de códigos: entrada
+// src/dev.ts, mensagens entregues ao receptor local (ferramentas/caixa_dev.py),
+// sem Resend. Use apenas com `wrangler dev -c wrangler.dev.jsonc`; nunca com
+// `wrangler deploy`. A configuração de produção é wrangler.jsonc.
+// Os segredos (CHAVE_HMAC, CHAVE_ASSINATURA) vêm de --env-file, fora do Git.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sino-servico-codigos-dev",
+  "main": "src/dev.ts",
+  "compatibility_date": "2026-08-01",
+  "send_metrics": false,
+  "durable_objects": {
+    "bindings": [
+      { "name": "DESTINO", "class_name": "DestinoDO" },
+      { "name": "LIMITE_IP", "class_name": "LimiteIpDO" },
+      { "name": "TETO_GLOBAL", "class_name": "TetoGlobalDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DestinoDO", "LimiteIpDO", "TetoGlobalDO"] }
+  ],
+  "vars": {
+    "REMETENTE": "Sino (desenvolvimento) <dev@sino.invalid>",
+    "KID_ASSINATURA": "dev-1",
+    "CAIXA_DEV_URL": "http://127.0.0.1:8025",
+    "CAIXA_DEV_ATRASO_MS": "0"
+  },
+  "dev": {
+    "ip": "127.0.0.1",
+    "port": 8787,
+    "local_protocol": "http"
+  }
+}
