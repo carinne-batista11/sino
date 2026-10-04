@@ -133,6 +133,7 @@ tests/      testes automatizados do aplicativo
 - [Contrato do serviço de códigos](docs/contrato-servico-codigos.md)
 - [Validação da Etapa 8](docs/validacao-etapa8.md): resumo das validações manuais, com ressalvas
 - [Desempenho da v6.0](docs/desempenho-v6.md): ambiente, método e resultados da medição com 1.000 contas
+- [Paleta das categorias](docs/paleta_sino.html): as 30 cores das categorias, com as 11 categorias criadas automaticamente. É uma página HTML: depois de clonar o repositório, abra o arquivo no navegador (por exemplo, `xdg-open docs/paleta_sino.html` no Linux); no GitHub, o link mostra só o código-fonte da página.
 
 Versões anteriores da ERS e os protótipos de interface estão em [`docs/`](docs/).
 

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Paleta de Cores — Sino</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 40px;
+            font-family: Arial, sans-serif;
+            background: #f5f6f8;
+            color: #252525;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        h1 {
+            margin-bottom: 8px;
+        }
+
+        h2 {
+            margin-top: 45px;
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .palette {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 16px;
+            margin-top: 25px;
+        }
+
+        .color-card {
+            background: white;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .predefined {
+            border: 2px solid #333;
+        }
+
+        .color {
+            height: 115px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .color .emoji {
+            font-size: 42px;
+        }
+
+        .info {
+            padding: 13px;
+        }
+
+        .number {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .name {
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .hex {
+            font-family: monospace;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .category {
+            margin-top: 10px;
+            padding-top: 9px;
+            border-top: 1px solid #eeeeee;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .category strong {
+            color: #222;
+        }
+
+        .legend {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>🎨 Paleta de Cores — Sino</h1>
+
+        <p>
+            As 30 cores disponíveis para as categorias do Sino (v6.0), as mesmas
+            de <code>database/db.py</code>. As primeiras 11 são as das categorias
+            criadas automaticamente. A numeração é só desta página: no app, o
+            seletor de cores usa outra ordem.
+        </p>
+
+        <div class="legend">
+            <strong>Borda escura:</strong> categoria predefinida do Sino.<br>
+            O nome da categoria e seu emoji aparecem abaixo de cada cor.<br>
+            "Sem categoria" usa um cinza reservado (#888780), que não faz parte destas 30 cores.
+        </div>
+
+
+        <h2>🌤️ Categorias predefinidas</h2>
+
+        <p>
+            Tons claros e suaves para as 11 categorias criadas automaticamente.
+        </p>
+
+        <div class="palette">
+
+            <!-- 01 — CASA -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#96e199">
+                    <span class="emoji">🏡</span>
+                </div>
+                <div class="info">
+                    <div class="number">01</div>
+                    <div class="name">Verde claro</div>
+                    <div class="hex">#96e199</div>
+                    <div class="category">
+                        <strong>🏡 Casa</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 02 — AUTOMÓVEL -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#FFD54F">
+                    <span class="emoji">🚗</span>
+                </div>
+                <div class="info">
+                    <div class="number">02</div>
+                    <div class="name">Âmbar</div>
+                    <div class="hex">#FFD54F</div>
+                    <div class="category">
+                        <strong>🚗 Automóvel</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 03 — LAZER -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#FFAB91">
+                    <span class="emoji">🎡</span>
+                </div>
+                <div class="info">
+                    <div class="number">03</div>
+                    <div class="name">Laranja suave</div>
+                    <div class="hex">#FFAB91</div>
+                    <div class="category">
+                        <strong>🎡 Lazer</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 04 — FACULDADE -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#64B5F6">
+                    <span class="emoji">📚</span>
+                </div>
+                <div class="info">
+                    <div class="number">04</div>
+                    <div class="name">Azul claro</div>
+                    <div class="hex">#64B5F6</div>
+                    <div class="category">
+                        <strong>📚 Faculdade</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 05 — ACADEMIA -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#CE93D8">
+                    <span class="emoji">🏋🏻‍♀️</span>
+                </div>
+                <div class="info">
+                    <div class="number">05</div>
+                    <div class="name">Roxo suave</div>
+                    <div class="hex">#CE93D8</div>
+                    <div class="category">
+                        <strong>🏋🏻‍♀️ Academia</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 06 — SAÚDE -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#80CBC4">
+                    <span class="emoji">🏥</span>
+                </div>
+                <div class="info">
+                    <div class="number">06</div>
+                    <div class="name">Turquesa</div>
+                    <div class="hex">#80CBC4</div>
+                    <div class="category">
+                        <strong>🏥 Saúde</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 07 — CARTÃO DE CRÉDITO -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#a990d8">
+                    <span class="emoji">💳</span>
+                </div>
+                <div class="info">
+                    <div class="number">07</div>
+                    <div class="name">Lavanda</div>
+                    <div class="hex">#a990d8</div>
+                    <div class="category">
+                        <strong>💳 Cartão de crédito</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 08 — BELEZA -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#F48FB1">
+                    <span class="emoji">💄</span>
+                </div>
+                <div class="info">
+                    <div class="number">08</div>
+                    <div class="name">Beleza</div>
+                    <div class="hex">#F48FB1</div>
+                    <div class="category">
+                        <strong>💄 Beleza</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 09 — STREAMING -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#f3756a">
+                    <span class="emoji">📽️</span>
+                </div>
+                <div class="info">
+                    <div class="number">09</div>
+                    <div class="name">Vermelho suave</div>
+                    <div class="hex">#f3756a</div>
+                    <div class="category">
+                        <strong>📽️ Streaming</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 10 — CRECHE -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#77e3d3">
+                    <span class="emoji">👶</span>
+                </div>
+                <div class="info">
+                    <div class="number">10</div>
+                    <div class="name">Turquesa baby</div>
+                    <div class="hex">#77e3d3</div>
+                    <div class="category">
+                        <strong>👶 Creche</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 11 — OUTRO -->
+            <div class="color-card predefined">
+                <div class="color" style="background:#EF9A9A">
+                    <span class="emoji">💕</span>
+                </div>
+                <div class="info">
+                    <div class="number">11</div>
+                    <div class="name">Coral claro</div>
+                    <div class="hex">#EF9A9A</div>
+                    <div class="category">
+                        <strong>💕 Outro</strong>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+
+        <h2>🌈 Cores adicionais</h2>
+
+        <p>
+            As outras 19 opções disponíveis para categorias criadas pelo usuário.
+        </p>
+
+        <div class="palette">
+
+            <div class="color-card">
+                <div class="color" style="background:#1976D2"></div>
+                <div class="info">
+                    <div class="number">12</div>
+                    <div class="name">Azul profundo</div>
+                    <div class="hex">#1976D2</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#3F51B5"></div>
+                <div class="info">
+                    <div class="number">13</div>
+                    <div class="name">Azul royal</div>
+                    <div class="hex">#3F51B5</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#5C6BC0"></div>
+                <div class="info">
+                    <div class="number">14</div>
+                    <div class="name">Índigo</div>
+                    <div class="hex">#5C6BC0</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#7E57C2"></div>
+                <div class="info">
+                    <div class="number">15</div>
+                    <div class="name">Violeta</div>
+                    <div class="hex">#7E57C2</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#8E24AA"></div>
+                <div class="info">
+                    <div class="number">16</div>
+                    <div class="name">Roxo</div>
+                    <div class="hex">#8E24AA</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#C2185B"></div>
+                <div class="info">
+                    <div class="number">17</div>
+                    <div class="name">Magenta</div>
+                    <div class="hex">#C2185B</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#EC407A"></div>
+                <div class="info">
+                    <div class="number">18</div>
+                    <div class="name">Rosa forte</div>
+                    <div class="hex">#EC407A</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#E53935"></div>
+                <div class="info">
+                    <div class="number">19</div>
+                    <div class="name">Vermelho</div>
+                    <div class="hex">#E53935</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#EF5350"></div>
+                <div class="info">
+                    <div class="number">20</div>
+                    <div class="name">Vermelho quente</div>
+                    <div class="hex">#EF5350</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#FF7043"></div>
+                <div class="info">
+                    <div class="number">21</div>
+                    <div class="name">Coral forte</div>
+                    <div class="hex">#FF7043</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#F57C00"></div>
+                <div class="info">
+                    <div class="number">22</div>
+                    <div class="name">Laranja</div>
+                    <div class="hex">#F57C00</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#FFA000"></div>
+                <div class="info">
+                    <div class="number">23</div>
+                    <div class="name">Âmbar escuro</div>
+                    <div class="hex">#FFA000</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#FBC02D"></div>
+                <div class="info">
+                    <div class="number">24</div>
+                    <div class="name">Amarelo ouro</div>
+                    <div class="hex">#FBC02D</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#AFB42B"></div>
+                <div class="info">
+                    <div class="number">25</div>
+                    <div class="name">Lima</div>
+                    <div class="hex">#AFB42B</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#43A047"></div>
+                <div class="info">
+                    <div class="number">26</div>
+                    <div class="name">Verde</div>
+                    <div class="hex">#43A047</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#00897B"></div>
+                <div class="info">
+                    <div class="number">27</div>
+                    <div class="name">Verde esmeralda</div>
+                    <div class="hex">#00897B</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#0097A7"></div>
+                <div class="info">
+                    <div class="number">28</div>
+                    <div class="name">Teal</div>
+                    <div class="hex">#0097A7</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#00ACC1"></div>
+                <div class="info">
+                    <div class="number">29</div>
+                    <div class="name">Ciano</div>
+                    <div class="hex">#00ACC1</div>
+                </div>
+            </div>
+
+            <div class="color-card">
+                <div class="color" style="background:#0277BD"></div>
+                <div class="info">
+                    <div class="number">30</div>
+                    <div class="name">Azul petróleo</div>
+                    <div class="hex">#0277BD</div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</body>
+
+</html>
