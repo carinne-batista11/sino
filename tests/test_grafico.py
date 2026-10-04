@@ -267,7 +267,7 @@ class TestTelaGrafico(TesteComBancoTemporario):
         self.assertEqual(nomes, ["Casa", "Lazer", "Sem categoria"])  # CT71
         self.assertIn("3,9%", textos)  # continua na legenda
         sem_categoria = next(c for c in self.controles(ft.Text) if c.value == "Sem categoria")
-        self.assertEqual(sem_categoria.color, cores.sem_categoria)
+        self.assertEqual(sem_categoria.color, cores.texto_sem_categoria)   # rótulo legível (Etapa 10); a fatia segue #888780
 
         self.assertIn("Comparado a agosto", textos)
         self.assertIn("▲ 55%", textos)

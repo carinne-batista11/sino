@@ -555,6 +555,10 @@ def filtrar_por_status(contas, filtro):
 
 
 TEXTO_NAO_RECORRENTE = "Esta conta não é recorrente."
+# Etapa 10 (8.4): Detalhes mostra sempre os mesmos campos; sem informação,
+# o campo exibe o texto de ausência no cinza secundário.
+TEXTO_SEM_PARCELAS = "Não há parcelas"
+TEXTO_SEM_DESCRICAO = "Sem descrição"
 
 
 def identificacao_categoria(categoria):
@@ -706,6 +710,18 @@ def layout_gastos_por_categoria(largura_pagina):
                 "estreita": False}
     return {"largura_nome": None, "largura_valor": 112, "largura_percentual": 56,
             "tamanho_rosca": int(max(200, min(300, largura_pagina - 90))), "estreita": True}
+
+
+# Etapa 10 (8.4): em Detalhes, o rótulo fica à esquerda do conteúdo só quando
+# sobra espaço para o valor (célula de linha inteira: ~234 px a partir de
+# 520 px de página); abaixo disso, o rótulo volta para cima do valor.
+LARGURA_MINIMA_ROTULO_AO_LADO = 520
+LARGURA_ROTULO_DETALHES = 100
+
+
+def rotulo_ao_lado_em_detalhes(largura_pagina):
+    """True: rótulo à esquerda do conteúdo; False: acima. Largura desconhecida conta como larga."""
+    return not isinstance(largura_pagina, (int, float)) or largura_pagina >= LARGURA_MINIMA_ROTULO_AO_LADO
 
 
 def ano_inicial_anual(anos_com_historico, ano_atual):
@@ -2463,7 +2479,7 @@ def main(page: ft.Page):
                 # Etapa 4 (ERS 8.4, protótipo 13): identificação pela categoria
                 # (emoji e cor), status ao lado da ação de pagamento perto do
                 # topo, grade Valor/Vencimento/Categoria/Parcela, Recorrência,
-                # Descrição (só quando preenchida) e Editar/Excluir no rodapé.
+                # Descrição (campos fixos, P12) e Editar/Excluir no rodapé.
                 page.overlay.clear()
                 hoje = date.today()
                 data_venc = date.fromisoformat(conta["data_vencimento"])
@@ -2488,7 +2504,7 @@ def main(page: ft.Page):
                 # --- Identificação (emoji e cor da categoria) ---------------
                 if categoria["sem_categoria"]:
                     fundo_circulo = ft.Colors.with_opacity(0.18, cores.sem_categoria)
-                    cor_subtitulo = cores.sem_categoria
+                    cor_subtitulo = cores.texto_sem_categoria
                 elif categoria["cor"]:
                     fundo_circulo = ft.Colors.with_opacity(0.18, categoria["cor"])
                     cor_subtitulo = cores.texto_secundario
@@ -2517,13 +2533,16 @@ def main(page: ft.Page):
                 )
 
                 # --- Status ao lado da ação de pagamento (quebra em janela estreita)
-                cor_status = {"pago": cores.status_pago, "atrasado": cores.status_atrasado,
-                              "pendente": cores.status_pendente}[status["status"]]
+                cor_status, cor_texto_status = {
+                    "pago": (cores.status_pago, cores.texto_pilula_pago),
+                    "atrasado": (cores.status_atrasado, cores.status_atrasado),
+                    "pendente": (cores.status_pendente, cores.texto_pilula_pendente),
+                }[status["status"]]
                 chip_status = ft.Container(
                     bgcolor=ft.Colors.with_opacity(0.12, cor_status),
                     border_radius=10,
                     padding=ft.Padding(14, 10, 14, 10),
-                    content=ft.Text(status["rotulo"], size=14, weight=ft.FontWeight.BOLD, color=cor_status),
+                    content=ft.Text(status["rotulo"], size=14, weight=ft.FontWeight.BOLD, color=cor_texto_status),
                 )
                 if status["status"] == "pago":
                     botao_pagamento = ft.OutlinedButton(
@@ -2533,7 +2552,7 @@ def main(page: ft.Page):
                 else:
                     botao_pagamento = ft.Button(
                         content=status["acao"], icon=ft.Icons.CHECK,
-                        bgcolor=cores.acao_pagamento, color=cores.texto_sobre_acao,
+                        bgcolor=cores.acao_pagamento, color=cores.texto_sobre_pagamento,
                         on_click=marcar_como_paga_detalhes,
                     )
                 linha_status = ft.Row(
@@ -2543,69 +2562,82 @@ def main(page: ft.Page):
                 )
 
                 # --- Grade de informações ----------------------------------
-                def celula(icone, cor_icone, rotulo, valor, complemento=None, cor_valor=cores.texto_principal,
-                           largura_total=False):
-                    textos = [
-                        ft.Text(rotulo, size=12, color=cores.texto_secundario),
+                # Ícones informativos: um único verde (detalhes_icone) com o mesmo
+                # fundo suave; status e cor da categoria ficam no cabeçalho.
+                # Rótulo à esquerda do conteúdo em janela larga; acima dele em
+                # janela estreita (redesenha ao redimensionar, ver abaixo).
+                rotulo_ao_lado = rotulo_ao_lado_em_detalhes(page.width)
+
+                def celula(icone, rotulo, valor, complemento=None, cor_valor=cores.texto_principal,
+                           largura_total=False, texto_longo=False):
+                    conteudo = [
+                        # Texto longo (Descrição): mesmo tamanho dos demais valores,
+                        # sem negrito, com as quebras de linha do usuário.
+                        ft.Text(valor, size=17, color=cor_valor) if texto_longo else
                         ft.Text(valor, size=17, weight=ft.FontWeight.BOLD, color=cor_valor),
                     ]
                     if complemento:
-                        textos.append(ft.Text(complemento, size=12, color=cores.texto_secundario))
+                        conteudo.append(ft.Text(complemento, size=12, color=cores.texto_secundario))
+                    texto_rotulo = ft.Text(rotulo, size=14, color=cores.texto_secundario)
+                    if rotulo_ao_lado:
+                        textos = ft.Row(
+                            expand=True, spacing=12,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Container(width=LARGURA_ROTULO_DETALHES, content=texto_rotulo),
+                                ft.Column(expand=True, spacing=2, controls=conteudo),
+                            ],
+                        )
+                    else:
+                        textos = ft.Column(expand=True, spacing=2, controls=[texto_rotulo, *conteudo])
                     return ft.Container(
-                        col={"xs": 12} if largura_total else {"xs": 12, "sm": 6},
+                        # Duas colunas só com folga para o valor ao lado do rótulo.
+                        col={"xs": 12} if largura_total else {"xs": 12, "lg": 6},
                         bgcolor=cores.fundo_card,
                         border=ft.Border.all(1, cores.borda_suave),
                         border_radius=12,
                         padding=14,
                         content=ft.Row(
                             spacing=14,
+                            # Ícone e rótulo centralizados na altura da célula, que
+                            # cresce com o texto (Recorrência e Descrição quebram linha).
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             controls=[
                                 ft.Container(
                                     width=44, height=44, border_radius=22,
-                                    bgcolor=ft.Colors.with_opacity(0.12, cor_icone),
+                                    bgcolor=ft.Colors.with_opacity(0.12, cores.detalhes_icone),
                                     alignment=ft.Alignment.CENTER,
-                                    content=ft.Icon(icone, size=22, color=cor_icone),
+                                    content=ft.Icon(icone, size=22, color=cores.detalhes_icone),
                                 ),
-                                ft.Column(expand=True, spacing=2, controls=textos),
+                                textos,
                             ],
                         ),
                     )
 
                 celulas = [
-                    celula(ft.Icons.PAYMENTS_OUTLINED, cores.status_pago, "Valor", formatar_moeda(conta["valor"])),
-                    celula(ft.Icons.CALENDAR_MONTH, cores.acao_primaria, "Vencimento", data_venc.strftime("%d/%m/%Y"),
+                    celula(ft.Icons.PAYMENTS_OUTLINED, "Valor", formatar_moeda(conta["valor"])),
+                    celula(ft.Icons.CALENDAR_MONTH, "Vencimento", data_venc.strftime("%d/%m/%Y"),
                            complemento="Vence hoje" if status["vence_hoje"] else None),
                 ]
+                # Etapa 10 (8.4): sempre os seis campos, nesta ordem; sem
+                # informação, o campo continua com o texto de ausência.
                 parcela_texto = None
                 if serie_ativa:
                     parcela = database.obter_parcela(conta["serie_id"], conta["id"])
                     if parcela:
                         parcela_texto = texto_parcela(parcela)
-                celulas.append(
-                    celula(ft.Icons.FOLDER_OUTLINED, cores.texto_secundario, "Categoria", categoria["nome"],
-                           cor_valor=cores.sem_categoria if categoria["sem_categoria"] else cores.texto_principal,
-                           largura_total=parcela_texto is None)
-                )
-                if parcela_texto:
-                    celulas.append(celula(ft.Icons.LAYERS_OUTLINED, cores.status_a_vencer, "Parcela", parcela_texto))
-                celulas.append(
-                    celula(ft.Icons.REPEAT, cores.status_pago, "Recorrência",
-                           texto_recorrencia_detalhes(serie_ativa, info_serie), largura_total=True)
-                )
-                if conta.get("descricao"):
-                    # 5.22: completa, com as quebras de linha; ausente quando vazia.
-                    celulas.append(ft.Container(
-                        col={"xs": 12},
-                        bgcolor=cores.fundo_card,
-                        border=ft.Border.all(1, cores.borda_suave),
-                        border_radius=12,
-                        padding=14,
-                        content=ft.Column(spacing=6, controls=[
-                            ft.Text("Descrição", size=12, color=cores.texto_secundario),
-                            ft.Text(conta["descricao"], size=14, color=cores.texto_principal),
-                        ]),
-                    ))
+                celulas += [
+                    celula(ft.Icons.FOLDER_OUTLINED, "Categoria", categoria["nome"],
+                           cor_valor=cores.texto_sem_categoria if categoria["sem_categoria"] else cores.texto_principal),
+                    celula(ft.Icons.LAYERS_OUTLINED, "Parcela", parcela_texto or TEXTO_SEM_PARCELAS,
+                           cor_valor=cores.texto_principal if parcela_texto else cores.texto_secundario),
+                    celula(ft.Icons.REPEAT, "Recorrência",
+                           texto_recorrencia_detalhes(serie_ativa, info_serie), largura_total=True),
+                    # 5.22: completa, com as quebras de linha; linha inteira.
+                    celula(ft.Icons.NOTES, "Descrição", conta.get("descricao") or TEXTO_SEM_DESCRICAO,
+                           cor_valor=cores.texto_principal if conta.get("descricao") else cores.texto_secundario,
+                           largura_total=True, texto_longo=True),
+                ]
                 grade = ft.ResponsiveRow(spacing=12, run_spacing=12, controls=celulas)
 
                 # --- Rodapé: Editar e Excluir, menores, iguais e centralizados
@@ -2628,24 +2660,32 @@ def main(page: ft.Page):
                                   style=ft.ButtonStyle(color=cores.acao_primaria)),
                 ])
 
-                area_corpo.controls = [
-                    ft.Container(
-                        padding=ft.Padding(20, 32, 20, 24),
-                        content=ft.Column(
-                            data="tela_detalhes",  # identificação da tela (testes)
-                            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                            spacing=16,
-                            controls=[
-                                cabecalho,
-                                identificacao,
-                                linha_status,
-                                grade,
-                                ft.Divider(color=cores.divisor),
-                                botoes_rodape,
-                            ],
-                        ),
+                tela = ft.Container(
+                    padding=ft.Padding(20, 32, 20, 24),
+                    content=ft.Column(
+                        data="tela_detalhes",  # identificação da tela (testes)
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                        spacing=16,
+                        controls=[
+                            cabecalho,
+                            identificacao,
+                            linha_status,
+                            grade,
+                            ft.Divider(color=cores.divisor),
+                            botoes_rodape,
+                        ],
                     ),
-                ]
+                )
+                area_corpo.controls = [tela]
+
+                def ao_redimensionar(e):
+                    # Redesenha só se o rótulo mudar de posição e só enquanto
+                    # estes Detalhes estiverem na tela (não em Editar nem em outra tela).
+                    if (area_corpo in page.controls and tela in area_corpo.controls
+                            and rotulo_ao_lado_em_detalhes(page.width) != rotulo_ao_lado):
+                        mostrar_visualizacao()
+
+                page.on_resize = ao_redimensionar
                 page.update()
 
             def confirmar_exclusao_conta():
@@ -4669,7 +4709,7 @@ def main(page: ft.Page):
                         # janela larga; em janela estreita quebra linha).
                         ft.Text(item["nome"], size=15,
                                 width=layout["largura_nome"], expand=layout["largura_nome"] is None,
-                                color=cores.sem_categoria if sem_categoria else cores.texto_principal),
+                                color=cores.texto_sem_categoria if sem_categoria else cores.texto_principal),
                         ft.Text(formatar_moeda(item["total"]), size=15, width=layout["largura_valor"],
                                 text_align=ft.TextAlign.RIGHT, color=cores.texto_principal),
                         ft.Text(formatar_percentual(fatia * 100), size=15, width=layout["largura_percentual"],
@@ -5493,6 +5533,7 @@ def main(page: ft.Page):
                     texto("Sua conta de usuário e todos os dados ligados a ela serão apagados "
                           "permanentemente do banco de dados atual do Sino:"),
                     *[texto(f"• {linha}") for linha in linhas_dados_da_exclusao(resumo)],
+                    texto("As contas incluem os meses futuros já gerados das recorrências."),
                     texto("Não é possível desfazer a exclusão. Cópias de segurança (backups) "
                           "já existentes não são apagadas."),
                 ]),

@@ -1,5 +1,5 @@
 """
-Detalhes da conta (ERS v6.0, Etapa 4): RF31, 8.4, CT55–CT58, CT115, CT116.
+Detalhes da conta (ERS v6.0, Etapa 4; campos fixos na Etapa 10): RF31, 8.4, CT55–CT58, CT115, CT116.
 
 Funções puras (identificação pela categoria, status ao lado da ação,
 recorrência e parcela) e o fluxo real da tela com uma página falsa sobre um
@@ -97,6 +97,18 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         return next(c for c in self.controles()
                     if isinstance(c, (ft.Button, ft.TextButton, ft.OutlinedButton)) and c.content == texto)
 
+    def celulas(self):
+        """Células da grade de Detalhes, na ordem: (rótulo, Text do valor, célula)."""
+        grade = next(c for c in self.controles(ft.ResponsiveRow))
+        resultado = []
+        for celula in grade.controls:
+            textos = [t for t in percorrer(celula) if isinstance(t, ft.Text)]
+            resultado.append((textos[0].value, textos[1], celula))
+        return resultado
+
+    def campos(self):
+        return [(rotulo, valor.value) for rotulo, valor, _ in self.celulas()]
+
     def na_tela_de_detalhes(self):
         return any(getattr(c, "data", None) == "tela_detalhes" for c in self.controles())
 
@@ -136,7 +148,7 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.abrir_detalhes("Presente")
 
         rotulos = [c for c in self.controles(ft.Text) if c.value == "Sem categoria"]
-        self.assertEqual({c.color for c in rotulos}, {cores.sem_categoria})
+        self.assertEqual({c.color for c in rotulos}, {cores.texto_sem_categoria})  # rótulo (Etapa 10, RNF09)
         circulo = next(c for c in self.controles(ft.Container) if c.width == 64)
         self.assertIsNone(circulo.content)
 
@@ -201,51 +213,151 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.assertIsInstance(self.botao("Marcar como paga"), ft.Button)
 
     # ---------------------------------------------------------------- grade, recorrência, parcela
-    def test_ct115_conta_unica_sem_parcela(self):
+    def test_ct115_conta_unica_mostra_todos_os_campos(self):
+        # Etapa 10 (8.4): sempre os seis campos, nesta ordem, com os textos de ausência.
         db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20")
         self.entrar()
         self.abrir_detalhes("Seguro")
-        textos = self.textos()
-        self.assertIn("Esta conta não é recorrente.", textos)
-        self.assertNotIn("Parcela", textos)
-        for rotulo in ("Valor", "Vencimento", "Categoria", "Recorrência"):
-            self.assertIn(rotulo, textos)
-        self.assertIn("R$ 90,00", textos)
-        self.assertIn("20/09/2026", textos)
+        self.assertEqual(self.campos(), [
+            ("Valor", "R$ 90,00"), ("Vencimento", "20/09/2026"), ("Categoria", "Sem categoria"),
+            ("Parcela", "Não há parcelas"), ("Recorrência", "Esta conta não é recorrente."),
+            ("Descrição", "Sem descrição"),
+        ])
+        cores_dos_valores = {rotulo: valor.color for rotulo, valor, _ in self.celulas()}
+        self.assertEqual(cores_dos_valores["Parcela"], cores.texto_secundario)
+        self.assertEqual(cores_dos_valores["Descrição"], cores.texto_secundario)
+        self.assertEqual(cores_dos_valores["Categoria"], cores.texto_sem_categoria)
+        # Largura: Valor|Vencimento e Categoria|Parcela lado a lado; Recorrência e Descrição em linha inteira.
+        larguras = [celula.col for _, _, celula in self.celulas()]
+        self.assertEqual(larguras, [{"xs": 12, "lg": 6}] * 4 + [{"xs": 12}] * 2)
 
     def test_serie_ativa_mostra_parcela(self):
         db.criar_serie_recorrente(self.usuario_id, "Curso", 200.0, "2026-09-20", "mensal", data_termino="2026-12")
         db.criar_serie_recorrente(self.usuario_id, "Internet", 100.0, "2026-09-22", "mensal")
         self.entrar()
         self.abrir_detalhes("Curso")
-        self.assertIn("Parcela 1 de 4", self.textos())
-        self.assertIn(main.frase_recorrencia("mensal", "2026-12"), self.textos())
+        campos = dict(self.campos())
+        self.assertEqual(campos["Parcela"], "Parcela 1 de 4")
+        self.assertEqual(campos["Recorrência"], "Esta conta se repete mensalmente até dezembro de 2026.")
         self.clicar(self.botao("Voltar"))
+        # Sem término: posição sem total (5.19) e "sem prazo definido", nunca "Não há parcelas".
         self.abrir_detalhes("Internet")
-        self.assertIn("Parcela 1", self.textos())
+        campos = dict(self.campos())
+        self.assertEqual(campos["Parcela"], "Parcela 1")
+        self.assertEqual(campos["Recorrência"], "Esta conta se repete mensalmente sem prazo definido para término.")
+
+    # ---------------------------------------------------------------- rótulos (Etapa 10)
+    def rotulos(self):
+        """Text de cada rótulo da grade, na ordem."""
+        grade = next(c for c in self.controles(ft.ResponsiveRow))
+        return [next(t for t in percorrer(celula) if isinstance(t, ft.Text)) for celula in grade.controls]
+
+    def rotulo_ao_lado(self, celula):
+        """A linha interna da célula põe o rótulo (largura fixa) à esquerda do conteúdo?"""
+        _, textos = celula.content.controls
+        return isinstance(textos, ft.Row) and textos.controls[0].width == main.LARGURA_ROTULO_DETALHES
+
+    def test_largura_minima_do_rotulo_ao_lado(self):
+        self.assertTrue(main.rotulo_ao_lado_em_detalhes(main.LARGURA_MINIMA_ROTULO_AO_LADO))
+        self.assertFalse(main.rotulo_ao_lado_em_detalhes(main.LARGURA_MINIMA_ROTULO_AO_LADO - 1))
+        self.assertFalse(main.rotulo_ao_lado_em_detalhes(380))  # janela padrão do app
+        self.assertTrue(main.rotulo_ao_lado_em_detalhes(None))  # desconhecida: larga
+
+    def test_rotulos_maiores_a_esquerda_e_tudo_centralizado(self):
+        self.pagina.width = 900
+        db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20", descricao="Linha 1\nLinha 2")
+        self.entrar()
+        self.abrir_detalhes("Seguro")
+        self.assertEqual([t.value for t in self.rotulos()],
+                         ["Valor", "Vencimento", "Categoria", "Parcela", "Recorrência", "Descrição"])
+        self.assertEqual({(t.size, t.color) for t in self.rotulos()}, {(14, cores.texto_secundario)})
+        for rotulo, valor, celula in self.celulas():
+            with self.subTest(rotulo=rotulo):
+                self.assertTrue(self.rotulo_ao_lado(celula))
+                # Ícone e rótulo centralizados também em Recorrência e Descrição.
+                self.assertEqual(celula.content.vertical_alignment, ft.CrossAxisAlignment.CENTER)
+                self.assertEqual(celula.content.controls[1].vertical_alignment, ft.CrossAxisAlignment.CENTER)
+                self.assertTrue(celula.content.controls[1].controls[1].expand)  # valor quebra linha, sem corte
+
+    def test_janela_estreita_poe_o_rotulo_acima_e_redesenha_ao_redimensionar(self):
+        self.pagina.width = 380
+        db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20")
+        self.entrar()
+        self.abrir_detalhes("Seguro")
+        self.assertFalse(any(self.rotulo_ao_lado(celula) for _, _, celula in self.celulas()))
+        self.assertEqual(self.campos()[0], ("Valor", "R$ 90,00"))  # rótulo acima, mesmo conteúdo
+
+        self.pagina.width = 900
+        self.pagina.on_resize(None)
+        self.assertTrue(self.na_tela_de_detalhes())
+        self.assertTrue(all(self.rotulo_ao_lado(celula) for _, _, celula in self.celulas()))
+
+    def test_redimensionar_fora_dos_detalhes_nao_redesenha(self):
+        self.pagina.width = 900
+        db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20")
+        self.entrar()
+        self.abrir_detalhes("Seguro")
+        ao_redimensionar = self.pagina.on_resize
+        self.clicar(self.botao("Voltar"))
+        self.pagina.width = 380
+        limpezas = self.pagina.overlay.clear.call_count
+        ao_redimensionar(None)
+        self.assertFalse(self.na_tela_de_detalhes())
+        self.assertEqual(self.pagina.overlay.clear.call_count, limpezas)  # nada redesenhado nem limpo
+
+    def test_icones_informativos_no_mesmo_verde_e_cabecalho_preservado(self):
+        # Etapa 10: Valor, Vencimento, Categoria, Parcela, Recorrência e Descrição usam um
+        # único papel (detalhes_icone) com o mesmo fundo suave; a cor da
+        # categoria (cabeçalho) e a pílula de status não mudam.
+        db.criar_serie_recorrente(self.usuario_id, "Curso", 200.0, "2026-09-20", "mensal",
+                                  categoria_id=self.casa, data_termino="2026-12")
+        self.entrar()
+        self.abrir_detalhes("Curso")
+        informativos = (ft.Icons.PAYMENTS_OUTLINED, ft.Icons.CALENDAR_MONTH, ft.Icons.FOLDER_OUTLINED,
+                        ft.Icons.LAYERS_OUTLINED, ft.Icons.REPEAT, ft.Icons.NOTES)
+        icones = {c.icon: c for c in self.controles(ft.Icon) if c.icon in informativos}
+        self.assertEqual(set(icones), set(informativos))
+        for icone in icones.values():
+            fundo = next(c for c in self.controles(ft.Container) if c.content is icone)
+            self.assertEqual(icone.color, cores.detalhes_icone)
+            self.assertEqual(fundo.bgcolor, ft.Colors.with_opacity(0.12, cores.detalhes_icone))
+        circulo = next(c for c in self.controles(ft.Container) if c.content is self.texto("🏡"))
+        self.assertIn("#96E199", str(circulo.bgcolor))
+        pilula = next(c for c in self.controles(ft.Container) if c.content is self.texto("Pendente"))
+        self.assertEqual(pilula.bgcolor, ft.Colors.with_opacity(0.12, cores.status_pendente))
+        self.assertEqual(pilula.content.color, cores.texto_pilula_pendente)
 
     def test_serie_encerrada_sem_parcela_e_nao_recorrente(self):
         serie_id, ids = db.criar_serie_recorrente(self.usuario_id, "Academia", 99.0, "2026-09-20", "mensal")
         db.encerrar_recorrencia(ids[0])
         self.entrar()
         self.abrir_detalhes("Academia")
-        self.assertIn("Esta conta não é recorrente.", self.textos())
-        self.assertNotIn("Parcela", self.textos())
+        # Série encerrada vira conta avulsa (5.8): mesmos textos da conta Única.
+        campos = dict(self.campos())
+        self.assertEqual(campos["Recorrência"], "Esta conta não é recorrente.")
+        self.assertEqual(campos["Parcela"], "Não há parcelas")
 
     # ---------------------------------------------------------------- descrição
-    def test_ct57_sem_descricao_nao_ocupa_espaco(self):
+    def test_ct57_sem_descricao_mostra_sem_descricao(self):
+        # Etapa 10 (8.4, 5.22): o campo fica na tela com "Sem descrição", em linha inteira.
         db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20")
         self.entrar()
         self.abrir_detalhes("Seguro")
-        self.assertNotIn("Descrição", self.textos())
+        rotulo, valor, celula = self.celulas()[-1]
+        self.assertEqual((rotulo, valor.value, valor.color), ("Descrição", "Sem descrição", cores.texto_secundario))
+        self.assertEqual(celula.col, {"xs": 12})
 
     def test_ct58_descricao_completa_com_quebras_de_linha(self):
         descricao = "Linha 1\nLinha 2\n\n" + "texto longo " * 38
         conta_id = db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20", descricao=descricao)
         self.entrar()
         self.abrir_detalhes("Seguro")
-        self.assertIn("Descrição", self.textos())
-        self.assertIn(self.conta_descricao(conta_id), self.textos())
+        rotulo, valor, celula = self.celulas()[-1]
+        self.assertEqual((rotulo, valor.value), ("Descrição", self.conta_descricao(conta_id)))
+        recorrencia = next(v for r, v, _ in self.celulas() if r == "Recorrência")
+        self.assertEqual((valor.color, valor.size, valor.weight), (cores.texto_principal, recorrencia.size, None))
+        self.assertIsNone(valor.max_lines)  # altura automática, sem corte
+        self.assertEqual(celula.col, {"xs": 12})
         self.assertIn("\n\n", self.conta_descricao(conta_id))
 
     def conta_descricao(self, conta_id):

@@ -13,9 +13,10 @@ bancos temporários), não só a paleta:
   * trocar o tema em Ajustes e navegar recria os controles com a paleta nova;
   * o tema do Flet (diálogos, calendário) vem da paleta de cada tema.
 
-O Claro NÃO é declarado conforme: suas limitações conhecidas (texto
-secundário, verdes da marca, ícones sobre fundos tingidos) continuam
-registradas em test_cores.py e ficam para a Etapa 10.
+Desde a Etapa 10 (opção A da paleta), o Claro também tem o contraste medido
+nessas telas e diálogos. A cobertura é a das telas percorridas aqui e dos
+pares de test_cores.py; não é uma auditoria completa de RNF09 (gráficos em
+detalhe, estados raros e telas de autenticação ficam fora desta varredura).
 """
 
 import ast
@@ -235,7 +236,7 @@ class TesteDeLegibilidade(TesteDeSessao):
         outra = ESCURO if paleta is CLARO else CLARO
         return {v.upper() for v in outra.values()} - {v.upper() for v in paleta.values()} - CORES_DE_CATEGORIA - {"WHITE"}
 
-    def verificar_vistas(self, verificar_contraste):
+    def verificar_vistas(self, verificar_contraste, conhecidos=None):
         self.assertGreater(len(self.vistas), 40)
         problemas = []
         for local, paleta, raiz, fundo_inicial in self.vistas:
@@ -287,7 +288,18 @@ class TesteDeLegibilidade(TesteDeSessao):
                         problemas.append(f"{local}: Markdown abaixo de 4,5:1")
                 elif isinstance(controle, ft.AlertDialog) and controle.bgcolor != paleta["fundo_dialogo"]:
                     problemas.append(f"{local}: diálogo sem o fundo da paleta")
-        self.assertEqual(sorted(set(problemas)), [])
+        if conhecidos is None:
+            self.assertEqual(sorted(set(problemas)), [])
+        else:
+            # Lista exata (sem o nome da tela): nada novo e nada já resolvido nela.
+            self.assertEqual({p.split(": ", 1)[1] for p in problemas}, conhecidos)
+
+
+# Etapa 10: os cinco casos residuais do Claro (camadas translúcidas) foram
+# corrigidos -- texto das pílulas de status escurecido (#5E5D58 e #126A4F,
+# fundo mantido) e ícones de Parcela, total e pagas em tons mais escuros.
+# Lista exata e vazia: qualquer caso novo nas telas percorridas falha aqui.
+LIMITACOES_TELAS_CLARO = set()
 
 
 class TestTelasNoEscuro(TesteDeLegibilidade):
@@ -299,13 +311,14 @@ class TestTelasNoEscuro(TesteDeLegibilidade):
         self.percorrer_app(pagina, ESCURO)
         self.verificar_vistas(verificar_contraste=True)
 
-    def test_claro_sem_cores_do_escuro_e_com_cores_explicitas(self):
-        # Contraste do Claro não é verificado aqui: limitações conhecidas (test_cores.py).
+    def test_claro_sem_cores_do_escuro_e_legivel(self):
+        # Etapa 10 (opção A da paleta): o Claro passa a ter o contraste medido
+        # nas mesmas telas e diálogos percorridos no Escuro.
         self.popular(self.bia)
         pagina, _ = self.abrir_app()
         self.entrar(pagina, "bia@sino.com", "senha5678")
         self.percorrer_app(pagina, CLARO)
-        self.verificar_vistas(verificar_contraste=False)
+        self.verificar_vistas(verificar_contraste=True, conhecidos=LIMITACOES_TELAS_CLARO)
 
 
 class TestNavegarDepoisDeTrocarOTema(TesteDeLegibilidade):

@@ -3,9 +3,10 @@ Cores do tema (ERS v6.0, T3; Etapa 0 e Etapa 6): todo papel de cor usado em
 backend/main.py existe nos dois temas, main.py não tem cores fixas, os temas
 Claro e Escuro têm os mesmos papéis, a troca de tema é validada e isolada
 por sessão (instância de `cores.Paleta`) e o contraste dos pares principais
-é verificado (RNF09, parcial): o Escuro atende todos; o Claro original tem
-limitações conhecidas, listadas à parte, para a Etapa 10. (A paleta oficial
-das categorias continua em database/db.py, fora do tema.)
+é verificado (RNF09, parcial: só os pares mapeados): desde a Etapa 10 (opção
+A da paleta) os dois temas atendem todos os pares listados, sem limitações
+conhecidas. (A paleta oficial das categorias continua em database/db.py,
+fora do tema.)
 """
 
 import os
@@ -55,7 +56,7 @@ PARES_TEXTO = (
     ("texto_sucesso", "fundo_card"),
     ("texto_sobre_acao", "acao_primaria"),
     ("texto_sobre_acao", "acao_destrutiva"),
-    ("texto_sobre_acao", "acao_pagamento"),
+    ("texto_sobre_pagamento", "acao_pagamento"),
     ("texto_sobre_acao", "grafico_barra_destaque"),
     ("texto_card_total", "fundo_card_total"),
     ("texto_secundario_card_total", "fundo_card_total"),
@@ -71,13 +72,17 @@ PARES_TEXTO = (
     ("status_pago", "fundo_card"),
     ("status_pendente", "fundo_card"),
     ("status_atrasado", "fundo_card"),
+    # Pílulas de status: o fundo efetivo (12% da cor do status) é medido em
+    # test_legibilidade_temas; aqui, o par sólido de referência.
+    ("texto_pilula_pago", "fundo_pagina"),
+    ("texto_pilula_pendente", "fundo_pagina"),
     ("nav_ativo", "fundo_card"),
     ("nav_inativo", "fundo_card"),
     ("alerta_atraso_texto", "alerta_atraso_fundo"),
     ("aviso_texto", "aviso_fundo"),
     ("acao_primaria", "fundo_pagina"),       # "Ver status"
     ("acao_primaria", "fundo_card"),
-    ("sem_categoria", "fundo_card"),          # rótulo "Sem categoria"
+    ("texto_sem_categoria", "fundo_card"),    # rótulo "Sem categoria"
     ("variacao_aumento", "fundo_card"),
     ("variacao_reducao", "fundo_card"),
     ("grafico_barra_destaque", "fundo_card"),  # rótulo do mês em destaque
@@ -90,42 +95,20 @@ PARES_NAO_TEXTO = (
     ("grafico_total_icone", "grafico_total_fundo"),
     ("grafico_pago_icone", "grafico_pago_fundo"),
     ("borda_campo", "fundo_card"),
-    ("status_a_vencer", "fundo_card"),         # hoje só ícone (Parcela)
+    ("status_a_vencer", "fundo_card"),         # sem uso atual em main.py (Parcela usa detalhes_icone)
+    ("detalhes_icone", "fundo_card"),          # ícones informativos de Detalhes (círculo medido nas telas)
     ("controle_pago", "fundo_card"),
     ("controle_pendente", "fundo_card"),
     ("aviso_icone", "aviso_fundo"),
     ("grafico_barra", "fundo_card"),
     ("grafico_barra_destaque", "grafico_progresso_fundo"),
+    ("sem_categoria", "fundo_card"),          # fatias e círculos de "Sem categoria"
 )
-# Limitações CONHECIDAS da paleta Clara original, preservada por decisão
-# (correção prevista para a Etapa 10). Não são pares aprovados: a lista é
-# exata -- o teste falha se um par daqui passar a atender o critério (para
-# ser retirado) ou se um par novo deixar de atender. O Escuro não tem exceções.
-LIMITACOES_CONHECIDAS_CLARO = {
-    ("texto_secundario", "fundo_pagina"),
-    ("texto_secundario", "fundo_card"),
-    ("texto_secundario", "fundo_dialogo"),
-    ("texto_sucesso", "fundo_pagina"),
-    ("texto_sucesso", "fundo_card"),
-    ("texto_sobre_acao", "acao_primaria"),
-    ("texto_sobre_acao", "acao_pagamento"),
-    ("texto_sobre_acao", "grafico_barra_destaque"),
-    ("chip_ativo_texto", "chip_ativo_fundo"),
-    ("filtro_inativo_texto", "fundo_pagina"),
-    ("status_pago", "fundo_card"),
-    ("status_pendente", "fundo_card"),
-    ("nav_ativo", "fundo_card"),
-    ("nav_inativo", "fundo_card"),
-    ("acao_primaria", "fundo_pagina"),
-    ("acao_primaria", "fundo_card"),
-    ("sem_categoria", "fundo_card"),
-    ("variacao_reducao", "fundo_card"),
-    ("grafico_barra_destaque", "fundo_card"),
-    ("controle_pago", "fundo_card"),
-    ("aviso_icone", "aviso_fundo"),
-    ("grafico_barra", "fundo_card"),
-    ("grafico_barra_destaque", "grafico_progresso_fundo"),
-}
+# Limitações conhecidas do Claro: a lista ficou vazia na Etapa 10 (opção A da
+# paleta, RNF09). Continua exata -- o teste falha se um par voltar a ficar
+# abaixo do mínimo sem ser registrado aqui. Cobertura: só os pares listados
+# acima (papéis e usos mapeados); não é uma auditoria de todos os pixels.
+LIMITACOES_CONHECIDAS_CLARO = set()
 
 
 def pares_com_minimo():
@@ -175,10 +158,21 @@ class TestCores(TesteSemContaminarTema):
 
     def test_identidade_verde_e_categorias_preservadas_no_escuro(self):
         claro, escuro = cores.PALETAS["claro"], cores.PALETAS["escuro"]
-        for papel in ("acao_primaria", "texto_marca", "acao_pagamento", "chip_ativo_fundo",
-                      "filtro_ativo_fundo", "categoria_cor_padrao", "texto_sobre_cor_categoria"):
+        for papel in ("texto_marca", "acao_pagamento", "filtro_ativo_fundo", "categoria_cor_padrao",
+                      "texto_sobre_cor_categoria"):
             with self.subTest(papel=papel):
                 self.assertEqual(escuro[papel], claro[papel])
+        # Etapa 10 (RNF09, opção A): no Claro, texto e botões usam o verde
+        # acessível #16795A; o verde da marca #1D9E75 segue nos botões do
+        # Escuro e, no Claro, onde não há texto.
+        for papel in ("acao_primaria", "chip_ativo_fundo"):
+            self.assertEqual(escuro[papel], "#1D9E75")
+            self.assertEqual(claro[papel], "#16795A")
+        for papel in ("borda_selecao", "categoria_cor_padrao"):
+            self.assertEqual(claro[papel], "#1D9E75")
+        # O ícone do total no Gráfico fica sobre um círculo translúcido; no
+        # Claro usa o verde acessível para passar de 3:1 sobre o fundo efetivo.
+        self.assertEqual(claro["grafico_total_icone"], "#16795A")
         verdes_da_marca = {"#1D9E75", "#39D67C"}
         self.assertIn(escuro["grafico_barra_destaque"], verdes_da_marca)
         self.assertIn(escuro["nav_ativo"], verdes_da_marca | {"#3DC08F"})

@@ -242,7 +242,7 @@ Ao navegar para um período futuro ainda sem ocorrências de uma série ativa e 
 
 * Campo **Descrição (opcional)**, com até 500 caracteres;
 * disponível em Nova Conta; pode ser adicionada, editada ou removida em Editar conta;
-* aparece em Detalhes **somente quando preenchida**; quando vazia, não ocupa espaço na interface;
+* aparece em Detalhes **sempre**, em linha inteira, completa e com as quebras de linha; quando vazia, o campo exibe "Sem descrição" (8.4, P12);
 * em contas recorrentes, participa do diálogo de escopo (5.6) ao ser adicionada, alterada ou removida. Com "Este mês em diante", o modelo da série também recebe a descrição e as novas ocorrências nascem com ela (P3).
 
 ### 5.23 Limites de caracteres [v6 novo]
@@ -526,7 +526,8 @@ Internet       | Parcela 1 de 49
 Recorrência
 Esta conta se repete mensalmente até setembro de 2030.
 
-Descrição            (somente se preenchida)
+Descrição
+(texto completo, em linha inteira; vazia: "Sem descrição")
 
 🔴 Atrasado  | ✓ Marcar como paga
 
@@ -541,6 +542,16 @@ Descrição            (somente se preenchida)
 * **Editar** e **Excluir** ficam no rodapé: menores que os atuais, do mesmo tamanho e centralizados. Excluir mantém a aparência destrutiva.
 * **Conta Única:** mantém o comportamento atual, com a informação "Esta conta não é recorrente", sem nova representação.
 * **Conta sem categoria:** exibe "Sem categoria" no padrão cinza, sem emoji e sem emoji genérico ou substituto, no mesmo conceito dos gráficos (5.25).
+* **Campos fixos (P12, 04/10/2026, Etapa 10):** Detalhes exibe sempre, nesta ordem, Valor, Vencimento, Categoria, Parcela, Recorrência e Descrição. Em janela larga, Valor e Vencimento ficam lado a lado, assim como Categoria e Parcela; em janela estreita, os campos se empilham. Recorrência e Descrição ocupam sempre a linha inteira, com quebra de texto e altura automática; a Descrição usa o mesmo tamanho de fonte da Recorrência, sem negrito. Ícones e rótulos ficam centralizados na altura de cada campo. Cada campo tem ícone no mesmo verde, com fundo suave, e o rótulo fica à esquerda do conteúdo; quando não há espaço para isso sem apertar o valor, o rótulo passa para cima do conteúdo. Sem informação, o campo continua na tela, no cinza secundário:
+
+  | Campo | Sem informação | Observação |
+  |---|---|---|
+  | Categoria | "Sem categoria" | 5.25 |
+  | Parcela | "Não há parcelas" | conta Única e série encerrada (5.8); série ativa sem término mostra "Parcela X" (5.19) |
+  | Recorrência | "Esta conta não é recorrente." | conta Única e série encerrada (5.8, P6) |
+  | Descrição | "Sem descrição" | 5.22 |
+
+  Só a apresentação muda: regras e dados de categoria, parcela, recorrência e descrição continuam os mesmos.
 
 ## 8.5 Nova Conta / Editar conta
 
@@ -637,7 +648,7 @@ Os casos CT01–CT48 da ERS v5.0 continuam válidos como suíte de regressão.
 | CT54 | Tocar na conta | Abre Detalhes | RF30 |
 | CT55 | Detalhes de conta com categoria | Emoji e cor da categoria na identificação | RF31 |
 | CT56 | Detalhes de conta pendente, atrasada e paga | "Marcar como paga" nas duas primeiras; "Desmarcar como paga" na paga | RF31 |
-| CT57 | Detalhes de conta sem descrição | Nenhum espaço reservado para a descrição | RF31 |
+| CT57 | Detalhes de conta sem descrição | Campo Descrição em linha inteira com "Sem descrição" (P12) | RF31, 8.4 |
 | CT58 | Adicionar, editar e remover descrição | Cada operação é refletida em Detalhes | RF32 |
 | CT59 | Descrição com 501 caracteres | Bloqueada, com mensagem amigável | RF33 |
 | CT60 | Nome da conta com 31 caracteres | Bloqueado, com mensagem amigável | RF33 |
@@ -695,7 +706,7 @@ Os casos CT01–CT48 da ERS v5.0 continuam válidos como suíte de regressão.
 | CT112 | Alterar o e-mail e entrar antes de confirmar o novo | Login com o e-mail atual continua funcionando | RF36 |
 | CT113 | Pedir reenvio de código antes de 60 segundos | Reenvio indisponível até completar 60 segundos | 5.32 |
 | CT114 | Navegar no Gráfico até um mês futuro sem ocorrências de uma série sem término | Nenhuma ocorrência é gerada | 5.26 |
-| CT115 | Detalhes de uma conta Única | Exibe "Esta conta não é recorrente" | 8.4 |
+| CT115 | Detalhes de uma conta Única | Exibe os seis campos, com "Não há parcelas" e "Esta conta não é recorrente" (P12) | 8.4 |
 | CT116 | Detalhes de uma conta sem categoria | "Sem categoria" em cinza, sem emoji | 8.4 |
 | CT117 | Usuário com tema Escuro sai da conta | Login em tema Claro; ao entrar de novo, o Escuro é carregado | 5.36 |
 | CT118 | Cadastro com "Confirmar senha" diferente da senha | "As senhas não coincidem."; nenhum código é pedido e nada é gravado | 5.31, P11 |
@@ -708,7 +719,7 @@ A v6.0 está atendida quando:
 
 * **Tela Principal:** total sem filtros; todas as contas do mês com rolagem normal; ✏️ abre Editar e o clique abre Detalhes (CT49–CT50, CT53–CT54).
 * **Ver status:** mês de referência visível e os quatro filtros funcionando (CT51–CT52).
-* **Detalhes:** hierarquia visual, emoji e cor da categoria, status junto do pagamento, descrição só quando preenchida (CT55–CT57).
+* **Detalhes:** hierarquia visual, emoji e cor da categoria, status junto do pagamento, campos fixos com textos de ausência (CT55–CT57, P12).
 * **Campos:** descrição gerenciável e todos os limites validados com mensagem amigável (CT58–CT62).
 * **Gráfico:** totais independentes de status; total pago complementar; RF21, RF22 e RF23 com todos os casos de borda; período vazio sem dados artificiais; "Sem categoria" conforme 5.25 (CT63–CT80).
 * **Senha e e-mail:** senha mínima, alterar senha, verificação de e-mail e recuperação conforme 5.31–5.35 (CT81–CT94).
@@ -760,6 +771,7 @@ Nenhuma decisão de produto está pendente. As pendências P1–P10 foram fechad
 | P9 | Termos e Política | Consulta em Ajustes; sem versionamento nem reconsentimento na v6.0 | 5.37, 3.2 |
 | P10 | Tela Principal | Estrutura e ordem dos blocos preservadas | 5.15 |
 | P11 | Confirmação de senha no cadastro (03/10/2026, Etapa 10) | Campo "Confirmar senha" no mesmo padrão do campo de senha; comparação exata, depois das regras de 5.33; senhas diferentes mostram "As senhas não coincidem." sem pedir código nem gravar; o campo fica bloqueado durante o envio do código, como os demais | 5.31, 8.8, RF01, CT118 |
+| P12 | Detalhes com campos fixos (04/10/2026, Etapa 10) | Sempre Valor, Vencimento, Categoria, Parcela, Recorrência e Descrição, nesta ordem; ausência mostrada como "Sem categoria", "Não há parcelas", "Esta conta não é recorrente." e "Sem descrição"; Descrição em linha inteira; ícones no mesmo verde; rótulo à esquerda do conteúdo, ou acima em janela estreita. Substitui "descrição só quando preenchida" (5.22) | 5.22, 8.4, CT57, CT115 |
 
 ## 13.2 Decisões técnicas
 
@@ -886,3 +898,4 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 6.0 (estado) | 02/10/2026 | Registro do estado da Etapa 8 (13.3), marcadores de RF01, RF36 e RF39 e nota sobre `codigos_verificacao` em 9.2 e T4; nenhuma regra alterada. |
 | 6.0 (estado) | 03/10/2026 | Registro do estado da Etapa 9 (13.4), marcador de RF43 e nota em T2; nenhuma regra alterada. |
 | 6.0 (P11) | 03/10/2026 | Decisão P11: confirmação de senha no cadastro (Etapa 10); RF01, 5.31, 8.8 e CT118. |
+| 6.0 (P12) | 04/10/2026 | Decisão P12: Detalhes com campos fixos e textos de ausência (Etapa 10); 5.22, 8.4, CT57 e CT115. |

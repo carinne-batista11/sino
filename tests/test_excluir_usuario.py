@@ -382,6 +382,7 @@ class TestPassos(TesteDeExclusaoNaInterface):
         self.assertEqual(dialogo.title.value, "Excluir sua conta do Sino?")
         self.assertIn(f"• {resumo['contas']} contas registradas", textos)
         self.assertIn("• 1 série recorrente", textos)
+        self.assertIn("As contas incluem os meses futuros já gerados das recorrências.", textos)  # Etapa 10
         self.assertIn(f"• {resumo['categorias']} categorias", textos)
         juntos = " ".join(textos)
         self.assertIn("permanentemente do banco de dados atual do Sino", juntos)
