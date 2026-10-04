@@ -7,7 +7,7 @@
 **Data:** 23 de setembro de 2026
 **Versão anterior:** 5.0 (fechada e auditada em 22/09/2026)
 **Status:** Especificação fechada. Todas as decisões de produto estão tomadas (seção 13.1); restam apenas decisões técnicas de implementação (seção 13.2).
-**Atualização de estado (02/10/2026):** situação da Etapa 8 registrada em 13.3. Nenhuma regra foi alterada.
+**Atualização de estado (03/10/2026):** situação da Etapa 8 registrada em 13.3 e da Etapa 9 em 13.4. Nenhuma regra foi alterada.
 
 ---
 
@@ -409,9 +409,9 @@ A estratégia técnica de exclusão e dos relacionamentos no banco é decisão t
 
 # 6. Requisitos Funcionais
 
-**Implementação:** ✅ implementado · 🧪 implementado, com validação final pendente (ver 13.3) · 🔨 a implementar na v6.0 · ⏸️ fora do escopo / não aplicável.
+**Implementação:** ✅ implementado · 🧪 implementado, com validação final pendente (ver 13.3 e 13.4) · 🔨 a implementar na v6.0 · ⏸️ fora do escopo / não aplicável.
 
-Nesta atualização (02/10/2026) só foram revisados os marcadores da Etapa 8 (RF01, RF36, RF39); os das Etapas 1–7 ainda não foram revisados.
+Nas atualizações de 02/10/2026 e 03/10/2026 só foram revisados os marcadores das Etapas 8 (RF01, RF36, RF39) e 9 (RF43); os das Etapas 1–7 ainda não foram revisados.
 
 ## 6.1 Requisitos vigentes (RF01–RF29)
 
@@ -464,7 +464,7 @@ Nesta atualização (02/10/2026) só foram revisados os marcadores da Etapa 8 (R
 | RF40 | Permitir escolher tema Claro ou Escuro. | 5.36 | 🔨 |
 | RF41 | Permitir consultar Termos de Uso e Política de Privacidade em Ajustes. | 5.37 | 🔨 |
 | RF42 | Permitir sair da conta sem remover dados. | 5.38 | 🔨 |
-| RF43 | Permitir excluir definitivamente a conta de usuário, com senha e confirmação final. | 5.39 | 🔨 |
+| RF43 | Permitir excluir definitivamente a conta de usuário, com senha e confirmação final. | 5.39 | ✅ |
 
 ---
 
@@ -764,7 +764,7 @@ Nenhuma decisão de produto está pendente. As pendências P1–P10 foram fechad
 Ficam a critério da implementação, desde que o comportamento especificado seja respeitado:
 
 * **T1** Representação interna de "Sem categoria" (NULL ou outra solução). Antes da implementação, confirmar que nenhuma categoria existente usa um cinza da paleta atual.
-* **T2** Estratégia de exclusão da conta de usuário e dos relacionamentos no banco (contas, séries, categorias, códigos de verificação).
+* **T2** Estratégia de exclusão da conta de usuário e dos relacionamentos no banco (contas, séries, categorias, códigos de verificação). Situação em 03/10/2026: exclusão explícita em uma única transação, sem `ON DELETE CASCADE` nem migração; `autorizacoes_usadas` preservada (13.4).
 * **T3** Paleta definitiva do tema escuro, respeitando 5.36 e RNF09.
 * **T4** Serviço de envio de e-mail: escolha entre SMTP e API e do provedor, desde que haja opção gratuita adequada ao projeto e que os segredos sigam RNF11. Situação em 02/10/2026: serviço próprio de códigos com envio pela API da Resend, implementado e ainda não publicado (13.3).
 * **T5** Forma de contar o caractere percebido (por exemplo, por agrupamentos de grafemas), aplicada igualmente na interface e na gravação.
@@ -799,6 +799,29 @@ Registro de situação, sem mudança de regra. Detalhes técnicos no [contrato d
 * P9 (sem versionamento dos documentos nem novo aceite) continua valendo; precisa ser revista **antes do uso por outras pessoas**, porque o texto mudou de forma relevante na Etapa 8.
 * O cadastro continua dependente do serviço de códigos; em desenvolvimento, o caminho documentado é o modo de demonstração. Não há cadastro sem verificação.
 * Etapa 10: fechamento seguro da janela, pendências de UX da Etapa 8 (falha transitória na gravação exige novo código, formulário editável durante o envio, contador do reenvio, confirmação de senha no cadastro) e RNF09.
+
+## 13.4 Estado da Etapa 9 (03/10/2026)
+
+Registro de situação, sem mudança de regra. **Excluir conta (RF43) implementado e validado**; a revisão dos textos dos Termos e da Política continua pendente.
+
+**Implementado**
+
+* Ajustes → Conta e sessão → **Excluir conta**, com aparência destrutiva e separado de "Sair da conta". Três passos: aviso com as quantidades de contas, séries e categorias (informativas; incluem as ocorrências futuras já geradas das séries), senha atual e confirmação final com botão destrutivo. Cancelar em qualquer passo não altera nada.
+* T2: a senha é conferida no segundo passo, e a pendência guarda só a impressão do hash. Na confirmação, uma única transação (`BEGIN IMMEDIATE`) relê o usuário, confere de novo a impressão e apaga contas → séries → categorias → usuário, sempre pelo `usuario_id`. As chaves estrangeiras ficam como rede de segurança; qualquer falha desfaz tudo. Sem `ON DELETE CASCADE` nem migração.
+* `autorizacoes_usadas` é preservada (não identifica usuários). A exclusão não alcança backups existentes, o serviço de códigos, o provedor de envio nem cópias externas.
+* `PRAGMA secure_delete = ON` na transação, como medida adicional; não é garantia de apagamento em backups, journals, snapshots ou no dispositivo.
+* Ao concluir, a sessão é encerrada e o Login mostra "Sua conta foi excluída.". Operações assíncronas da sessão antiga não atualizam a interface depois da exclusão.
+* Termos (itens 4 e 6) e Política (itens 2, 8 e 10) atualizados em 03/10/2026; P9 mantida.
+
+**Validação**
+
+* Testes automáticos: exclusão completa; outros usuários preservados (registros e relações); senha incorreta; senha alterada entre os passos; usuário inexistente; falha no meio; referência cruzada; banco ocupado; interface (CT100–CT102); legibilidade nos dois temas; gravação assíncrona pendente da sessão antiga.
+* Validação visual em cópia isolada do banco: item nos dois temas, cancelamento nos três passos (CT100), senha errada (CT101), exclusão com retorno ao Login e recusa do login antigo (CT102), conferência dos dados dos demais usuários e de outra conta. Banco real e backups inalterados.
+* Ressalva: o texto da mensagem "Sua conta foi excluída." no Login tem cobertura automática, sem confirmação visual.
+
+**Pendente**
+
+* Revisão da autora e revisão jurídica dos Termos e da Política (03/10/2026); P9 deve ser revista antes do uso por outras pessoas.
 
 ---
 
@@ -859,3 +882,4 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 5.0 | 01/09/2026 – 22/09/2026 | Nova arquitetura de séries, recorrência mensal/anual sem arrasto, data de pagamento, categorias com emoji e cor, banner de atraso, decisão D7 (Encerrar recorrência) e auditoria final pós-implementação. |
 | 6.0 | 23/09/2026 | Tela Principal com todas as contas e atalho de edição, Ver status, Detalhes reformulada, descrição e limites de campos, tela Gráfico (RF21–RF23), Ajustes, verificação de e-mail por código, senha mínima, alterar e recuperar senha, excluir conta, tema claro/escuro. Escopo de edição das séries estendido a categoria e descrição. Decisões de produto P1–P10 fechadas. |
 | 6.0 (estado) | 02/10/2026 | Registro do estado da Etapa 8 (13.3), marcadores de RF01, RF36 e RF39 e nota sobre `codigos_verificacao` em 9.2 e T4; nenhuma regra alterada. |
+| 6.0 (estado) | 03/10/2026 | Registro do estado da Etapa 9 (13.4), marcador de RF43 e nota em T2; nenhuma regra alterada. |

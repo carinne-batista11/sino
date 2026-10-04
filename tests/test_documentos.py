@@ -39,7 +39,7 @@ class TestConteudoAprovado(unittest.TestCase):
         for chave, (_, texto) in documentos.DOCUMENTOS.items():
             with self.subTest(chave):
                 self.assertIn(AUTORIA, texto)
-                self.assertIn("Última atualização: 02/10/2026", texto)
+                self.assertIn("Última atualização: 03/10/2026", texto)
                 self.assertIn(CONTATO, texto)
                 self.assertNotIn("PENDENTE", texto)
 
@@ -48,11 +48,29 @@ class TestConteudoAprovado(unittest.TestCase):
         self.assertTrue(documentos.POLITICA_DE_PRIVACIDADE.startswith("# Política de Privacidade do Sino\n"))
 
     def test_limitacoes_atuais_declaradas(self):
-        self.assertIn("não existe a opção de excluir o usuário", documentos.TERMOS_DE_USO)
         self.assertIn("demais informações não são criptografadas", documentos.POLITICA_DE_PRIVACIDADE)
         self.assertIn("remove os dados de todos os usuários daquela instalação", documentos.POLITICA_DE_PRIVACIDADE)
-        self.assertIn("Nesta versão, **não está disponível** excluir o usuário com todos os seus dados.",
-                      documentos.POLITICA_DE_PRIVACIDADE)
+
+    def test_exclusao_da_conta_de_usuario_da_etapa_9(self):  # 5.39, RF43
+        termos, politica = documentos.TERMOS_DE_USO, documentos.POLITICA_DE_PRIVACIDADE
+        for texto in (termos, politica):
+            self.assertNotIn("não existe a opção de excluir o usuário", texto)
+            self.assertNotIn("**não está disponível** excluir o usuário", texto)
+        self.assertIn("## 6. Sair da conta e excluir a conta", termos)
+        self.assertIn("pede a senha atual e uma confirmação final", termos)
+        self.assertIn("**não pode ser desfeita** pelo aplicativo", termos)
+        self.assertIn("A exclusão **não apaga** as cópias de segurança (backups) já existentes", termos)
+        # O que a exclusão não alcança e o limite do secure_delete, sem prometer apagamento completo.
+        self.assertIn("(nome, e-mail e sua confirmação, senha protegida, data do aceite e tema)", politica)
+        self.assertIn("Se algo falhar no meio, nada é apagado.", politica)
+        self.assertIn("Os dados dos outros usuários da mesma instalação não são alterados.", politica)
+        self.assertIn("A exclusão da conta de usuário **não alcança**:", politica)
+        self.assertIn("continuam contendo seus dados até serem apagadas manualmente", politica)
+        self.assertIn("ele não é apagado na exclusão da conta de usuário (item 8)", politica)
+        self.assertIn("o Sino não pede a esses serviços que apaguem nada", politica)
+        self.assertIn("Essa é uma medida adicional: não garante que a informação não possa ser recuperada", politica)
+        self.assertIn("Excluir itens ou a conta de usuário no aplicativo não apaga essas cópias.", politica)
+        self.assertNotRegex(politica, r"(?i)apagad[ao]s? (completa|definitiva)mente|eliminação completa")
 
     def test_codigos_por_email_da_etapa_8(self):  # 5.31, 5.32, 5.35
         termos, politica = documentos.TERMOS_DE_USO, documentos.POLITICA_DE_PRIVACIDADE

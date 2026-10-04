@@ -3,9 +3,10 @@ documentos.py — Termos de Uso e Política de Privacidade do Sino (ERS v6.0,
 5.37, RF15/RF41), em Markdown.
 
 Texto aprovado pela autora em 30/09/2026; atualização de 02/10/2026
-(Etapa 8: códigos por e-mail) EM REVISÃO pela autora, com revisão jurídica
-pendente. É a mesma fonte exibida no cadastro (antes do aceite) e em
-Ajustes > Sobre e privacidade. Qualquer mudança de conteúdo deve ser revisada
+(Etapa 8: códigos por e-mail) e rascunho de 03/10/2026 (Etapa 9: excluir
+a conta de usuário) EM REVISÃO pela autora, com revisão jurídica pendente.
+É a mesma fonte exibida no cadastro (antes do aceite) e em Ajustes > Sobre e
+privacidade. Qualquer mudança de conteúdo deve ser revisada
 antes e mencionada nas notas da versão (docs/notas-da-versao.md). O endereço
 de contato é apenas informativo: os únicos e-mails ligados ao Sino são os de
 código, enviados pelo serviço de códigos (não pelo aplicativo).
@@ -14,7 +15,7 @@ código, enviados pelo serviço de códigos (não pelo aplicativo).
 TERMOS_DE_USO = """\
 # Termos de Uso do Sino
 
-Última atualização: 02/10/2026
+Última atualização: 03/10/2026
 
 O Sino é um projeto pessoal de portfólio desenvolvido por Carinne Batista. Estes termos descrevem a **versão desktop atual** do Sino.
 
@@ -52,7 +53,7 @@ Toda nova senha precisa ter **pelo menos 8 caracteres** e não pode conter espa�
 
 Em Ajustes, você pode alterar sua senha informando a senha atual e confirmando a nova, que precisa ser diferente da atual. Na recuperação, a nova senha também precisa ser diferente da atual. Guarde sua senha com cuidado.
 
-Em Ajustes, você também pode alterar seu nome e escolher o tema (Claro ou Escuro).
+Em Ajustes, você também pode alterar seu nome, escolher o tema (Claro ou Escuro) e excluir sua conta de usuário (item 6).
 
 ## 5. Seus cuidados
 
@@ -62,11 +63,15 @@ Ao usar o Sino, é importante:
 * proteger o acesso ao computador e à pasta do Sino;
 * manter suas próprias cópias de segurança, se desejar, já que o Sino não as cria de forma periódica.
 
-## 6. Sair da conta não apaga dados
+## 6. Sair da conta e excluir a conta
 
 "Sair da conta" apenas encerra a sessão e volta à tela de entrada. Suas contas, categorias e preferências continuam guardadas e reaparecem quando você entrar novamente.
 
-Excluir uma conta financeira ou uma categoria remove esse item do aplicativo. Nesta versão, **não existe a opção de excluir o usuário** com todos os seus dados.
+Excluir uma conta financeira ou uma categoria remove esse item do aplicativo.
+
+Em Ajustes, a opção **Excluir conta** apaga a sua conta de usuário. Antes, o Sino mostra quantas contas, séries recorrentes e categorias serão apagadas, pede a senha atual e uma confirmação final. Confirmada, a exclusão apaga do banco de dados atual do Sino a sua conta de usuário e todos os dados ligados a ela, encerra a sessão e **não pode ser desfeita** pelo aplicativo. Depois disso, o mesmo e-mail só volta a ser usado com um novo cadastro, confirmado por código.
+
+A exclusão **não apaga** as cópias de segurança (backups) já existentes nem informações guardadas fora do banco de dados atual. Veja os itens 6, 8 e 10 da Política de Privacidade.
 
 ## 7. Limitações conhecidas
 
@@ -84,7 +89,7 @@ Dúvidas, sugestões e relatos de problemas podem ser enviados para sino.lembret
 POLITICA_DE_PRIVACIDADE = """\
 # Política de Privacidade do Sino
 
-Última atualização: 02/10/2026
+Última atualização: 03/10/2026
 
 O Sino é um projeto pessoal de portfólio desenvolvido por Carinne Batista. Esta política descreve como a **versão desktop atual** do Sino trata as informações registradas nele. As afirmações sobre o que o Sino guarda, usa e envia se referem ao próprio aplicativo; bibliotecas de terceiros são tratadas no item 7.
 
@@ -98,7 +103,7 @@ A única função que conversa com um serviço fora do aplicativo é a **confirm
 
 *Dados da sua conta de usuário:* nome, e-mail, se o e-mail foi confirmado por código, senha (guardada de forma protegida, veja o item 5), a data em que você aceitou os Termos de Uso e esta Política, e sua preferência de tema (Claro ou Escuro).
 
-*Registro técnico das confirmações por código:* para que a mesma confirmação não seja usada duas vezes, o Sino guarda um identificador aleatório de cada confirmação usada, a finalidade (cadastro, alteração de e-mail ou recuperação de senha) e até quando ela valeria. Esse registro não contém e-mail, nome nem senha, e os itens vencidos são apagados nas confirmações seguintes.
+*Registro técnico das confirmações por código:* para que a mesma confirmação não seja usada duas vezes, o Sino guarda um identificador aleatório de cada confirmação usada, a finalidade (cadastro, alteração de e-mail ou recuperação de senha) e até quando ela valeria. Esse registro não contém e-mail, nome nem senha, e os itens vencidos são apagados nas confirmações seguintes. Como não está ligado a nenhum usuário, ele não é apagado na exclusão da conta de usuário (item 8).
 
 *Informações financeiras que você registra:* nome, valor, data de vencimento, situação (paga ou pendente), data de pagamento, categoria, descrição (opcional) e recorrência de cada conta; nome, emoji e cor de cada categoria.
 
@@ -158,9 +163,18 @@ O aviso sonoro de "limite atingido" usa programas de som do próprio computador.
 
 No aplicativo, você pode ver, editar e excluir suas contas financeiras e categorias, alterar seu nome e sua senha e escolher o tema.
 
-Com o serviço de códigos disponível (item 7), você também pode alterar o e-mail e recuperar uma senha esquecida. Nesta versão, **não está disponível** excluir o usuário com todos os seus dados.
+Com o serviço de códigos disponível (item 7), você também pode alterar o e-mail e recuperar uma senha esquecida.
 
-Ao excluir um item, ele deixa de aparecer no aplicativo. As cópias de segurança anteriores (item 6) não são alteradas, e o próprio arquivo do banco pode manter vestígios técnicos da informação apagada até que esse espaço seja reutilizado.
+*Excluir a conta de usuário.* Em Ajustes > Excluir conta, depois de informar a senha atual e confirmar, você pode excluir sua conta de usuário. A exclusão apaga do banco de dados atual (`database/sino.db`), em uma única operação, os dados da sua conta de usuário (nome, e-mail e sua confirmação, senha protegida, data do aceite e tema), suas contas financeiras, séries recorrentes e categorias. Se algo falhar no meio, nada é apagado. Os dados dos outros usuários da mesma instalação não são alterados.
+
+A exclusão da conta de usuário **não alcança**:
+
+* as cópias de segurança já existentes em `database/backups/` (item 6), que continuam contendo seus dados até serem apagadas manualmente;
+* o registro técnico das confirmações por código (item 2), que não identifica usuários;
+* o que o serviço de códigos e o provedor de envio já receberam ou guardaram (item 7), que segue os prazos e o tratamento de cada um; o Sino não pede a esses serviços que apaguem nada;
+* cópias feitas fora do aplicativo, como cópias da pasta do Sino, backups do computador ou arquivos do modo de demonstração.
+
+*Vestígios técnicos.* Ao excluir um item ou a conta de usuário, os dados deixam de aparecer no aplicativo. Na exclusão da conta de usuário, o Sino pede ao banco de dados que sobrescreva o espaço liberado no arquivo. Essa é uma medida adicional: não garante que a informação não possa ser recuperada por outros meios, como cópias, arquivos temporários do banco de dados ou recursos do sistema e do dispositivo de armazenamento. Nas demais exclusões, o próprio arquivo do banco pode manter vestígios técnicos da informação apagada até que esse espaço seja reutilizado.
 
 ## 9. Sair da conta não apaga dados
 
@@ -168,7 +182,7 @@ Ao excluir um item, ele deixa de aparecer no aplicativo. As cópias de seguranç
 
 ## 10. Por quanto tempo as informações ficam guardadas
 
-As informações permanecem no banco de dados enquanto o arquivo `database/sino.db` for mantido. As cópias de segurança permanecem enquanto os seus próprios arquivos em `database/backups/` forem mantidos. Excluir itens no aplicativo não apaga essas cópias. Os prazos do serviço de códigos estão no item 7.
+As informações permanecem no banco de dados enquanto o arquivo `database/sino.db` for mantido, até serem excluídas no aplicativo (item 8). As cópias de segurança permanecem enquanto os seus próprios arquivos em `database/backups/` forem mantidos. Excluir itens ou a conta de usuário no aplicativo não apaga essas cópias. Os prazos do serviço de códigos estão no item 7.
 
 Desinstalar ou apagar apenas o programa não garante que o banco e os backups sejam removidos. **Atenção:** apagar manualmente `database/sino.db` remove os dados de todos os usuários daquela instalação, não apenas os seus. Os backups são arquivos separados em `database/backups/` e permanecem até serem apagados também. O aplicativo não oferece uma função para desfazer essa remoção.
 

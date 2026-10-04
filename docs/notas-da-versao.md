@@ -6,6 +6,45 @@ Política de Privacidade. Regras completas na
 
 ## v6.0 — em implementação
 
+### Etapa 9 — excluir conta (03/10/2026)
+
+Implementada e validada: testes automáticos e validação visual em cópia
+isolada do banco (item nos dois temas, cancelamento nos três passos, senha
+errada, exclusão com retorno ao Login e recusa do login antigo, dados dos
+demais usuários preservados). O texto da mensagem "Sua conta foi excluída." no
+Login tem cobertura automática, sem confirmação visual. Revisão dos Termos e
+da Política pendente.
+
+**Novidades**
+
+- **Excluir conta** em Ajustes > Conta e sessão, com aparência de ação
+  destrutiva e separada de "Sair da conta". Três passos: aviso com as
+  quantidades de contas, séries recorrentes e categorias; senha atual;
+  confirmação final. Cancelar em qualquer passo não altera nada.
+- As quantidades do aviso incluem as ocorrências futuras já geradas das
+  recorrências.
+- Confirmada, a exclusão apaga do banco de dados atual, de uma só vez, a conta
+  de usuário e as suas contas, séries e categorias; se algo falhar, nada é
+  apagado. Os outros usuários da instalação não são alterados. A sessão é
+  encerrada e a tela de entrada mostra "Sua conta foi excluída.".
+- A exclusão **não apaga** os backups já existentes em `database/backups/`,
+  o registro técnico das confirmações por código (que não identifica usuários)
+  nem o que o serviço de códigos e o provedor de envio já guardaram.
+
+**Termos de Uso e Política de Privacidade (rascunho de 03/10/2026, em revisão)**
+
+- Termos, item 4: Ajustes também permite excluir a conta de usuário.
+- Termos, item 6 (agora "Sair da conta e excluir a conta"): descreve os passos,
+  que a exclusão é definitiva no banco atual e não apaga backups existentes.
+- Política, item 2: o registro técnico das confirmações não é apagado na
+  exclusão, por não estar ligado a nenhum usuário.
+- Política, item 8: descreve a exclusão, o que ela não alcança e o limite da
+  medida adicional de sobrescrever o espaço liberado no arquivo.
+- Política, item 10: excluir a conta de usuário não apaga as cópias de
+  segurança.
+- P9 mantida: sem versionamento do texto nem novo aceite; revisar antes do uso
+  por outras pessoas.
+
 ### Etapa 8 — e-mail com código (02/10/2026, em andamento)
 
 Entrega local de códigos **concluída e validada**; publicação para outras
