@@ -6,6 +6,56 @@ Política de Privacidade. Regras completas na
 
 ## v6.0 — em implementação
 
+### Etapa 10 — visual e experiência de uso (04/10/2026)
+
+Implementada e validada: testes automáticos (suíte completa no fechamento) e
+revisão visual em cópias isoladas do banco. Sem mudança nos Termos de Uso nem
+na Política de Privacidade.
+
+**Novidades**
+
+- **Confirmar senha no cadastro:** a senha é digitada duas vezes; se forem
+  diferentes, aparece "As senhas não coincidem." e nenhum código é pedido
+  (ERS P11).
+- **Contagem para reenviar o código:** "Reenviar código em N s" diminui até
+  liberar "Reenviar código".
+- **Detalhes da conta com campos fixos** (ERS P12): sempre Valor, Vencimento,
+  Categoria, Parcela, Recorrência e Descrição, nesta ordem, com ícones no mesmo
+  verde. Sem informação, o campo mostra "Sem categoria", "Não há parcelas",
+  "Esta conta não é recorrente." ou "Sem descrição". Em janela larga, o rótulo
+  fica à esquerda do conteúdo; em janela estreita, acima. A descrição aparece
+  completa, com as quebras de linha.
+- **Tema Claro mais legível:** verde de textos e botões e cinza secundário mais
+  escuros; textos das etiquetas de status (Pendente, Pago em) e ícones de
+  Detalhes e do Gráfico com mais contraste. As cores das categorias não mudaram.
+- O aviso de Excluir conta explica que as contas incluem os meses futuros já
+  gerados das recorrências.
+
+**Correções**
+
+- **Fechamento seguro da janela:** fechar sem gravação em andamento fecha na
+  hora; durante a gravação de um cadastro, alteração de e-mail ou recuperação
+  de senha, a janela mostra "Salvando… a janela será fechada quando terminar."
+  e fecha sozinha ao terminar.
+- **Falha passageira ao gravar** depois de confirmar o código: aparece "Tentar
+  novamente", que repete a mesma gravação sem pedir outro código.
+- Durante o envio, a confirmação e a gravação, os campos já informados ficam
+  bloqueados; Voltar e Cancelar continuam disponíveis.
+
+**Limitações conhecidas**
+
+- O fechamento seguro aguarda só as gravações dos fluxos com código; as demais
+  gravações são curtas e continuam protegidas pela transação. Não há tempo
+  limite: se uma gravação travar, a janela continua aberta com o aviso.
+- "Tentar novamente" aparece só para falhas passageiras do banco; outros erros
+  recomeçam o fluxo. Uma falha permanente desse tipo continua oferecendo nova
+  tentativa até o código expirar, sem gravar nada indevidamente.
+- Contraste (RNF09) **parcialmente verificado**: os pares de cores mapeados e
+  as telas percorridas nos testes, nos dois temas. Estados raros, as telas de
+  entrada nessa varredura e os gráficos em detalhe não foram medidos.
+- No Linux, ao fechar a janela, o Flutter/GTK pode registrar avisos técnicos no
+  terminal; o aplicativo encerra normalmente.
+
 ### Etapa 9 — excluir conta (03/10/2026)
 
 Implementada e validada: testes automáticos e validação visual em cópia
@@ -123,11 +173,11 @@ pessoas **pendente**.
 
 **Limitações conhecidas**
 
-- Não há fechamento seguro da janela durante operações (previsto na Etapa 10).
-- Pendências de experiência de uso para a Etapa 10: uma falha passageira ao
-  gravar exige pedir novo código; o formulário de cadastro continua editável
-  durante o envio; o tempo para reenviar não é mostrado em contagem regressiva;
-  o cadastro não pede confirmação da senha.
+- Não há fechamento seguro da janela durante operações. *Resolvido na Etapa 10.*
+- Pendências de experiência de uso: uma falha passageira ao gravar exige pedir
+  novo código; o formulário de cadastro continua editável durante o envio; o
+  tempo para reenviar não é mostrado em contagem regressiva; o cadastro não
+  pede confirmação da senha. *Todas resolvidas na Etapa 10.*
 
 ### Etapas 1 a 7 (concluídas)
 

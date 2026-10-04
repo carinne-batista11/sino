@@ -7,7 +7,7 @@
 **Data:** 23 de setembro de 2026
 **Versão anterior:** 5.0 (fechada e auditada em 22/09/2026)
 **Status:** Especificação fechada. Todas as decisões de produto estão tomadas (seção 13.1); restam apenas decisões técnicas de implementação (seção 13.2).
-**Atualização de estado (03/10/2026):** situação da Etapa 8 registrada em 13.3 e da Etapa 9 em 13.4. Nenhuma regra foi alterada.
+**Atualização de estado (04/10/2026):** situação das Etapas 8, 9 e 10 registrada em 13.3, 13.4 e 13.5. Decisões novas da Etapa 10: confirmação de senha no cadastro (P11) e Detalhes com campos fixos (P12); nenhuma outra regra foi alterada.
 
 ---
 
@@ -411,7 +411,7 @@ A estratégia técnica de exclusão e dos relacionamentos no banco é decisão t
 
 **Implementação:** ✅ implementado · 🧪 implementado, com validação final pendente (ver 13.3 e 13.4) · 🔨 a implementar na v6.0 · ⏸️ fora do escopo / não aplicável.
 
-Nas atualizações de 02/10/2026 e 03/10/2026 só foram revisados os marcadores das Etapas 8 (RF01, RF36, RF39) e 9 (RF43); os das Etapas 1–7 ainda não foram revisados.
+Nas atualizações de 02/10/2026 a 04/10/2026 só foram revisados os marcadores das Etapas 8 (RF01, RF36, RF39) e 9 (RF43); os das Etapas 1–7 ainda não foram revisados. A Etapa 10 não tem RF próprio: seu estado (incluindo RNF09) está em 13.5.
 
 ## 6.1 Requisitos vigentes (RF01–RF29)
 
@@ -756,7 +756,7 @@ A v6.0 está atendida quando:
 
 ## 13.1 Decisões de produto fechadas nesta versão
 
-Nenhuma decisão de produto está pendente. As pendências P1–P10 foram fechadas e incorporadas às regras:
+Nenhuma decisão de produto está pendente. As pendências P1–P10 foram fechadas e incorporadas às regras; P11 e P12 foram decididas na Etapa 10:
 
 | ID | Tema | Decisão | Onde |
 |---|---|---|---|
@@ -837,6 +837,38 @@ Registro de situação, sem mudança de regra. **Excluir conta (RF43) implementa
 
 * Revisão da autora e revisão jurídica dos Termos e da Política (03/10/2026); P9 deve ser revista antes do uso por outras pessoas.
 
+## 13.5 Estado da Etapa 10 (04/10/2026)
+
+Registro de situação. **Revisão de UX e legibilidade implementada e validada**; duas decisões de produto novas (P11 e P12, em 13.1). RNF09 **parcialmente verificado**.
+
+**Implementado**
+
+* **Fechamento seguro da janela:** sem gravação em andamento, fecha na hora; com gravação rastreada de um fluxo com código, bloqueia, avisa "Salvando… a janela será fechada quando terminar." e fecha ao terminar, sem tempo limite.
+* **Nova tentativa após falha transitória** (`sqlite3.OperationalError`) depois de confirmar o código: repete a mesma gravação com a mesma autorização, sem validar o código de novo; a autorização é descartada ao cancelar, sair ou encerrar.
+* **Campos bloqueados** durante envio, confirmação e gravação nos fluxos com código; Voltar/Cancelar continuam ativos. **Contador** "Reenviar código em N s", baseado no tempo informado pelo serviço.
+* **Confirmação de senha no cadastro** (P11, CT118).
+* **Detalhes com campos fixos** (P12, 8.4, 5.22, CT57, CT115): ícones informativos no mesmo verde; rótulo à esquerda do conteúdo a partir de 520 px de largura da página, acima em janela estreita.
+* **Paleta Clara (RNF09):** verde de texto e botões #16795A e cinza secundário #6C6B66; texto próprio nas pílulas de status (fundo mantido); ícones de Detalhes e do Gráfico com contraste mínimo de 3:1 sobre o fundo efetivo. Cores das categorias no banco inalteradas; o círculo da categoria em Detalhes mantém o fundo translúcido.
+* Aviso de Excluir conta: "As contas incluem os meses futuros já gerados das recorrências."
+
+**Validação**
+
+* Testes automáticos específicos por bloco, com mutações detectadas, e suíte completa no fechamento da etapa.
+* Validação visual em cópias isoladas do banco: fechamento sem gravação e durante gravação; campos bloqueados e contador; "As senhas não coincidem."; paleta Clara em Início, Detalhes, Gráfico, Ajustes e aviso de exclusão (cancelado); campos fixos de Detalhes nas duas larguras. Banco real e backups inalterados.
+* A nova tentativa após falha transitória foi verificada só nos testes automáticos (não há como provocar a falha pela interface de forma confiável).
+
+**RNF09 — situação**
+
+* Verificado: pares de cores mapeados nos dois temas e telas e diálogos autenticados percorridos nos testes, com contraste medido sobre o fundo efetivo (4,5:1 para texto, 3:1 para ícones e elementos gráficos).
+* Fora da verificação: estados raros, telas de autenticação na varredura de contraste e gráficos em detalhe. Por isso RNF09 **não** é declarado integralmente atendido.
+
+**Limitações conhecidas**
+
+* O fechamento seguro aguarda só as gravações rastreadas dos fluxos com código; as demais gravações são transações curtas e atômicas. Sem tempo limite nem segundo aviso; o evento de fechamento depende do gerenciador de janelas (validado no Linux).
+* Só a falha transitória oferece nova tentativa; outros erros recomeçam o fluxo. Uma falha `OperationalError` permanente continua oferecendo nova tentativa até a autorização expirar, sem gravação indevida. Caso extremo: se a tentativa anterior gravou e o registro de uso foi apagado após o vencimento, a nova tentativa informa código expirado embora a operação esteja gravada.
+* O contador do reenvio atualiza a tela a cada segundo enquanto há contagem.
+* No Linux, o Flutter/GTK pode registrar avisos técnicos ao fechar a janela; o processo encerra normalmente.
+
 ---
 
 # 14. Fora dos Requisitos Funcionais
@@ -899,3 +931,4 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 6.0 (estado) | 03/10/2026 | Registro do estado da Etapa 9 (13.4), marcador de RF43 e nota em T2; nenhuma regra alterada. |
 | 6.0 (P11) | 03/10/2026 | Decisão P11: confirmação de senha no cadastro (Etapa 10); RF01, 5.31, 8.8 e CT118. |
 | 6.0 (P12) | 04/10/2026 | Decisão P12: Detalhes com campos fixos e textos de ausência (Etapa 10); 5.22, 8.4, CT57 e CT115. |
+| 6.0 (estado) | 04/10/2026 | Registro do estado da Etapa 10 (13.5), incluindo a situação parcial de RNF09. |
