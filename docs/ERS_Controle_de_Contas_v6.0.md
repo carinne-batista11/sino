@@ -919,7 +919,7 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
 
 **Para depois, sem bloquear a entrega**
 
-* Capturas reais das telas no README (hoje, protótipos identificados como tal).
+* ~~Capturas reais das telas no README~~ — feitas em 04/10/2026 no modo de demonstração, com dados fictícios ([`docs/capturas/`](capturas/README.md)); os protótipos ficam como histórico.
 * Calendário de escolha de datas (Nova/Editar conta) exibido em inglês ("Select date", "Cancel", nomes de meses e dias), padrão do Flutter; tradução pendente (registrado em 04/10/2026).
 * Em janelas mais estreitas que o tamanho padrão do app (cerca de 330 px úteis), o nome da conta nas linhas da Tela Principal quebra letra a letra; no tamanho padrão o layout está correto (observado em 04/10/2026).
 
@@ -949,7 +949,7 @@ Correção de 04/10/2026, depois deste registro: na Tela Principal, o botão "+"
 
 ## 14.3 Documentação
 
-Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs: o que é o Sino, objetivo do projeto, principais funcionalidades, tecnologias e apresentação como portfólio. **Feita em 04/10/2026 (Etapa 12, ver 13.6)**; capturas reais das telas ficam para depois (o README mostra protótipos, identificados como tal).
+Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs: o que é o Sino, objetivo do projeto, principais funcionalidades, tecnologias e apresentação como portfólio. **Feita em 04/10/2026 (Etapa 12, ver 13.6)**, com capturas reais da demonstração (dados fictícios) em `docs/capturas/`; os protótipos ficam como histórico.
 
 ---
 

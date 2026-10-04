@@ -44,10 +44,50 @@ A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está *
 
 **Adiado para uso por outras pessoas:** publicação do serviço de códigos e envio real de e-mails (hospedagem, domínio, responsável pela operação), revisão jurídica dos Termos e da Política e decisão sobre versionamento do texto aceito. Por isso, o Sino é hoje um projeto de **portfólio e demonstração local**, não um aplicativo pronto para uso por terceiros.
 
-### Protótipos da v6.0
+## 📸 Telas
 
 > [!NOTE]
-> As imagens abaixo são **protótipos** da v6.0. Elas mostram a direção visual da versão e podem diferir das telas implementadas; capturas das telas reais serão adicionadas depois.
+> Capturas reais da v6.0, feitas no **modo de demonstração** (janela "Sino — Demonstração", banco próprio) com **dados fictícios** cadastrados pela própria interface. Legendas e origem em [`docs/capturas/`](docs/capturas/README.md).
+
+**Início:** total do mês, avisos de vencimento e atraso e as contas do mês.
+
+<p align="center">
+  <img src="docs/capturas/inicio-claro.png" width="820" alt="Tela Início no tema Claro, com total do mês, avisos e lista de contas (dados fictícios, modo de demonstração)">
+</p>
+
+**Detalhes da conta:** valor, vencimento, categoria, parcela, recorrência e descrição; à direita, uma conta paga no tema Escuro.
+
+<p align="center">
+  <img src="docs/capturas/detalhes-claro.png" width="405" alt="Detalhes de uma conta pendente no tema Claro (dados fictícios, modo de demonstração)">
+  &nbsp;
+  <img src="docs/capturas/detalhes-escuro.png" width="405" alt="Detalhes de uma conta paga no tema Escuro (dados fictícios, modo de demonstração)">
+</p>
+
+**Gráfico:** distribuição do mês por categoria, com legenda em texto.
+
+<p align="center">
+  <img src="docs/capturas/grafico-mensal-categorias-claro.png" width="820" alt="Gráfico mensal com gastos por categoria no tema Claro (dados fictícios, modo de demonstração)">
+</p>
+
+<details>
+<summary><strong>Mais telas</strong>: Login, Categorias, Ver status, Ajustes, Gráfico anual e Início no tema Escuro</summary>
+
+<br>
+
+| | |
+|---|---|
+| <img src="docs/capturas/login-claro.png" width="400" alt="Tela de Login com os campos vazios (modo de demonstração)"><br>Login, com a faixa do modo de demonstração | <img src="docs/capturas/categorias-claro.png" width="400" alt="Tela Categorias no tema Claro (dados fictícios, modo de demonstração)"><br>Categorias |
+| <img src="docs/capturas/ver-status-claro.png" width="400" alt="Tela Ver status com o filtro Todas (dados fictícios, modo de demonstração)"><br>Ver status | <img src="docs/capturas/ajustes-claro.png" width="400" alt="Tela Ajustes no tema Claro (dados fictícios, modo de demonstração)"><br>Ajustes |
+| <img src="docs/capturas/grafico-anual-claro.png" width="400" alt="Gráfico anual no tema Claro (dados fictícios, modo de demonstração)"><br>Gráfico anual | <img src="docs/capturas/inicio-escuro.png" width="400" alt="Tela Início no tema Escuro (dados fictícios, modo de demonstração)"><br>Início no tema Escuro |
+
+</details>
+
+<details>
+<summary><strong>Protótipos da v6.0</strong> (histórico)</summary>
+
+<br>
+
+Protótipos feitos antes da implementação, mantidos como registro da direção visual da versão. As telas implementadas são as capturas acima.
 
 <p align="center">
   <img src="docs/prototipos/13_detalhe_conta.png" width="640" alt="Protótipo da v6.0: tela Detalhes da conta">
@@ -58,6 +98,8 @@ A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está *
   &nbsp;&nbsp;
   <img src="docs/prototipos/12_ajustes.png" width="520" alt="Protótipo da v6.0: tela Ajustes">
 </p>
+
+</details>
 
 ## 🛠️ Tecnologias
 
