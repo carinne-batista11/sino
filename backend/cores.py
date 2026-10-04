@@ -47,6 +47,10 @@ PALETAS = {
         "texto_sobre_destaque": "white",
         "texto_sobre_cor_categoria": "white",
         "texto_card_total": "white",
+        # Inicial de categoria sem emoji (tela Categorias): o texto escolhido
+        # entre este e texto_sobre_cor_categoria é o de maior contraste com a
+        # cor da categoria (>= 4,6:1 nas 30 cores da paleta oficial).
+        "texto_escuro_sobre_cor_categoria": "#000000",
         "texto_secundario_card_total": "#888780",
 
         # Ações e controles
@@ -157,6 +161,7 @@ PALETAS = {
         "texto_sobre_destaque": "white",
         "texto_sobre_cor_categoria": "white",
         "texto_card_total": "white",
+        "texto_escuro_sobre_cor_categoria": "#000000",  # cores de categoria não mudam com o tema
         "texto_secundario_card_total": "#A3A8A2",
 
         # Ações e controles

@@ -26,6 +26,8 @@ import re
 import unittest
 from contextlib import redirect_stderr
 
+import flet_charts as fch
+
 import apoio_banco
 from apoio_banco import db
 from test_cores import MINIMO_NAO_TEXTO, MINIMO_TEXTO, contraste
@@ -59,6 +61,12 @@ def filhos(controle):
             yield from (c for c in valor if isinstance(c, ft.Control))
         elif isinstance(valor, ft.Control):
             yield valor
+    if isinstance(controle, fch.BarChart):
+        # RNF09 (encerramento da v6.0): rótulos dos eixos também são texto da tela.
+        for eixo in (controle.bottom_axis, controle.left_axis, controle.right_axis, controle.top_axis):
+            for rotulo in (getattr(eixo, "labels", None) or []):
+                if isinstance(rotulo.label, ft.Control):
+                    yield rotulo.label
 
 
 def percorrer_com_fundo(controle, fundo):
@@ -232,14 +240,44 @@ class TesteDeLegibilidade(TesteDeSessao):
             self.clicar(pagina, self.botao(pagina, "Voltar"))
 
     # ---------------------------------------------------------------- verificações
+    @staticmethod
+    def contraste_do_campo(campo, fundo, paleta):
+        """Texto digitado, rótulo, dica e erro (4,5:1) e borda (3:1) de um campo."""
+        def cor(estilo, padrao):
+            return estilo.color if estilo is not None and estilo.color else padrao
+        textos = {"texto": campo.color or paleta["texto_principal"],
+                  "rótulo": cor(campo.label_style, paleta["texto_secundario"]),
+                  "erro": cor(campo.error_style, paleta["texto_erro"])}
+        if isinstance(campo, ft.TextField):
+            textos["dica"] = cor(campo.hint_style, paleta["texto_secundario"])
+        for nome, valor in textos.items():
+            if contraste(cor_solida(valor, fundo), fundo) < MINIMO_TEXTO:
+                yield f"{nome} abaixo de 4,5:1"
+        borda = campo.border_color or paleta["borda_campo"]
+        if contraste(cor_solida(borda, fundo), fundo) < MINIMO_NAO_TEXTO:
+            yield "borda abaixo de 3:1"
+
     def cores_exclusivas_do_outro_tema(self, paleta):
         outra = ESCURO if paleta is CLARO else CLARO
         return {v.upper() for v in outra.values()} - {v.upper() for v in paleta.values()} - CORES_DE_CATEGORIA - {"WHITE"}
 
-    def verificar_vistas(self, verificar_contraste, conhecidos=None):
-        self.assertGreater(len(self.vistas), 40)
+    def verificar_vistas(self, verificar_contraste, conhecidos=None, minimo_de_vistas=40, estilo_do_tema=False):
+        """
+        `estilo_do_tema`: campos sem estilo próprio usam as cores do `ft.Theme`
+        da paleta (tema_flet: rótulo/dica = on_surface_variant, borda = outline),
+        como nas telas de autenticação; nas demais telas o estilo é exigido.
+        """
+        self.assertGreater(len(self.vistas), minimo_de_vistas)
+        problemas = self.problemas_das_vistas(self.vistas, verificar_contraste, estilo_do_tema)
+        if conhecidos is None:
+            self.assertEqual(sorted(set(problemas)), [])
+        else:
+            # Lista exata (sem o nome da tela): nada novo e nada já resolvido nela.
+            self.assertEqual({p.split(": ", 1)[1] for p in problemas}, conhecidos)
+
+    def problemas_das_vistas(self, vistas, verificar_contraste, estilo_do_tema=False):
         problemas = []
-        for local, paleta, raiz, fundo_inicial in self.vistas:
+        for local, paleta, raiz, fundo_inicial in vistas:
             proibidas = self.cores_exclusivas_do_outro_tema(paleta)
             for controle, fundo in percorrer_com_fundo(raiz, fundo_inicial):
                 tipo = type(controle).__name__
@@ -267,6 +305,8 @@ class TesteDeLegibilidade(TesteDeSessao):
                         problemas.append(f"{local}: botão de ícone abaixo de 3:1: {controle.icon}")
                 elif isinstance(controle, (ft.Button, ft.TextButton, ft.OutlinedButton)):
                     cor = getattr(controle, "color", None) or (controle.style.color if controle.style else None)
+                    if cor is None and estilo_do_tema and isinstance(controle, ft.TextButton):
+                        cor = paleta["acao_primaria"]   # tema_flet: primary
                     if cor is None:
                         problemas.append(f"{local}: botão sem cor de texto: {controle.content!r}")
                     elif verificar_contraste and not controle.disabled:
@@ -275,11 +315,23 @@ class TesteDeLegibilidade(TesteDeSessao):
                         if razao < MINIMO_TEXTO:
                             problemas.append(f"{local}: botão {razao:.2f}:1: {controle.content!r}")
                 elif isinstance(controle, (ft.TextField, ft.Dropdown)):
-                    for atributo in ("color", "border_color", "label_style"):
+                    exigidos = ("color",) if estilo_do_tema else ("color", "border_color", "label_style")
+                    for atributo in exigidos:
                         if getattr(controle, atributo) is None:
                             problemas.append(f"{local}: {tipo} {controle.label!r} sem {atributo}")
                     if isinstance(controle, ft.Dropdown) and controle.bgcolor is None:
                         problemas.append(f"{local}: lista {controle.label!r} sem fundo do menu")
+                    if verificar_contraste:
+                        problemas.extend(f"{local}: {tipo} {controle.label!r} {p}"
+                                         for p in self.contraste_do_campo(controle, fundo, paleta))
+                elif isinstance(controle, fch.BarChart) and verificar_contraste:
+                    for grupo in controle.groups:
+                        for barra in grupo.rods:
+                            if contraste(cor_solida(barra.color, fundo), fundo) < MINIMO_NAO_TEXTO:
+                                problemas.append(f"{local}: barra abaixo de 3:1: {barra.color}")
+                            estilo = barra.tooltip.text_style if barra.tooltip else None
+                            if estilo is not None and contraste(cor_solida(estilo.color, fundo), fundo) < MINIMO_TEXTO:
+                                problemas.append(f"{local}: valor da barra abaixo de 4,5:1: {barra.tooltip.text!r}")
                 elif isinstance(controle, ft.Markdown):
                     folha = controle.md_style_sheet
                     if folha is None or folha.p_text_style.color != paleta["texto_principal"]:
@@ -288,11 +340,7 @@ class TesteDeLegibilidade(TesteDeSessao):
                         problemas.append(f"{local}: Markdown abaixo de 4,5:1")
                 elif isinstance(controle, ft.AlertDialog) and controle.bgcolor != paleta["fundo_dialogo"]:
                     problemas.append(f"{local}: diálogo sem o fundo da paleta")
-        if conhecidos is None:
-            self.assertEqual(sorted(set(problemas)), [])
-        else:
-            # Lista exata (sem o nome da tela): nada novo e nada já resolvido nela.
-            self.assertEqual({p.split(": ", 1)[1] for p in problemas}, conhecidos)
+        return problemas
 
 
 # Etapa 10: os cinco casos residuais do Claro (camadas translúcidas) foram

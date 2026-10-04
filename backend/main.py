@@ -712,6 +712,23 @@ def layout_gastos_por_categoria(largura_pagina):
             "tamanho_rosca": int(max(200, min(300, largura_pagina - 90))), "estreita": True}
 
 
+def _luminancia(cor):
+    # Cores da paleta: "#RRGGBB" ou o nome do branco (único valor sem "#").
+    canais = (int(cor[i:i + 2], 16) / 255 for i in (1, 3, 5)) if cor.startswith("#") else (1.0, 1.0, 1.0)
+    r, g, b = (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in canais)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def texto_sobre_cor_de_categoria(cor_fundo, claro, escuro):
+    """RNF09: entre `claro` e `escuro`, o texto de maior contraste (WCAG) sobre `cor_fundo`."""
+    fundo = _luminancia(cor_fundo)
+
+    def razao(cor):
+        maior, menor = sorted((_luminancia(cor), fundo), reverse=True)
+        return (maior + 0.05) / (menor + 0.05)
+    return max((claro, escuro), key=razao)
+
+
 # Etapa 10 (8.4): em Detalhes, o rótulo fica à esquerda do conteúdo só quando
 # sobra espaço para o valor (célula de linha inteira: ~234 px a partir de
 # 520 px de página); abaixo disso, o rótulo volta para cima do valor.
@@ -4875,7 +4892,10 @@ def main(page: ft.Page):
                             controls=[
                                 ft.Container(
                                     content=ft.Text(cat["icone"] or cat["nome"][0].upper(),
-                                                     size=16, color=cores.texto_sobre_cor_categoria),
+                                                     size=16, color=texto_sobre_cor_de_categoria(
+                                                         cat["cor"] or cores.categoria_cor_padrao,
+                                                         cores.texto_sobre_cor_categoria,
+                                                         cores.texto_escuro_sobre_cor_categoria)),
                                     bgcolor=cat["cor"] or cores.categoria_cor_padrao,
                                     width=36,
                                     height=36,
