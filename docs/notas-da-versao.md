@@ -25,6 +25,16 @@ completa na [ERS v6.0, seção 13.6](ERS_Controle_de_Contas_v6.0.md#136-encerram
   envio real de e-mails, revisão jurídica dos Termos e da Política e decisão
   sobre versionamento e novo aceite (P9).
 
+### Termos de Uso e Política de Privacidade (ajustes de 04/10/2026, em revisão)
+
+- Termos, item 4: desde a primeira frase, distingue o envio real (o código
+  confirma acesso à mensagem enviada ao endereço informado) da demonstração
+  (o código apenas conclui o fluxo local).
+- Política, item 2: a afirmação de que o Sino não coleta outros dados passa a
+  ressalvar os dados técnicos da confirmação por código (como o endereço IP do
+  pedido), com referência ao item 7.
+- Revisão pela autora e revisão jurídica continuam pendentes; P9 mantida.
+
 ### Etapa 10 — visual e experiência de uso (04/10/2026)
 
 Implementada e validada: testes automáticos (suíte completa no fechamento) e

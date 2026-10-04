@@ -3,8 +3,10 @@ documentos.py — Termos de Uso e Política de Privacidade do Sino (ERS v6.0,
 5.37, RF15/RF41), em Markdown.
 
 Texto aprovado pela autora em 30/09/2026; atualização de 02/10/2026
-(Etapa 8: códigos por e-mail) e rascunho de 03/10/2026 (Etapa 9: excluir
-a conta de usuário) EM REVISÃO pela autora, com revisão jurídica pendente.
+(Etapa 8: códigos por e-mail), rascunho de 03/10/2026 (Etapa 9: excluir
+a conta de usuário) e ajustes de 04/10/2026 (Termos item 4 e Política
+item 2, pedidos pela autora na leitura) EM REVISÃO pela autora, com
+revisão jurídica pendente.
 É a mesma fonte exibida no cadastro (antes do aceite) e em Ajustes > Sobre e
 privacidade. Qualquer mudança de conteúdo deve ser revisada
 antes e mencionada nas notas da versão (docs/notas-da-versao.md). O endereço
@@ -15,7 +17,7 @@ código, enviados pelo serviço de códigos (não pelo aplicativo).
 TERMOS_DE_USO = """\
 # Termos de Uso do Sino
 
-Última atualização: 03/10/2026
+Última atualização: 04/10/2026
 
 O Sino é um projeto pessoal de portfólio desenvolvido por Carinne Batista. Estes termos descrevem a **versão desktop atual** do Sino.
 
@@ -43,7 +45,7 @@ O Sino não oferece orientação financeira, contábil ou jurídica.
 
 Para usar o Sino, você informa nome, e-mail e senha. Para entrar, o e-mail e a senha são conferidos no próprio computador, sem consultar a internet.
 
-Ao criar uma conta, o Sino confirma o e-mail por um **código de 6 dígitos** enviado a esse endereço. O mesmo tipo de código é usado para **alterar o e-mail** em Ajustes (com a senha atual) e para **recuperar uma senha esquecida** pela opção "Esqueci minha senha" na tela de entrada. Cada código vale por 10 minutos, aceita até 5 tentativas e só pode ser usado uma vez; um novo código pode ser pedido depois de 60 segundos e invalida o anterior.
+Ao criar uma conta, o Sino usa um código de 6 dígitos para concluir o cadastro. Com o serviço de envio real, esse código confirma acesso à mensagem enviada ao endereço informado; na demonstração, apenas conclui o fluxo local. O mesmo tipo de código é usado para **alterar o e-mail** em Ajustes (com a senha atual) e para **recuperar uma senha esquecida** pela opção "Esqueci minha senha" na tela de entrada. Cada código vale por 10 minutos, aceita até 5 tentativas e só pode ser usado uma vez; um novo código pode ser pedido depois de 60 segundos e invalida o anterior.
 
 Os códigos são gerados, enviados e conferidos por um **serviço de códigos** (veja o item 7 da Política de Privacidade). Por isso, criar conta, alterar o e-mail e recuperar a senha exigem uma instalação configurada com esse serviço. **Nesta versão, o serviço ainda não foi publicado para uso por outras pessoas**: sem ele, o aplicativo informa que a confirmação por e-mail não está disponível e essas três funções não podem ser concluídas. Para desenvolvimento e apresentação, existe um **modo de demonstração**, em que o serviço roda no próprio computador e os códigos ficam em arquivos locais em vez de irem para a caixa de e-mail. Entrar com uma conta já existente continua funcionando sem o serviço.
 
@@ -89,7 +91,7 @@ Dúvidas, sugestões e relatos de problemas podem ser enviados para sino.lembret
 POLITICA_DE_PRIVACIDADE = """\
 # Política de Privacidade do Sino
 
-Última atualização: 03/10/2026
+Última atualização: 04/10/2026
 
 O Sino é um projeto pessoal de portfólio desenvolvido por Carinne Batista. Esta política descreve como a **versão desktop atual** do Sino trata as informações registradas nele. As afirmações sobre o que o Sino guarda, usa e envia se referem ao próprio aplicativo; bibliotecas de terceiros são tratadas no item 7.
 
@@ -107,7 +109,7 @@ A única função que conversa com um serviço fora do aplicativo é a **confirm
 
 *Informações financeiras que você registra:* nome, valor, data de vencimento, situação (paga ou pendente), data de pagamento, categoria, descrição (opcional) e recorrência de cada conta; nome, emoji e cor de cada categoria.
 
-O Sino não coleta outras informações, como localização, contatos, dados bancários ou dados do seu computador.
+Além dessas, o Sino não coleta outras informações, como localização, contatos, dados bancários ou dados do seu computador. A exceção é a confirmação por código: ao usá-la, o serviço de códigos recebe dados técnicos do pedido, como o endereço IP de onde ele parte e identificadores gerados na hora. O que é enviado, o que o serviço guarda e por quanto tempo estão descritos no item 7.
 
 ## 3. Para que essas informações são usadas
 
