@@ -2139,6 +2139,128 @@ def redefinir_senha_por_autorizacao(autorizacao, email, nova_senha, relogio=time
     return _consumir_autorizacao(autorizacao, "recuperacao_senha", email, relogio, preparar)
 
 
+# ======================================================================
+#  Etapa 9: excluir a conta de usuário (RF43, 5.39; decisão técnica T2)
+# ======================================================================
+#
+# Exclusão explícita, em uma única transação, sem ON DELETE CASCADE nem
+# migração: contas -> séries -> categorias -> usuário, sempre filtrando pelo
+# usuario_id. As chaves estrangeiras (PRAGMA foreign_keys = ON) ficam como
+# rede de segurança: se algum dado de outro usuário apontar para uma série ou
+# categoria apagada, o DELETE falha e nada é removido.
+#
+# `autorizacoes_usadas` não é tocada: não tem vínculo com o usuário (só o
+# identificador aleatório, a finalidade e a validade) e os itens vencidos já
+# são apagados nas confirmações seguintes.
+#
+# `PRAGMA secure_delete = ON` zera o conteúdo das páginas liberadas no
+# arquivo do banco. É uma medida adicional: não alcança backups, o journal
+# temporário, cópias do sistema ou recuperação no dispositivo.
+
+_TABELAS_DO_USUARIO = (
+    ("contas", "contas"),
+    ("series_recorrencia", "series"),
+    ("categorias", "categorias"),
+)
+
+
+class PendenciaExclusaoUsuario:
+    """
+    Estado da exclusão entre a conferência da senha atual e a confirmação
+    final: usuário e a impressão do hash da senha. Não guarda a senha. O repr
+    não mostra a impressão.
+    """
+
+    __slots__ = ("usuario_id", "impressao_senha")
+
+    def __init__(self, usuario_id, impressao_senha):
+        self.usuario_id = usuario_id
+        self.impressao_senha = impressao_senha
+
+    def __repr__(self):
+        return f"PendenciaExclusaoUsuario(usuario_id={self.usuario_id!r})"
+
+
+def resumo_dados_do_usuario(usuario_id):
+    """
+    Aviso da exclusão (5.39): quantidades de contas, séries e categorias do
+    usuário, ou None se ele não existir. Só leitura e só informativo: a
+    exclusão relê tudo na sua própria transação.
+    """
+    conexao = conectar()
+    try:
+        if conexao.execute("SELECT 1 FROM usuarios WHERE id = ?", (usuario_id,)).fetchone() is None:
+            return None
+        return {
+            chave: conexao.execute(f"SELECT COUNT(*) FROM {tabela} WHERE usuario_id = ?", (usuario_id,)).fetchone()[0]
+            for tabela, chave in _TABELAS_DO_USUARIO
+        }
+    finally:
+        conexao.close()
+
+
+def conferir_senha_para_exclusao(usuario_id, senha):
+    """
+    Passo da senha atual da exclusão: aceita senhas antigas, em qualquer
+    formato, e devolve a PendenciaExclusaoUsuario. SenhaAtualIncorretaError se
+    não conferir; ContaNaoEncontradaError se o usuário não existir.
+    """
+    conexao = conectar()
+    try:
+        linha = conexao.execute("SELECT senha_hash FROM usuarios WHERE id = ?", (usuario_id,)).fetchone()
+    finally:
+        conexao.close()
+    if linha is None:
+        raise ContaNaoEncontradaError()
+    if not isinstance(senha, str) or not _verificar_senha(senha, linha[0]):
+        raise SenhaAtualIncorretaError()
+    return PendenciaExclusaoUsuario(usuario_id, _impressao_senha(linha[0]))
+
+
+def excluir_usuario(pendencia):
+    """
+    RF43/5.39: apaga definitivamente, em uma única transação, o usuário da
+    pendência e as suas contas, séries e categorias. Logo após o BEGIN
+    IMMEDIATE, relê o usuário e confere a impressão da senha:
+    ContaNaoEncontradaError se ele não existir mais,
+    SenhaAlteradaDuranteOperacaoError se a senha mudou desde a conferência.
+    Em qualquer recusa ou falha nada é apagado. Os outros usuários não são
+    tocados. Devolve as quantidades removidas.
+    """
+    if type(pendencia) is not PendenciaExclusaoUsuario:
+        raise TypeError("a exclusão precisa da pendência de conferir_senha_para_exclusao()")
+    conexao = conectar()
+    conexao.isolation_level = None  # controle explícito da transação
+    try:
+        conexao.execute("PRAGMA secure_delete = ON;")
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+        linha = cursor.execute(
+            "SELECT senha_hash FROM usuarios WHERE id = ?", (pendencia.usuario_id,),
+        ).fetchone()
+        if linha is None:
+            raise ContaNaoEncontradaError()
+        senha_hash = linha[0]
+        if not secrets.compare_digest(_impressao_senha(senha_hash), pendencia.impressao_senha):
+            raise SenhaAlteradaDuranteOperacaoError()
+        removidos = {}
+        for tabela, chave in _TABELAS_DO_USUARIO:
+            cursor.execute(f"DELETE FROM {tabela} WHERE usuario_id = ?", (pendencia.usuario_id,))
+            removidos[chave] = cursor.rowcount
+        cursor.execute(
+            "DELETE FROM usuarios WHERE id = ? AND senha_hash = ?", (pendencia.usuario_id, senha_hash),
+        )
+        if cursor.rowcount != 1:
+            raise SenhaAlteradaDuranteOperacaoError()
+        cursor.execute("COMMIT;")
+        return removidos
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+
 def definir_tema(usuario_id, tema):
     """
     RF40/5.36: grava a preferência de tema do usuário ("claro" ou

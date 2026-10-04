@@ -217,6 +217,13 @@ class TesteDeLegibilidade(TesteDeSessao):
         self.clicar(pagina, editar_email)
         self.registrar(pagina, "Ajustes/Alterar e-mail", paleta)
         self.fechar_dialogos(pagina)
+        excluir_conta = next(c for c in self.todos(pagina) if isinstance(c, ft.Container)
+                             and c.data == "abrir_excluir_conta")
+        self.clicar(pagina, excluir_conta)
+        self.registrar(pagina, "Ajustes/Excluir conta (aviso)", paleta)
+        self.clicar(pagina, self.botao(pagina, "Continuar", raiz=next(d for d in pagina.dialogos if d.open)))
+        self.registrar(pagina, "Ajustes/Excluir conta (senha)", paleta)
+        self.fechar_dialogos(pagina)
         for chave in ("termos", "politica"):
             item = next(c for c in self.todos(pagina) if isinstance(c, ft.Container) and c.data == f"abrir_{chave}")
             self.clicar(pagina, item)

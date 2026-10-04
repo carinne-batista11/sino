@@ -1,7 +1,8 @@
 """
 ERS v6.0, Etapa 6 (passo 4) — tela Ajustes (8.7, protótipo 12): RF35 (nome),
-RF38 (seção Segurança), RF40 (tema), RF41 (documentos), RF42 (sair), com o
-e-mail só para leitura e sem as ações das Etapas 8-9. Fluxos reais da interface sobre páginas
+RF38 (seção Segurança), RF40 (tema), RF41 (documentos), RF42 (sair). O
+Editar do e-mail (Etapa 8) e o fluxo de Excluir conta (Etapa 9) têm testes
+próprios (test_alterar_email_interface, test_excluir_usuario). Fluxos reais da interface sobre páginas
 falsas e bancos temporários v7; nenhuma janela é aberta.
 """
 
@@ -84,10 +85,9 @@ class TestTelaAjustes(TesteDeAjustes):
         for esperado in ("Ajustes", "Conta", "Nome", "Bia", "E-mail", "bia@sino.com", "Segurança",
                          "Alterar senha", "Aparência",
                          "Tema", "Claro", "Escuro", "Sobre e privacidade", "Termos de Uso",
-                         "Política de Privacidade", "Conta e sessão", "Sair da conta"):
+                         "Política de Privacidade", "Conta e sessão", "Sair da conta", "Excluir conta"):
             self.assertIn(esperado, textos)
-        for ausente in ("Verificado", "Excluir conta"):
-            self.assertNotIn(ausente, textos)
+        self.assertNotIn("Verificado", textos)
 
     def test_email_tem_editar_proprio_e_conta_antiga_fica_sem_selo(self):
         # Etapa 8: o e-mail ganha o seu Editar (código no novo endereço); a
@@ -109,7 +109,8 @@ class TestTelaAjustes(TesteDeAjustes):
                          | {c.content for c in clicaveis if isinstance(c.content, str)})
         self.assertEqual(rotulos, sorted(["Editar", "Alterar senha", "Defina uma nova senha para sua conta.",
                                           "Claro", "Escuro", "Termos de Uso", "Política de Privacidade",
-                                          "Sair da conta", "Encerre sua sessão atual. Seus dados serão mantidos."]))
+                                          "Sair da conta", "Encerre sua sessão atual. Seus dados serão mantidos.",
+                                          "Excluir conta", "Apague sua conta de usuário e todos os seus dados."]))
 
     def test_aba_ajustes_ativa_na_navegacao(self):
         pagina, _ = self.abrir_ajustes()

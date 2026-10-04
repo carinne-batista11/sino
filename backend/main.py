@@ -609,6 +609,18 @@ def texto_parcela(parcela):
 MESES_ABREVIADOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
 
+def linhas_dados_da_exclusao(resumo):
+    """Aviso da exclusão da conta (5.39): uma linha por tipo de dado, no singular ou no plural."""
+    def quantidade(n, singular, plural):
+        return f"{n} {singular if n == 1 else plural}"
+
+    return [
+        quantidade(resumo["contas"], "conta registrada", "contas registradas"),
+        quantidade(resumo["series"], "série recorrente", "séries recorrentes"),
+        quantidade(resumo["categorias"], "categoria", "categorias"),
+    ]
+
+
 def formatar_percentual(valor):
     """5.28: casa decimal só quando necessária -- 42%, 24,5%, 8,3%."""
     arredondado = round(valor + 0.0, 1)
@@ -881,11 +893,13 @@ class SessaoSino:
         self.usuario["id"] = usuario["id"]
         self.usuario["nome"] = usuario["nome"]
 
-    def encerrar(self):
+    def encerrar(self, mensagem=None):
         """
         Sair da conta (5.38): limpa o usuário, fecha os diálogos abertos,
         esvazia o overlay, desliga o `on_resize` da tela anterior, volta ao
         tema Claro (P8) e abre o login. Nenhum dado é removido do banco.
+        Também encerra a sessão depois de excluir a conta (5.39); `mensagem`
+        ((texto, é_erro)) aparece no login.
         """
         self.usuario["id"] = None
         self.usuario["nome"] = None
@@ -895,7 +909,10 @@ class SessaoSino:
         self.page.on_resize = None
         self.aplicar_tema(modulo_cores.TEMA_PADRAO)
         if self.ao_encerrar is not None:
-            self.ao_encerrar()
+            if mensagem is None:
+                self.ao_encerrar()
+            else:
+                self.ao_encerrar(mensagem)
 
 
 def main(page: ft.Page):
@@ -4744,11 +4761,12 @@ def main(page: ft.Page):
     # ======================================================
     def mostrar_tela_ajustes():
         """
-        Protótipo 12, sem a ação da Etapa 9 (excluir conta): Conta (nome
+        Protótipo 12: Conta (nome
         editável; e-mail com selo "Verificado" quando confirmado e Editar, que
         exige a senha atual e o código no novo endereço), Segurança (Alterar senha),
         Aparência (Claro | Escuro), Sobre e privacidade (Termos de Uso e
-        Política de Privacidade) e Sair da conta, com confirmação.
+        Política de Privacidade), Sair da conta, com confirmação, e Excluir
+        conta (Etapa 9), com aviso, senha atual e confirmação final.
         """
         encerrar_operacoes()  # sai de qualquer operação com código em andamento
         page.controls.clear()
@@ -5215,6 +5233,157 @@ def main(page: ft.Page):
                 bgcolor=cores.fundo_dialogo,
             ))
 
+        # ---------------------------------------------------------- excluir conta (RF43)
+        def abrir_exclusao(e=None):
+            """
+            5.39: aviso (com as quantidades) -> senha atual -> confirmação
+            final. Cancelar em qualquer passo não altera nada. A senha não
+            fica guardada: a pendência tem só a impressão do hash, conferida
+            de novo na transação da exclusão. Nenhuma senha em mensagens ou
+            no terminal.
+            """
+            usuario_id = usuario_atual["id"]
+            resumo = database.resumo_dados_do_usuario(usuario_id)
+
+            def botao_cancelar(ao_cancelar=None):
+                return ft.TextButton(content="Cancelar", style=estilo_botao_texto(),
+                                     on_click=ao_cancelar or (lambda ev: page.pop_dialog()))
+
+            def texto(valor):
+                return ft.Text(valor, size=14, color=cores.texto_principal)
+
+            if resumo is None:
+                page.show_dialog(ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Excluir conta", color=cores.texto_principal),
+                    content=texto("Não encontramos a sua conta. Saia e entre novamente."),
+                    actions=[botao_cancelar()],
+                    bgcolor=cores.fundo_dialogo,
+                ))
+                return
+
+            # ---- passo 1: aviso
+            page.show_dialog(ft.AlertDialog(
+                modal=True, data="exclusao_aviso",
+                title=ft.Text("Excluir sua conta do Sino?", color=cores.texto_principal),
+                content=ft.Column(tight=True, spacing=8, width=400, controls=[
+                    texto("Sua conta de usuário e todos os dados ligados a ela serão apagados "
+                          "permanentemente do banco de dados atual do Sino:"),
+                    *[texto(f"• {linha}") for linha in linhas_dados_da_exclusao(resumo)],
+                    texto("Não é possível desfazer a exclusão. Cópias de segurança (backups) "
+                          "já existentes não são apagadas."),
+                ]),
+                actions=[
+                    botao_cancelar(),
+                    ft.TextButton(content="Continuar", style=estilo_botao_texto(),
+                                  on_click=lambda ev: pedir_senha()),
+                ],
+                bgcolor=cores.fundo_dialogo,
+            ))
+
+            # ---- passo 2: senha atual
+            def pedir_senha():
+                campo = ft.TextField(
+                    label="Senha atual", password=True, can_reveal_password=True, autofocus=True,
+                    width=320, color=cores.texto_principal, **estilo_campo_texto(),
+                )
+                erro = ft.Text("", size=12, color=cores.texto_erro, visible=False)
+                botao_continuar = ft.Button(content="Continuar")
+
+                def atualizar_botao():
+                    habilitado = bool(campo.value)
+                    botao_continuar.disabled = not habilitado
+                    botao_continuar.bgcolor = cores.acao_primaria if habilitado else cores.botao_desabilitado_fundo
+                    botao_continuar.color = cores.texto_sobre_acao if habilitado else cores.botao_desabilitado_texto
+
+                def ao_mudar(ev):
+                    erro.visible = False
+                    atualizar_botao()
+                    page.update()
+
+                def mostrar_erro(mensagem):
+                    erro.value = mensagem
+                    erro.visible = True
+                    page.update()
+
+                def cancelar(ev):
+                    campo.value = ""
+                    page.pop_dialog()
+
+                def continuar(ev):
+                    senha = campo.value or ""
+                    if not senha:
+                        return
+                    try:
+                        pendencia = database.conferir_senha_para_exclusao(usuario_id, senha)
+                    except database.SenhaAtualIncorretaError as ex:
+                        mostrar_erro(str(ex))
+                        return
+                    except database.ContaNaoEncontradaError:
+                        mostrar_erro("Não encontramos a sua conta. Saia e entre novamente.")
+                        return
+                    except Exception as ex:
+                        print(f"Sino: falha ao conferir a senha ({type(ex).__name__}).", file=sys.stderr)
+                        mostrar_erro("Não foi possível conferir a senha. Tente novamente.")
+                        return
+                    campo.value = ""
+                    confirmar_exclusao(pendencia)
+
+                campo.on_change = ao_mudar
+                botao_continuar.on_click = continuar
+                atualizar_botao()
+                page.pop_dialog()
+                page.show_dialog(ft.AlertDialog(
+                    modal=True, data="exclusao_senha",
+                    title=ft.Text("Confirme sua senha", color=cores.texto_principal),
+                    content=ft.Column(tight=True, spacing=8, controls=[
+                        texto("Para continuar, informe a senha atual da sua conta."), campo, erro,
+                    ]),
+                    actions=[botao_cancelar(cancelar), botao_continuar],
+                    on_dismiss=lambda ev: setattr(campo, "value", ""),
+                    bgcolor=cores.fundo_dialogo,
+                ))
+
+            # ---- passo 3: confirmação final
+            def confirmar_exclusao(pendencia):
+                erro = ft.Text("", size=12, color=cores.texto_erro, visible=False)
+
+                def mostrar_erro(mensagem):
+                    erro.value = mensagem
+                    erro.visible = True
+                    page.update()
+
+                def excluir(ev):
+                    try:
+                        database.excluir_usuario(pendencia)
+                    except (database.SenhaAlteradaDuranteOperacaoError, database.ContaNaoEncontradaError) as ex:
+                        mostrar_erro(str(ex))
+                        return
+                    except Exception as ex:
+                        print(f"Sino: falha ao excluir a conta ({type(ex).__name__}).", file=sys.stderr)
+                        mostrar_erro("Não foi possível excluir a conta. Nada foi apagado. Tente novamente.")
+                        return
+                    sessao.encerrar(("Sua conta foi excluída.", False))
+
+                page.pop_dialog()
+                page.show_dialog(ft.AlertDialog(
+                    modal=True, data="exclusao_confirmacao",
+                    title=ft.Text("Excluir conta definitivamente?", color=cores.texto_principal),
+                    content=ft.Column(tight=True, spacing=8, width=400, controls=[
+                        texto("Esta é a última etapa. Ao confirmar, sua conta e os seus dados serão "
+                              "apagados do banco de dados atual e a sessão será encerrada."),
+                        texto("Não é possível desfazer."),
+                        erro,
+                    ]),
+                    actions=[
+                        botao_cancelar(),
+                        ft.Button(content="Excluir conta", icon=ft.Icons.DELETE_FOREVER,
+                                  bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao,
+                                  icon_color=cores.texto_sobre_acao, on_click=excluir),
+                    ],
+                    bgcolor=cores.fundo_dialogo,
+                ))
+
         # ---------------------------------------------------------- montagem
         secao_conta = secao(ft.Icons.PERSON, "Conta", "Suas informações pessoais.", [
             ft.Row(controls=[
@@ -5277,7 +5446,20 @@ def main(page: ft.Page):
                 ft.Icon(ft.Icons.CHEVRON_RIGHT, size=22, color=cores.texto_secundario),
             ]),
         )
-        secao_sessao = secao(ft.Icons.LOGOUT, "Conta e sessão", "Gerencie sua sessão.", [item_sair])
+        item_excluir = ft.Container(
+            data="abrir_excluir_conta", border_radius=10, padding=ft.Padding(0, 6, 0, 6),
+            on_click=abrir_exclusao, ink=True,
+            content=ft.Row(spacing=12, controls=[
+                ft.Icon(ft.Icons.DELETE_FOREVER, size=22, color=cores.acao_destrutiva),
+                ft.Column(expand=True, spacing=2, controls=[
+                    ft.Text("Excluir conta", size=14, weight=ft.FontWeight.BOLD, color=cores.acao_destrutiva),
+                    ft.Text("Apague sua conta de usuário e todos os seus dados.", size=13,
+                            color=cores.texto_secundario),
+                ]),
+                ft.Icon(ft.Icons.CHEVRON_RIGHT, size=22, color=cores.texto_secundario),
+            ]),
+        )
+        secao_sessao = secao(ft.Icons.LOGOUT, "Conta e sessão", "Gerencie sua sessão.", [item_sair, item_excluir])
 
         # RF41/5.37: documentos dentro do Sino; Voltar retorna a Ajustes.
         def item_documento(chave):
