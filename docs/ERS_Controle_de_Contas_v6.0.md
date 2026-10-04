@@ -327,7 +327,7 @@ Quando o período selecionado não tem contas:
 ### 5.31 E-mail e verificação [v6 novo]
 
 * O login continua sendo **e-mail + senha**.
-* **Cadastro:** o e-mail de todo novo cadastro é verificado por código (5.32).
+* **Cadastro:** o e-mail de todo novo cadastro é verificado por código (5.32). A senha é digitada duas vezes ("Senha" e "Confirmar senha"); se as duas forem diferentes, aparece "As senhas não coincidem." e nenhum código é pedido nem nada é gravado (P11).
 * **Alteração de e-mail**, em Ajustes:
   * não é permitido usar um endereço já associado a outra conta;
   * o e-mail atual continua válido enquanto o novo não for confirmado;
@@ -417,7 +417,7 @@ Nas atualizações de 02/10/2026 e 03/10/2026 só foram revisados os marcadores 
 
 | ID | Descrição | Situação | Impl. |
 |---|---|---|---|
-| RF01 | Criar conta de usuário com nome, e-mail verificado por código e senha de no mínimo 8 caracteres. | v6 alterado (5.31, 5.33) | 🧪 |
+| RF01 | Criar conta de usuário com nome, e-mail verificado por código e senha de no mínimo 8 caracteres, com confirmação da senha. | v6 alterado (5.31, 5.33, P11) | 🧪 |
 | RF02 | Login com e-mail e senha. | v5 | ✅ |
 | RF03 | Associar as contas financeiras ao usuário logado. | v5 | ✅ |
 | RF04 | Cadastrar conta com nome, valor, vencimento, categoria e, opcionalmente, descrição. | v6 alterado (5.22) | 🔨 |
@@ -588,7 +588,7 @@ CONTA E SESSÃO
 ## 8.8 Login e Cadastro
 
 * Login: e-mail + senha, com o link **Esqueci minha senha**;
-* Cadastro: nome, e-mail, senha mínima de 8 caracteres, aceite de Termos e Política (RF15) e verificação do e-mail por código;
+* Cadastro: nome, e-mail, senha mínima de 8 caracteres com confirmação ("Confirmar senha", P11), aceite de Termos e Política (RF15) e verificação do e-mail por código;
 * todas as telas de autenticação usam o tema Claro.
 
 ---
@@ -698,6 +698,7 @@ Os casos CT01–CT48 da ERS v5.0 continuam válidos como suíte de regressão.
 | CT115 | Detalhes de uma conta Única | Exibe "Esta conta não é recorrente" | 8.4 |
 | CT116 | Detalhes de uma conta sem categoria | "Sem categoria" em cinza, sem emoji | 8.4 |
 | CT117 | Usuário com tema Escuro sai da conta | Login em tema Claro; ao entrar de novo, o Escuro é carregado | 5.36 |
+| CT118 | Cadastro com "Confirmar senha" diferente da senha | "As senhas não coincidem."; nenhum código é pedido e nada é gravado | 5.31, P11 |
 
 ---
 
@@ -713,7 +714,7 @@ A v6.0 está atendida quando:
 * **Senha e e-mail:** senha mínima, alterar senha, verificação de e-mail e recuperação conforme 5.31–5.35 (CT81–CT94).
 * **Tema, documentos e sessão:** tema persistido e legível, Termos e Política acessíveis, sair e excluir conta conforme 5.36–5.39 (CT95–CT102).
 * **Escopo de edição:** categoria e descrição seguem o diálogo de escopo das séries, e o Gráfico acompanha a categoria efetiva (CT103–CT107).
-* **Complementos:** contagem por caractere percebido, dados existentes preservados, verificação no cadastro, regras de alteração de e-mail, reenvio após 60 segundos, Gráfico sem geração de ocorrências, Detalhes de conta Única e sem categoria, tema Claro na autenticação (CT108–CT117).
+* **Complementos:** contagem por caractere percebido, dados existentes preservados, verificação no cadastro, regras de alteração de e-mail, reenvio após 60 segundos, Gráfico sem geração de ocorrências, Detalhes de conta Única e sem categoria, tema Claro na autenticação (CT108–CT117) e confirmação de senha no cadastro (CT118).
 * **Regressão:** CT01–CT48 da v5.0 continuam passando.
 * **Migração:** nenhum dado perdido (RNF08).
 
@@ -758,6 +759,7 @@ Nenhuma decisão de produto está pendente. As pendências P1–P10 foram fechad
 | P8 | Tema antes do login | Autenticação sempre em Claro; preferência carregada após o login; volta a Claro ao sair | 5.36 |
 | P9 | Termos e Política | Consulta em Ajustes; sem versionamento nem reconsentimento na v6.0 | 5.37, 3.2 |
 | P10 | Tela Principal | Estrutura e ordem dos blocos preservadas | 5.15 |
+| P11 | Confirmação de senha no cadastro (03/10/2026, Etapa 10) | Campo "Confirmar senha" no mesmo padrão do campo de senha; comparação exata, depois das regras de 5.33; senhas diferentes mostram "As senhas não coincidem." sem pedir código nem gravar; o campo fica bloqueado durante o envio do código, como os demais | 5.31, 8.8, RF01, CT118 |
 
 ## 13.2 Decisões técnicas
 
@@ -865,7 +867,7 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 8 | Serviço de e-mail, verificação no cadastro e na alteração, recuperação de senha (RF01, RF36, RF39) | T4 |
 | 9 | Excluir conta (RF43) | T2 |
 | 10 | Revisão geral de UX e tema escuro em todas as telas (RNF09) | Etapas 3–9 |
-| 11 | Testes: regressão CT01–CT48 e novos CT49–CT117 | Etapas 1–10 |
+| 11 | Testes: regressão CT01–CT48 e novos CT49–CT118 | Etapas 1–10 |
 | 12 | README.md | Pode ocorrer em paralelo |
 
 ---
@@ -883,3 +885,4 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 6.0 | 23/09/2026 | Tela Principal com todas as contas e atalho de edição, Ver status, Detalhes reformulada, descrição e limites de campos, tela Gráfico (RF21–RF23), Ajustes, verificação de e-mail por código, senha mínima, alterar e recuperar senha, excluir conta, tema claro/escuro. Escopo de edição das séries estendido a categoria e descrição. Decisões de produto P1–P10 fechadas. |
 | 6.0 (estado) | 02/10/2026 | Registro do estado da Etapa 8 (13.3), marcadores de RF01, RF36 e RF39 e nota sobre `codigos_verificacao` em 9.2 e T4; nenhuma regra alterada. |
 | 6.0 (estado) | 03/10/2026 | Registro do estado da Etapa 9 (13.4), marcador de RF43 e nota em T2; nenhuma regra alterada. |
+| 6.0 (P11) | 03/10/2026 | Decisão P11: confirmação de senha no cadastro (Etapa 10); RF01, 5.31, 8.8 e CT118. |

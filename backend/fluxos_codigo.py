@@ -11,7 +11,20 @@ cadastro, alteração de e-mail e recuperação de senha. Sem Flet.
     em thread protegida (shield) e, enquanto o loop estiver rodando, o
     resultado real é obtido mesmo que a tarefa da tela seja cancelada no meio
     -- uma operação gravada nunca é apresentada como cancelada nem como
-    falha. Erros inesperados registram só o tipo e liberam a tela.
+    falha. Erros inesperados registram só o tipo e liberam a tela;
+  * nova tentativa (Etapa 10, B1): depois de uma falha transitória da
+    gravação, a tela guarda a MESMA gravação (função e argumentos, com a
+    autorização já verificada) em `ControleOperacao.gravacao_pendente` e a
+    repete sem validar o código de novo. `encerrar()` descarta essa gravação;
+  * Fechamento (Etapa 10, Bloco 2): rotina ÚNICA de fechamento da janela e
+    de fim da sessão. Bloqueia novas ações e gravações, mostra um aviso se
+    há gravação em curso, espera as gravações terminarem (sem tempo limite)
+    e só então fecha a janela;
+  * ContadorReenvio (Etapa 10, Bloco 3): "Reenviar código em N s" a partir
+    de `segundos_para_reenvio` da operação; para quando a tela sai, a
+    operação muda ou o fechamento começa, sem tocar em controles antigos.
+    A recusa do serviço ("Aguarde") continua valendo mesmo com o contador
+    em zero.
 """
 
 import asyncio
@@ -19,6 +32,7 @@ import contextvars
 import math
 import os
 import re
+import sqlite3
 import sys
 
 MENSAGEM_RECUPERACAO_NEUTRA = (
@@ -28,6 +42,7 @@ MENSAGEM_NAO_CONFIGURADO = "A confirmação por e-mail não está disponível ne
 MENSAGEM_CODIGO_FORMATO = "Digite o código de 6 dígitos."
 MENSAGEM_EXPIRADA = "O código expirou. Solicite um novo código."
 MENSAGEM_FALHA_GENERICA = "Não foi possível concluir agora. Tente novamente mais tarde."
+MENSAGEM_NOVA_TENTATIVA = "Não foi possível salvar agora. Seu código já foi confirmado: tente novamente."
 # Erro inesperado DEPOIS de uma gravação concluída: os dados foram salvos; só a
 # atualização da tela falhou (nunca apresentado como falha da operação).
 MENSAGEM_CONCLUIDA_SEM_ATUALIZAR = "A operação foi concluída, mas a tela não pôde ser atualizada. Volte e entre novamente."
@@ -54,8 +69,91 @@ def registrar_falha(contexto, erro):
     print(f"Sino: falha em {contexto} ({type(erro).__name__}).", file=sys.stderr)
 
 
+def falha_transitoria(erro):
+    """
+    Falha da gravação local que pode passar com uma nova tentativa (banco
+    ocupado ou travado, erro de E/S): a transação foi desfeita e a
+    autorização continua sem uso. Recusas da camada de dados (ValueError e
+    subclasses) e erros de programação não são transitórios.
+    """
+    return isinstance(erro, sqlite3.OperationalError)
+
+
 def segundos_inteiros(segundos):
     return max(1, math.ceil(segundos))
+
+
+TEXTO_REENVIAR = "Reenviar código"
+
+
+def texto_reenvio(segundos):
+    """Rótulo do botão de reenvio: com espera, "Reenviar código em N s"."""
+    if segundos <= 0:
+        return TEXTO_REENVIAR
+    return f"{TEXTO_REENVIAR} em {segundos_inteiros(segundos)} s"
+
+
+class ContadorReenvio:
+    """
+    Contagem regressiva do reenvio de UMA tela (Etapa 10, Bloco 3). A
+    referência é sempre `operacao.segundos_para_reenvio(relogio())` -- o
+    instante informado pelo serviço, guardado pelo cliente --; o contador
+    só decide quando redesenhar.
+
+      * `iniciar(operacao)` mostra o valor atual e devolve True se ainda há
+        espera e há tique automático (`esperar` não é None): a tela então
+        roda `rodar(geracao)` como tarefa;
+      * `parar()` e qualquer novo `iniciar()` invalidam a tarefa anterior
+        (geração); a tarefa também termina quando o controle da tela fica
+        inativo ou o fechamento começa -- e nesses casos não chama
+        `ao_mostrar`, então controles antigos nunca são atualizados;
+      * `restante()` serve à guarda do clique: com espera, o clique é
+        ignorado. Em zero o pedido é enviado, e uma recusa do serviço
+        ("Aguarde") é mostrada normalmente.
+    """
+
+    def __init__(self, controle, relogio, esperar, ao_mostrar):
+        self._controle = controle
+        self._relogio = relogio
+        self._esperar = esperar
+        self._ao_mostrar = ao_mostrar
+        self._operacao = None
+        self.geracao = 0
+
+    def restante(self):
+        if self._operacao is None:
+            return 0.0
+        return self._operacao.segundos_para_reenvio(self._relogio())
+
+    def _vigente(self, geracao=None):
+        return ((geracao is None or geracao == self.geracao)
+                and self._controle.ativo and not self._controle.fechando)
+
+    def mostrar(self):
+        """Redesenha uma vez com o valor atual (se a tela ainda está ativa)."""
+        if self._vigente():
+            self._ao_mostrar(self.restante())
+
+    def iniciar(self, operacao):
+        self._operacao = operacao
+        self.geracao += 1
+        self.mostrar()
+        return self._esperar is not None and self.restante() > 0 and self._vigente()
+
+    def parar(self):
+        self._operacao = None
+        self.geracao += 1
+
+    async def rodar(self, geracao):
+        while self._vigente(geracao):
+            restante = self.restante()
+            if restante <= 0:
+                return
+            # Até o próximo segundo inteiro exibido (entre 0 e 1 s).
+            await self._esperar(restante - math.ceil(restante) + 1)
+            if not self._vigente(geracao):
+                return
+            self._ao_mostrar(self.restante())
 
 
 def mensagem_do_pedido(resultado, email=None, recuperacao=False):
@@ -108,8 +206,9 @@ class ControleOperacao:
     nenhum controle da tela é atualizado.
     """
 
-    def __init__(self, ao_encerrar=None, ao_falhar=None):
+    def __init__(self, ao_encerrar=None, ao_falhar=None, fechamento=None):
         self.ativo = True
+        self._fechamento = fechamento  # Fechamento da página: depois que começa, nada novo é feito
         self.ocupado = False
         self.em_gravacao = False
         self.operacao = None
@@ -122,6 +221,9 @@ class ControleOperacao:
         self.ao_falhar = ao_falhar
         self.resultado_gravacao = None  # último resultado real de uma gravação
         self.gravacao_concluida = False  # a ação em curso já gravou com sucesso
+        # (função, argumentos) da gravação que falhou de forma transitória e
+        # pode ser repetida tal como foi pedida; None fora desse estado.
+        self.gravacao_pendente = None
 
     # ------------------------------------------------------------- tarefas
     def reservar(self):
@@ -130,10 +232,14 @@ class ControleOperacao:
         ignora o clique) se a tela já saiu ou se outra ação dela está em
         andamento -- inclusive uma ação agendada que ainda não começou.
         """
-        if not self.ativo or self.ocupado:
+        if not self.ativo or self.ocupado or self.fechando:
             return False
         self.ocupado = True
         return True
+
+    @property
+    def fechando(self):
+        return self._fechamento is not None and self._fechamento.iniciado
 
     async def executar(self, corotina_fn, *args):
         """
@@ -193,6 +299,10 @@ class ControleOperacao:
         encerrado), não há mais resultado a esperar: o cancelamento é
         propagado na hora -- a transação SQLite segue atômica na thread.
         """
+        if self.fechando:
+            # A janela está fechando: nenhuma gravação nova começa. A ação
+            # termina em silêncio, como um cancelamento (nada foi gravado).
+            raise asyncio.CancelledError()
         self.em_gravacao = True
         loop = asyncio.get_running_loop()
         contexto = contextvars.copy_context()
@@ -234,11 +344,47 @@ class ControleOperacao:
             raise asyncio.CancelledError()
         return resultado
 
+    async def gravar_com_nova_tentativa(self, funcao, *args):
+        """
+        `gravar`, e numa falha transitória (`falha_transitoria`) guarda
+        exatamente esta gravação em `gravacao_pendente` antes de levantar a
+        exceção. Recusas, outros erros e o sucesso deixam a pendência vazia.
+        """
+        self.gravacao_pendente = None
+        try:
+            return await self.gravar(funcao, *args)
+        except Exception as erro:
+            if falha_transitoria(erro) and self.ativo:
+                self.gravacao_pendente = (funcao, args)
+            raise
+
+    async def repetir_gravacao(self, ja_gravada):
+        """
+        Nova tentativa: repete a gravação pendente com os mesmos argumentos
+        (a autorização já verificada, os mesmos dados), sem validar o código
+        de novo. Antes, `ja_gravada(*args)` (leitura, em thread) diz se a
+        tentativa anterior chegou a gravar -- nesse caso não grava de novo e
+        devolve None. A camada de dados confere outra vez finalidade, vínculo
+        e validade da autorização.
+        """
+        funcao, args = self.gravacao_pendente
+        try:
+            gravada = await self.em_thread(ja_gravada, *args)
+        except Exception as erro:
+            if not falha_transitoria(erro):
+                self.gravacao_pendente = None
+            raise
+        if gravada:
+            self.gravacao_pendente = None
+            return None
+        return await self.gravar_com_nova_tentativa(funcao, *args)
+
     def encerrar(self):
         """Sai da tela: nada mais é enviado ou mostrado; gravações em curso terminam sozinhas."""
         if not self.ativo:
             return
         self.ativo = False
+        self.gravacao_pendente = None  # a autorização guardada não sai desta tela
         if self.operacao is not None:
             self.operacao.descartar()
         if not self.em_gravacao:
@@ -255,21 +401,107 @@ class ControleOperacao:
 
 async def aguardar_todas_as_gravacoes():
     """
-    Usado no fim da sessão do Flet: espera qualquer gravação local ainda em
-    curso. Não há garantia de que o Flet aguarde quem chama esta função: no
-    desktop, ao fechar a janela, o evento de fim de sessão é disparado sem
-    espera e o `asyncio.run` cancela as tarefas pendentes. As gravações são
-    futuros do executor (fora desse cancelamento) e a tarefa da tela espera
-    a thread; a atomicidade vem da transação SQLite. Validação: interrupção
-    brusca em pontos definidos aprovada; fechamento da janela durante a
-    gravação com esta correção ainda não validado manualmente.
+    Usado pelo Fechamento: espera todas as gravações locais em curso,
+    inclusive as que começarem durante a espera (o Fechamento já bloqueou
+    novas gravações das suas telas). Falhas e cancelamentos das gravações só
+    são registrados. As gravações são futuros do executor (fora do
+    cancelamento das Tasks); a atomicidade vem da transação SQLite.
     """
-    for gravacao in list(_GRAVACOES):
+    aguardadas = set()
+    while pendentes := [g for g in _GRAVACOES if g not in aguardadas]:
+        for gravacao in pendentes:
+            aguardadas.add(gravacao)
+            try:
+                await asyncio.shield(gravacao)
+            except asyncio.CancelledError as cancelamento:
+                if not gravacao.cancelled():
+                    raise  # quem aguarda foi cancelado
+                registrar_falha("gravação sem confirmação no encerramento", cancelamento)
+            except Exception as erro:  # noqa: BLE001
+                registrar_falha("gravação aguardada no encerramento", erro)
+
+
+def ha_gravacao_em_curso():
+    return any(not g.done() for g in _GRAVACOES)
+
+
+class Fechamento:
+    """
+    Fechamento seguro da janela e fim da sessão de UMA página (Etapa 10,
+    Bloco 2). `pedir()` é chamado pelo pedido de fechamento da janela (X,
+    com `prevent_close`) e pelo fim da sessão (`on_close`/`on_disconnect`);
+    todos os pedidos compartilham a mesma rotina, criada no primeiro.
+
+    A rotina, em ordem:
+      1. marca `iniciado`: os ControleOperacao ligados a este fechamento
+         recusam novas ações e novas gravações;
+      2. `encerrar_operacoes()` (tarefas da tela que ainda não gravam);
+      3. se há gravação em curso: `avisar()` (falha só é registrada e não
+         pula a espera) e espera TODAS as gravações terminarem, sem tempo
+         limite -- `destroy()` não interromperia uma thread gravando; a
+         garantia dos dados continua sendo a transação SQLite;
+      4. se a espera falhar, registra o limite e segue para fechar, sem
+         afirmar que a gravação terminou;
+      5. `ao_terminar()` (ex.: fechar o transporte do serviço);
+      6. se algum pedido veio da janela, `fechar_janela()` (destroy).
+
+    Encerrar o processo pelo sistema continua possível e não é tratado aqui.
+    """
+
+    def __init__(self, avisar, fechar_janela, encerrar_operacoes=None, ao_terminar=None):
+        self._avisar = avisar
+        self._fechar_janela = fechar_janela
+        self._encerrar_operacoes = encerrar_operacoes
+        self._ao_terminar = ao_terminar
+        self.iniciado = False
+        self._pela_janela = False
+        self._janela_fechada = False
+        self._rotina = None
+
+    def pedir(self, pela_janela):
+        """Devolve a tarefa da rotina única (criada no primeiro pedido)."""
+        if pela_janela:
+            self._pela_janela = True
+        if self._rotina is None:
+            self.iniciado = True
+            self._rotina = asyncio.ensure_future(self._executar())
+        elif self._rotina.done() and pela_janela and not self._janela_fechada:
+            # A rotina já terminou por fim de sessão: só falta fechar a janela.
+            self._rotina = asyncio.ensure_future(self._fechar())
+        return self._rotina
+
+    async def _fechar(self):
+        self._janela_fechada = True
         try:
-            await asyncio.shield(gravacao)
-        except asyncio.CancelledError as cancelamento:
-            if not gravacao.cancelled():
-                raise  # quem aguarda foi cancelado
-            registrar_falha("gravação sem confirmação no encerramento", cancelamento)
+            await self._fechar_janela()
         except Exception as erro:  # noqa: BLE001
-            registrar_falha("gravação aguardada no encerramento", erro)
+            registrar_falha("fechamento da janela", erro)
+        return True
+
+    async def _executar(self):
+        self.iniciado = True
+        espera_confirmada = True
+        try:
+            if self._encerrar_operacoes is not None:
+                self._encerrar_operacoes()
+        except Exception as erro:  # noqa: BLE001
+            registrar_falha("encerramento das operações no fechamento", erro)
+        if ha_gravacao_em_curso():
+            try:
+                self._avisar()
+            except Exception as erro:  # noqa: BLE001
+                registrar_falha("aviso de fechamento", erro)  # continua esperando
+            try:
+                await aguardar_todas_as_gravacoes()
+            except BaseException as erro:  # noqa: BLE001 -- inclusive cancelamento
+                espera_confirmada = False
+                registrar_falha("espera das gravações no fechamento", erro)
+                print("Sino: a janela será fechada sem confirmar o fim da gravação em curso.", file=sys.stderr)
+        if self._ao_terminar is not None:
+            try:
+                await self._ao_terminar()
+            except Exception as erro:  # noqa: BLE001
+                registrar_falha("fim da sessão", erro)
+        if self._pela_janela:
+            await self._fechar()
+        return espera_confirmada

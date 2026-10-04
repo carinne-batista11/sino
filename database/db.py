@@ -2008,6 +2008,30 @@ def _consumir_autorizacao(autorizacao, finalidade, email, relogio, preparar):
         conexao.close()
 
 
+def autorizacao_ja_usada(autorizacao):
+    """
+    Nova tentativa depois de uma falha (Etapa 10, B1): o jti desta
+    autorização já está em `autorizacoes_usadas`? Só leitura; jti fora do
+    formato -> False.
+
+    Uso restrito: só a nova tentativa da MESMA operação, na mesma tela e com
+    a gravação pendente guardada (ControleOperacao.repetir_gravacao), usa a
+    presença do jti como sinal de que a tentativa anterior gravou -- o jti é
+    aleatório e só é gravado junto com aquela operação. Fora desse contexto
+    não é comprovante de nada (registros vencidos são apagados, e o jti não
+    identifica usuário nem dados).
+    """
+    jti = getattr(autorizacao, "jti", None)
+    if type(jti) is not str or not _RE_JTI_CANONICO.fullmatch(jti):
+        return False
+    conexao = conectar()
+    try:
+        linha = conexao.execute(f"SELECT 1 FROM {TABELA_AUTORIZACOES} WHERE jti = ?", (jti,)).fetchone()
+    finally:
+        conexao.close()
+    return linha is not None
+
+
 def concluir_cadastro(autorizacao, nome, email, senha, relogio=time.monotonic):
     """
     RF01/5.31 (Etapa 8): cria o usuário depois da confirmação do e-mail por

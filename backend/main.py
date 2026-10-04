@@ -3,6 +3,7 @@ main.py — App do Sino em Flet, conectado ao banco SQLite.
 Tela de login/cadastro + tela de Categorias (CRUD).
 """
 
+import asyncio
 import os
 import re
 import sys
@@ -823,10 +824,12 @@ def tema_flet(tema):
 class ServicoCodigos:
     """Cliente do serviço de códigos de uma página, com o relógio que ele usa."""
 
-    def __init__(self, cliente, transporte=None, relogio=time.monotonic):
+    def __init__(self, cliente, transporte=None, relogio=time.monotonic, esperar=asyncio.sleep):
         self.cliente = cliente
         self.transporte = transporte
         self.relogio = relogio
+        # Tique do contador de reenvio (Bloco 3); None = sem tique automático.
+        self.esperar = esperar
 
     async def fechar(self):
         if self.transporte is not None:
@@ -1005,8 +1008,28 @@ def main(page: ft.Page):
             estado_servico["instancia"] = criar_servico_codigos()
         return estado_servico["instancia"]
 
+    def autorizacao_ja_usada(autorizacao, *_dados):
+        """Nova tentativa (B1): a tentativa anterior com esta autorização chegou a gravar?"""
+        return database.autorizacao_ja_usada(autorizacao)
+
+    def novo_contador_reenvio(controle, servico, botao, travado):
+        """
+        Bloco 3: contador do botão de reenvio de uma tela. `travado()` diz se a
+        tela está ocupada (envio, confirmação, gravação) ou em nova tentativa:
+        nesses estados o botão fica desativado mesmo sem espera.
+        """
+        def mostrar(restante):
+            botao.content = fluxos_codigo.texto_reenvio(restante)
+            botao.disabled = restante > 0 or travado()
+            page.update()
+        return fluxos_codigo.ContadorReenvio(controle, servico.relogio, servico.esperar, mostrar)
+
+    def iniciar_contador(contador, operacao):
+        if contador.iniciar(operacao):
+            page.run_task(contador.rodar, contador.geracao)
+
     def novo_controle():
-        controle = fluxos_codigo.ControleOperacao(ao_encerrar=operacoes_ativas.discard)
+        controle = fluxos_codigo.ControleOperacao(ao_encerrar=operacoes_ativas.discard, fechamento=fechamento)
         operacoes_ativas.add(controle)
         return controle
 
@@ -1015,22 +1038,43 @@ def main(page: ft.Page):
         for controle in list(operacoes_ativas):
             controle.encerrar()
 
-    async def encerrar_sessao_da_pagina(e=None):
-        """
-        Fim da sessão do Flet: `on_disconnect` (sessões web) e `on_close`
-        (sessão encerrada). Encerra as operações, espera as gravações locais
-        em curso e fecha o transporte. O Flet não aguarda este handler: no
-        desktop, ao fechar a janela, ele dispara o evento "close" sem esperar
-        e o `asyncio.run` cancela as tarefas pendentes. A gravação local é um
-        futuro do executor fora desse cancelamento (ControleOperacao.gravar)
-        e fica protegida pela atomicidade da transação SQLite; a validação
-        manual do fechamento com essa correção continua pendente.
-        """
-        encerrar_operacoes()
-        await fluxos_codigo.aguardar_todas_as_gravacoes()
+    # ------------------------------------------- fechamento seguro (Etapa 10, Bloco 2)
+    def avisar_fechamento():
+        """Bloqueia a página (diálogo modal sem ações) enquanto as gravações terminam."""
+        page.show_dialog(ft.AlertDialog(
+            modal=True, data="aviso_fechamento",
+            title=ft.Text("Salvando…", color=cores.texto_principal),
+            content=ft.Text("Salvando… a janela será fechada quando terminar.", color=cores.texto_principal),
+            actions=[],
+            bgcolor=cores.fundo_dialogo,
+        ))
+        page.update()
+
+    async def fechar_transporte():
         if estado_servico["instancia"] is not None:
             await estado_servico["instancia"].fechar()
 
+    fechamento = fluxos_codigo.Fechamento(
+        avisar=avisar_fechamento, fechar_janela=lambda: page.window.destroy(),
+        encerrar_operacoes=encerrar_operacoes, ao_terminar=fechar_transporte,
+    )
+
+    async def ao_evento_da_janela(e):
+        """X da janela (com `prevent_close`): a rotina única fecha quando as gravações terminarem."""
+        if e.type != ft.WindowEventType.CLOSE:
+            return
+        try:
+            await fechamento.pedir(pela_janela=True)
+        except Exception as erro:  # a janela nunca pode ficar impossível de fechar
+            fluxos_codigo.registrar_falha("pedido de fechamento da janela", erro)
+            await page.window.destroy()
+
+    async def encerrar_sessao_da_pagina(e=None):
+        """Fim da sessão do Flet (`on_close`/`on_disconnect`): a mesma rotina, sem fechar a janela."""
+        await fechamento.pedir(pela_janela=False)
+
+    page.window.prevent_close = True
+    page.window.on_event = ao_evento_da_janela
     page.on_disconnect = encerrar_sessao_da_pagina
     page.on_close = encerrar_sessao_da_pagina
 
@@ -1081,13 +1125,24 @@ def main(page: ft.Page):
         ações rodam via page.run_task; Voltar fica disponível enquanto o
         pedido ou a validação estão em andamento (cancela a tarefa e descarta
         a operação) e só é desativado durante a gravação local.
+
+        Nova tentativa (Etapa 10, B1): depois de uma falha transitória da
+        gravação, `pedir_nova_tentativa` troca o botão por "Tentar novamente"
+        (repete só a gravação, sem o código), desativa o campo e esconde
+        "Reenviar código"; `sair_da_nova_tentativa` volta ao normal.
+
+        Bloco 3: enquanto confirma, reenvia ou grava, o campo do código fica
+        desativado; o reenvio segue o `contador` (ContadorReenvio).
         """
 
-        def __init__(self, controle, titulo, explicacao, ao_confirmar, ao_reenviar, ao_voltar,
+        def __init__(self, controle, servico, titulo, explicacao, ao_confirmar, ao_reenviar, ao_voltar,
                      rotulo_voltar, rotulo_confirmar="Confirmar"):
             self.controle = controle
+            self._ocupada = False
             self._ao_confirmar = ao_confirmar
             self._ao_reenviar = ao_reenviar
+            self._ao_tentar_novamente = None
+            self._rotulo_confirmar = rotulo_confirmar
             self.titulo = ft.Text(titulo, size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
             self.explicacao = ft.Text(explicacao, size=13, color=cores.texto_secundario, width=330,
                                       text_align=ft.TextAlign.CENTER)
@@ -1095,10 +1150,14 @@ def main(page: ft.Page):
             self.mensagem = ft.Text("", width=330, text_align=ft.TextAlign.CENTER, color=cores.texto_sucesso)
             self.botao_confirmar = ft.Button(content=rotulo_confirmar, width=330, on_click=self._clique_confirmar)
             estilo_botao_primario(self.botao_confirmar, True)
-            self.botao_reenviar = ft.TextButton(content="Reenviar código", on_click=self._clique_reenviar,
+            self.botao_reenviar = ft.TextButton(content=fluxos_codigo.TEXTO_REENVIAR, data="reenviar_codigo",
+                                                on_click=self._clique_reenviar,
                                                 style=ft.ButtonStyle(color=cores.acao_primaria))
             self.botao_voltar = ft.TextButton(content=rotulo_voltar, on_click=lambda e: ao_voltar(),
                                               style=ft.ButtonStyle(color=cores.texto_principal))
+            self.contador = novo_contador_reenvio(
+                controle, servico, self.botao_reenviar,
+                travado=lambda: self._ocupada or self._ao_tentar_novamente is not None)
 
         def tela(self, cabecalho):
             return ft.Column(
@@ -1109,6 +1168,8 @@ def main(page: ft.Page):
             )
 
         def ocupar(self, texto, permitir_voltar=True):
+            self._ocupada = True
+            self.campo.disabled = True
             self.botao_reenviar.disabled = True
             self.botao_voltar.disabled = not permitir_voltar
             estilo_botao_primario(self.botao_confirmar, False)
@@ -1116,13 +1177,35 @@ def main(page: ft.Page):
             page.update()
 
         def terminar(self, conteudo):
+            self._ocupada = False
+            self.campo.disabled = self._ao_tentar_novamente is not None
             self.botao_reenviar.disabled = False
+            self.contador.mostrar()  # o reenvio só volta se não houver espera
             self.botao_voltar.disabled = False
             estilo_botao_primario(self.botao_confirmar, True)
             mostrar_mensagem(self.mensagem, conteudo)
             page.update()
 
+        def pedir_nova_tentativa(self, conteudo, ao_tentar):
+            self._ao_tentar_novamente = ao_tentar
+            self.campo.disabled = True
+            self.botao_reenviar.visible = False
+            self.botao_confirmar.content = "Tentar novamente"
+            self.terminar(conteudo)
+
+        def sair_da_nova_tentativa(self):
+            self._ao_tentar_novamente = None
+            self.campo.disabled = False
+            self.botao_reenviar.visible = True
+            self.botao_confirmar.content = self._rotulo_confirmar
+
         def _clique_confirmar(self, e):
+            if self._ao_tentar_novamente is not None:
+                if self.controle.gravacao_pendente is None or not self.controle.reservar():
+                    return
+                self.ocupar("Salvando…", permitir_voltar=False)
+                page.run_task(self.controle.executar, self._ao_tentar_novamente)
+                return
             codigo = codigo_digitado(self.campo)
             if codigo is None:
                 mostrar_mensagem(self.mensagem, (fluxos_codigo.MENSAGEM_CODIGO_FORMATO, True))
@@ -1134,6 +1217,8 @@ def main(page: ft.Page):
             page.run_task(self.controle.executar, self._ao_confirmar, codigo)
 
         def _clique_reenviar(self, e):
+            if self._ao_tentar_novamente is not None or self.contador.restante() > 0:
+                return  # nova tentativa ou ainda em espera: sem reenvio
             if not self.controle.reservar():
                 return
             self.ocupar("Enviando novo código…")
@@ -1218,6 +1303,11 @@ def main(page: ft.Page):
         campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330, color=cores.texto_principal)
         campo_senha = ft.TextField(label="Senha", hint_text="********", password=True,
                                     can_reveal_password=True, width=330, color=cores.texto_principal)
+        # Etapa 10, Bloco 4: confirmação da senha só no Cadastro (mesmo padrão
+        # do campo Senha; visível e esvaziada em alternar_modo).
+        campo_confirmar_senha = ft.TextField(label="Confirmar senha", hint_text="********", password=True,
+                                             can_reveal_password=True, width=330, visible=False,
+                                             color=cores.texto_principal)
         # RF15: aceite dos Termos de Uso/Política de Privacidade, exigido só no
         # Cadastro (mesmo padrão de visibilidade de campo_nome -- alternado em
         # alternar_modo, resetado a cada troca de modo).
@@ -1236,6 +1326,15 @@ def main(page: ft.Page):
             page.add(tela_autenticacao)
             page.update()
 
+        def travar_formulario(travado):
+            """
+            Bloco 3 (B3): durante o envio do código, os campos capturados no
+            clique não podem ser editados. Os links dos documentos e a troca de
+            modo continuam ativos: eles cancelam o pedido.
+            """
+            for campo in (campo_nome, campo_email, campo_senha, campo_confirmar_senha, campo_aceite_termos):
+                campo.disabled = travado
+
         def cancelar_pedido_cadastro():
             """Sair do formulário (trocar de modo, ler um documento) cancela o pedido de código em andamento."""
             controle = estado_cadastro["controle"]
@@ -1243,6 +1342,7 @@ def main(page: ft.Page):
                 controle.encerrar()
                 estilo_botao_primario(botao_principal, True)
                 mensagem.value = ""
+            travar_formulario(False)
 
         def abrir_documento_do_cadastro(chave):
             cancelar_pedido_cadastro()
@@ -1282,6 +1382,11 @@ def main(page: ft.Page):
                     # 5.33/RF37: mesma regra do banco (database.validar_nova_senha);
                     # campos e aceite ficam como estão para a correção.
                     mensagem.value = erro_senha
+                    mensagem.color = cores.texto_erro
+                elif (campo_confirmar_senha.value or "") != senha:
+                    # Bloco 4: comparação exata (a senha nunca é transformada);
+                    # nada é pedido ao serviço nem gravado.
+                    mensagem.value = "As senhas não coincidem."
                     mensagem.color = cores.texto_erro
                 elif not campo_aceite_termos.value:
                     # RF15: aceite é obrigatório para prosseguir -- o código nem
@@ -1333,12 +1438,14 @@ def main(page: ft.Page):
             estado_cadastro["controle"] = controle
 
             def liberar_formulario(conteudo):
+                travar_formulario(False)
                 estilo_botao_primario(botao_principal, True)
                 mostrar_mensagem(mensagem, conteudo)
                 page.update()
 
             controle.ao_falhar = liberar_formulario
             controle.reservar()
+            travar_formulario(True)
             estilo_botao_primario(botao_principal, False)
             mostrar_mensagem(mensagem, ("Enviando código…", False))
             page.update()
@@ -1361,6 +1468,7 @@ def main(page: ft.Page):
                     return
                 if type(resultado).__name__ == "CodigoSolicitado":
                     campo_senha.value = ""  # o cadastro pendente guarda só a SenhaValidada
+                    campo_confirmar_senha.value = ""
                     foi_para_o_codigo = True
                     mostrar_etapa_codigo_cadastro(controle, servico, operacao, nome, email, senha_validada)
                     return
@@ -1374,6 +1482,7 @@ def main(page: ft.Page):
                 conteudo = (fluxos_codigo.MENSAGEM_FALHA_GENERICA, True)
             finally:
                 if controle.ativo and not foi_para_o_codigo:
+                    travar_formulario(False)
                     estilo_botao_primario(botao_principal, True)
                     mostrar_mensagem(mensagem, conteudo)
                     page.update()
@@ -1383,6 +1492,7 @@ def main(page: ft.Page):
                 if controle.em_gravacao:
                     return  # gravando: o resultado real será mostrado
                 controle.encerrar()
+                travar_formulario(False)
                 estilo_botao_primario(botao_principal, True)
                 mensagem.value = ""
                 voltar_ao_formulario()
@@ -1395,18 +1505,31 @@ def main(page: ft.Page):
                     etapa.terminar(fluxos_codigo.mensagem_da_validacao(resultado))
                     return
                 etapa.ocupar("Salvando…", permitir_voltar=False)
+                await concluir(controle.gravar_com_nova_tentativa(
+                    database.concluir_cadastro, resultado, nome, email, senha_validada, servico.relogio))
+
+            async def tentar_novamente():
+                await concluir(controle.repetir_gravacao(autorizacao_ja_usada))
+
+            async def concluir(gravacao):
+                """Primeira gravação ou nova tentativa (B1): mesma autorização e mesmos dados."""
                 try:
-                    await controle.gravar(database.concluir_cadastro, resultado, nome, email,
-                                          senha_validada, servico.relogio)
+                    await gravacao
                 except (database.EmailEmUsoError, database.EmailInvalidoError,
-                        database.AutorizacaoRecusadaError) as ex:
+                        database.AutorizacaoRecusadaError) as ex:  # definitivas: inclui expirada e já usada
                     if controle.ativo:
+                        etapa.sair_da_nova_tentativa()
                         etapa.terminar((str(ex), True))
                     return
                 except Exception as ex:
                     fluxos_codigo.registrar_falha("conclusão do cadastro", ex)
                     if controle.ativo:
-                        etapa.terminar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                        if controle.gravacao_pendente is not None:
+                            etapa.pedir_nova_tentativa((fluxos_codigo.MENSAGEM_NOVA_TENTATIVA, True),
+                                                       tentar_novamente)
+                        else:
+                            etapa.sair_da_nova_tentativa()
+                            etapa.terminar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
                     return
                 if controle.ativo:  # gravado: nunca apresentado como cancelado
                     mostrar_tela_login(("Conta criada com sucesso! Faça login para continuar.", False))
@@ -1418,10 +1541,11 @@ def main(page: ft.Page):
                 if type(resultado).__name__ == "CodigoSolicitado":
                     etapa.terminar((f"Enviamos um novo código para {email}.", False))
                 else:
-                    etapa.terminar(fluxos_codigo.mensagem_do_pedido(resultado))
+                    etapa.terminar(fluxos_codigo.mensagem_do_pedido(resultado))  # inclusive a recusa "Aguarde"
+                iniciar_contador(etapa.contador, operacao)
 
             etapa = EtapaCodigo(
-                controle, titulo="Confirme seu e-mail",
+                controle, servico, titulo="Confirme seu e-mail",
                 explicacao=f"Enviamos um código de 6 dígitos para {email}. Digite-o abaixo para concluir o cadastro.",
                 ao_confirmar=confirmar, ao_reenviar=reenviar, ao_voltar=voltar, rotulo_voltar="Voltar",
             )
@@ -1429,6 +1553,7 @@ def main(page: ft.Page):
             page.controls.clear()
             page.add(etapa.tela(logo_sino()))
             page.update()
+            iniciar_contador(etapa.contador, operacao)
 
         botao_principal = ft.Button(
             content="Entrar",
@@ -1445,11 +1570,13 @@ def main(page: ft.Page):
             limite_nome_cadastro.sincronizar()
             campo_email.value = ""
             campo_senha.value = ""
+            campo_confirmar_senha.value = ""
             campo_aceite_termos.value = False
             if modo_cadastro[0]:
                 titulo.value = "Crie sua conta"
                 subtitulo.value = "Leva menos de um minuto"
                 campo_senha.helper = f"Mínimo de {database.SENHA_MINIMO} caracteres"
+                campo_confirmar_senha.visible = True
                 campo_nome.visible = True
                 links_documentos.visible = True
                 campo_aceite_termos.visible = True
@@ -1460,6 +1587,7 @@ def main(page: ft.Page):
                 titulo.value = "Bem-vindo de volta"
                 subtitulo.value = "Suas contas, sob controle."
                 campo_senha.helper = None
+                campo_confirmar_senha.visible = False
                 campo_nome.visible = False
                 links_documentos.visible = False
                 campo_aceite_termos.visible = False
@@ -1486,6 +1614,7 @@ def main(page: ft.Page):
                 campo_nome,
                 campo_email,
                 campo_senha,
+                campo_confirmar_senha,
                 links_documentos,
                 campo_aceite_termos,
                 ft.Container(height=8),
@@ -1520,7 +1649,8 @@ def main(page: ft.Page):
         page.overlay.clear()
         page.padding = 24
         controle = novo_controle()
-        estado = {"passo": 1, "email": None, "sem_envio": False, "autorizacao": None}
+        estado = {"passo": 1, "email": None, "sem_envio": False, "autorizacao": None,
+                  "ocupada": False, "contador": None}
 
         def campo_senha_nova(rotulo, ajuda=None):
             return ft.TextField(label=rotulo, helper=ajuda, password=True, can_reveal_password=True, width=330,
@@ -1538,9 +1668,15 @@ def main(page: ft.Page):
         mensagem = ft.Text("", width=330, text_align=ft.TextAlign.CENTER, color=cores.texto_sucesso)
         botao = ft.Button(content="Enviar código", width=330)
         estilo_botao_primario(botao, True)
-        botao_reenviar = ft.TextButton(content="Reenviar código", visible=False,
+        botao_reenviar = ft.TextButton(content=fluxos_codigo.TEXTO_REENVIAR, visible=False, data="reenviar_codigo",
                                        style=ft.ButtonStyle(color=cores.acao_primaria))
         botao_voltar = ft.TextButton(content="Voltar ao login", style=ft.ButtonStyle(color=cores.texto_principal))
+
+        def contador(servico):
+            if estado["contador"] is None:
+                estado["contador"] = novo_contador_reenvio(controle, servico, botao_reenviar,
+                                                           travado=lambda: estado["ocupada"])
+            return estado["contador"]
 
         def limpar_senhas():
             campo_nova.value = ""
@@ -1562,9 +1698,15 @@ def main(page: ft.Page):
                 estado["autorizacao"] = None
                 campo_cod.value = ""
                 limpar_senhas()
+            if passo != 2 and estado["contador"] is not None:
+                estado["contador"].parar()
             liberar(conteudo)
 
         def ocupar(texto, permitir_voltar=True):
+            estado["ocupada"] = True
+            # B3: os dados capturados no clique não mudam enquanto a ação roda.
+            for campo in (campo_email, campo_cod, campo_nova, campo_confirmacao):
+                campo.disabled = True
             estilo_botao_primario(botao, False)
             botao_reenviar.disabled = True
             botao_voltar.disabled = not permitir_voltar
@@ -1572,13 +1714,25 @@ def main(page: ft.Page):
             page.update()
 
         def liberar(conteudo=None):
+            estado["ocupada"] = False
+            campo_email.disabled = campo_cod.disabled = False
+            campo_nova.disabled = campo_confirmacao.disabled = controle.gravacao_pendente is not None  # B1
             estilo_botao_primario(botao, True)
             botao_reenviar.disabled = False
+            if estado["contador"] is not None:
+                estado["contador"].mostrar()  # o reenvio só volta se não houver espera
             botao_voltar.disabled = False
             mostrar_mensagem(mensagem, conteudo)
             page.update()
 
+        def modo_nova_tentativa(ativo):
+            """B1: "Tentar novamente" repete a mesma gravação; as senhas ficam travadas."""
+            campo_nova.disabled = campo_confirmacao.disabled = ativo
+            botao.content = "Tentar novamente" if ativo else "Redefinir senha"
+
         def recomecar(conteudo):
+            controle.gravacao_pendente = None
+            modo_nova_tentativa(False)
             if controle.operacao is not None:
                 controle.operacao.descartar()
                 controle.operacao = None
@@ -1587,7 +1741,8 @@ def main(page: ft.Page):
         def voltar(e=None):
             if controle.em_gravacao:
                 return  # gravando: o resultado real será mostrado
-            controle.encerrar()
+            controle.encerrar()  # descarta também a gravação pendente
+            estado["autorizacao"] = None
             limpar_senhas()
             mostrar_tela_login()
 
@@ -1607,7 +1762,9 @@ def main(page: ft.Page):
             if not controle.ativo:
                 return
             if type(resultado).__name__ == "CodigoSolicitado":
+                contador(servico)
                 ir_para(2, fluxos_codigo.mensagem_do_pedido(resultado, recuperacao=True))
+                iniciar_contador(contador(servico), operacao)
                 return
             operacao.descartar()
             controle.operacao = None
@@ -1616,7 +1773,8 @@ def main(page: ft.Page):
         async def reenviar(servico):
             resultado = await servico.cliente.pedir_codigo(controle.operacao, sem_envio=estado["sem_envio"])
             if controle.ativo:
-                liberar(fluxos_codigo.mensagem_do_pedido(resultado, recuperacao=True))
+                liberar(fluxos_codigo.mensagem_do_pedido(resultado, recuperacao=True))  # inclusive "Aguarde"
+                iniciar_contador(contador(servico), controle.operacao)
 
         async def confirmar_codigo(servico, codigo):
             resultado = await servico.cliente.validar_codigo(controle.operacao, codigo)
@@ -1634,11 +1792,20 @@ def main(page: ft.Page):
                 recomecar((fluxos_codigo.MENSAGEM_EXPIRADA, True))
                 return
             ocupar("Salvando…", permitir_voltar=False)
+            await concluir(controle.gravar_com_nova_tentativa(
+                database.redefinir_senha_por_autorizacao, autorizacao, estado["email"], nova, servico.relogio))
+
+        async def tentar_novamente():
+            ocupar("Salvando…", permitir_voltar=False)
+            await concluir(controle.repetir_gravacao(autorizacao_ja_usada))
+
+        async def concluir(gravacao):
+            """Primeira gravação ou nova tentativa (B1): mesma autorização, e-mail e nova senha."""
             try:
-                await controle.gravar(database.redefinir_senha_por_autorizacao, autorizacao, estado["email"],
-                                      nova, servico.relogio)
+                await gravacao
             except database.SenhaInvalidaError as ex:  # inválida ou igual à atual: a autorização segue válida
                 if controle.ativo:
+                    modo_nova_tentativa(False)
                     liberar((str(ex), True))
                 return
             except database.AutorizacaoExpiradaError:
@@ -1653,7 +1820,11 @@ def main(page: ft.Page):
             except Exception as ex:
                 fluxos_codigo.registrar_falha("redefinição de senha", ex)
                 if controle.ativo:
-                    liberar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                    if controle.gravacao_pendente is not None:
+                        modo_nova_tentativa(True)
+                        liberar((fluxos_codigo.MENSAGEM_NOVA_TENTATIVA, True))
+                    else:
+                        recomecar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
                 return
             limpar_senhas()
             if controle.ativo:  # gravado: nunca apresentado como cancelado
@@ -1684,6 +1855,10 @@ def main(page: ft.Page):
                     return
                 ocupar("Confirmando…")
                 page.run_task(controle.executar, confirmar_codigo, servico, codigo)
+            elif controle.gravacao_pendente is not None:
+                if not controle.reservar():
+                    return
+                page.run_task(controle.executar, tentar_novamente)
             else:
                 nova, confirmacao = campo_nova.value or "", campo_confirmacao.value or ""
                 if not nova or not confirmacao:
@@ -1702,6 +1877,8 @@ def main(page: ft.Page):
                 page.run_task(controle.executar, redefinir, servico, nova)
 
         def clique_reenviar(e):
+            if estado["contador"] is not None and estado["contador"].restante() > 0:
+                return  # ainda em espera
             if not controle.reservar():
                 return
             ocupar("Enviando novo código…")
@@ -5005,7 +5182,7 @@ def main(page: ft.Page):
             """
             usuario_id = usuario_atual["id"]
             controle = novo_controle()
-            estado = {"passo": 1, "pendencia": None, "novo": None}
+            estado = {"passo": 1, "pendencia": None, "novo": None, "ocupada": False, "contador": None}
 
             campo_atual = ft.TextField(label="Senha atual", password=True, can_reveal_password=True, autofocus=True,
                                        width=320, color=cores.texto_principal, **estilo_campo_texto())
@@ -5018,11 +5195,21 @@ def main(page: ft.Page):
             mensagem = ft.Text("", size=12, visible=False, width=320, color=cores.texto_sucesso)
             botao_principal = ft.Button(content="Enviar código")
             estilo_botao_primario(botao_principal, True)
-            botao_reenviar = ft.TextButton(content="Reenviar código", visible=False,
-                                           style=ft.ButtonStyle(color=cores.acao_primaria))
+            botao_reenviar = ft.TextButton(content=fluxos_codigo.TEXTO_REENVIAR, visible=False,
+                                           data="reenviar_codigo", style=ft.ButtonStyle(color=cores.acao_primaria))
             botao_cancelar = ft.TextButton(content="Cancelar", style=estilo_botao_texto())
 
+            def contador(servico):
+                if estado["contador"] is None:
+                    estado["contador"] = novo_contador_reenvio(
+                        controle, servico, botao_reenviar,
+                        travado=lambda: estado["ocupada"] or controle.gravacao_pendente is not None)
+                return estado["contador"]
+
             def ocupar(texto, permitir_cancelar=True):
+                estado["ocupada"] = True
+                # B3: senha, novo e-mail e código capturados não mudam enquanto a ação roda.
+                campo_atual.disabled = campo_novo.disabled = campo_cod.disabled = True
                 estilo_botao_primario(botao_principal, False)
                 botao_reenviar.disabled = True
                 botao_cancelar.disabled = not permitir_cancelar
@@ -5030,8 +5217,13 @@ def main(page: ft.Page):
                 page.update()
 
             def liberar(conteudo=None):
+                estado["ocupada"] = False
+                campo_atual.disabled = campo_novo.disabled = False
+                campo_cod.disabled = controle.gravacao_pendente is not None  # B1: nova tentativa sem código
                 estilo_botao_primario(botao_principal, True)
                 botao_reenviar.disabled = False
+                if estado["contador"] is not None:
+                    estado["contador"].mostrar()  # o reenvio só volta se não houver espera
                 botao_cancelar.disabled = False
                 mostrar_mensagem(mensagem, conteudo)
                 mensagem.visible = conteudo is not None
@@ -5045,10 +5237,16 @@ def main(page: ft.Page):
                 botao_principal.content = "Confirmar"
                 liberar(conteudo)
 
+            def modo_nova_tentativa(ativo):
+                """B1: "Tentar novamente" repete só a gravação, sem o código."""
+                campo_cod.disabled = ativo
+                botao_reenviar.visible = not ativo
+                botao_principal.content = "Tentar novamente" if ativo else "Confirmar"
+
             def cancelar(ev=None):
                 if controle.em_gravacao:
                     return  # gravando: o resultado real será mostrado
-                controle.encerrar()
+                controle.encerrar()  # descarta também a gravação pendente (autorização)
                 campo_atual.value = ""
                 page.pop_dialog()
 
@@ -5083,7 +5281,9 @@ def main(page: ft.Page):
                 if not controle.ativo:
                     return
                 if type(resultado).__name__ == "CodigoSolicitado":
+                    contador(servico)
                     ir_para_codigo(fluxos_codigo.mensagem_do_pedido(resultado, email=novo))
+                    iniciar_contador(contador(servico), operacao)
                     return
                 operacao.descartar()
                 controle.operacao = None
@@ -5096,7 +5296,8 @@ def main(page: ft.Page):
                 if type(resultado).__name__ == "CodigoSolicitado":
                     liberar((f"Enviamos um novo código para {estado['novo']}.", False))
                 else:
-                    liberar(fluxos_codigo.mensagem_do_pedido(resultado))
+                    liberar(fluxos_codigo.mensagem_do_pedido(resultado))  # inclusive a recusa "Aguarde"
+                iniciar_contador(contador(servico), controle.operacao)
 
             async def confirmar(servico, codigo):
                 resultado = await servico.cliente.validar_codigo(controle.operacao, codigo)
@@ -5106,19 +5307,34 @@ def main(page: ft.Page):
                     liberar(fluxos_codigo.mensagem_da_validacao(resultado))
                     return
                 ocupar("Salvando…", permitir_cancelar=False)
+                await concluir(controle.gravar_com_nova_tentativa(
+                    database.alterar_email_verificado, resultado, estado["pendencia"], estado["novo"],
+                    servico.relogio))
+
+            async def tentar_novamente():
+                ocupar("Salvando…", permitir_cancelar=False)
+                await concluir(controle.repetir_gravacao(autorizacao_ja_usada))
+
+            async def concluir(gravacao):
+                """Primeira gravação ou nova tentativa (B1): mesma autorização, pendência e e-mail."""
                 try:
-                    await controle.gravar(database.alterar_email_verificado, resultado, estado["pendencia"],
-                                          estado["novo"], servico.relogio)
+                    await gravacao
                 except (database.EmailEmUsoError, database.MesmoEmailError, database.EmailInvalidoError,
                         database.EmailAlteradoDuranteOperacaoError, database.SenhaAlteradaDuranteOperacaoError,
                         database.ContaNaoEncontradaError, database.AutorizacaoRecusadaError) as ex:
                     if controle.ativo:
+                        modo_nova_tentativa(False)
                         liberar((str(ex), True))
                     return
                 except Exception as ex:
                     fluxos_codigo.registrar_falha("alteração de e-mail", ex)
                     if controle.ativo:
-                        liberar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
+                        if controle.gravacao_pendente is not None:
+                            modo_nova_tentativa(True)
+                            liberar((fluxos_codigo.MENSAGEM_NOVA_TENTATIVA, True))
+                        else:
+                            modo_nova_tentativa(False)
+                            liberar((fluxos_codigo.MENSAGEM_FALHA_GENERICA, True))
                     return
                 # Gravado: nunca apresentado como cancelado; só atualiza a tela
                 # se ela ainda é deste usuário.
@@ -5147,6 +5363,10 @@ def main(page: ft.Page):
                         return
                     ocupar("Enviando código…")
                     page.run_task(controle.executar, pedir, servico, senha, novo)
+                elif controle.gravacao_pendente is not None:
+                    if not controle.reservar():
+                        return
+                    page.run_task(controle.executar, tentar_novamente)
                 else:
                     codigo = codigo_digitado(campo_cod)
                     if codigo is None:
@@ -5158,6 +5378,9 @@ def main(page: ft.Page):
                     page.run_task(controle.executar, confirmar, servico, codigo)
 
             def clique_reenviar(ev):
+                if controle.gravacao_pendente is not None or (
+                        estado["contador"] is not None and estado["contador"].restante() > 0):
+                    return  # nova tentativa (B1) ou ainda em espera: sem reenvio
                 if not controle.reservar():
                     return
                 ocupar("Enviando novo código…")
@@ -5347,6 +5570,9 @@ def main(page: ft.Page):
             # ---- passo 3: confirmação final
             def confirmar_exclusao(pendencia):
                 erro = ft.Text("", size=12, color=cores.texto_erro, visible=False)
+                botao_excluir = ft.Button(content="Excluir conta", icon=ft.Icons.DELETE_FOREVER,
+                                          bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao,
+                                          icon_color=cores.texto_sobre_acao)
 
                 def mostrar_erro(mensagem):
                     erro.value = mensagem
@@ -5354,17 +5580,25 @@ def main(page: ft.Page):
                     page.update()
 
                 def excluir(ev):
+                    if botao_excluir.disabled:
+                        return  # recusa definitiva anterior: esta pendência não serve mais
                     try:
                         database.excluir_usuario(pendencia)
                     except (database.SenhaAlteradaDuranteOperacaoError, database.ContaNaoEncontradaError) as ex:
+                        # Recusa definitiva: esta pendência não serve mais; só Cancelar.
+                        botao_excluir.disabled = True
+                        botao_excluir.bgcolor = cores.botao_desabilitado_fundo
+                        botao_excluir.color = botao_excluir.icon_color = cores.botao_desabilitado_texto
                         mostrar_erro(str(ex))
                         return
                     except Exception as ex:
+                        # Falha com rollback (nada apagado): a mesma confirmação pode ser repetida.
                         print(f"Sino: falha ao excluir a conta ({type(ex).__name__}).", file=sys.stderr)
                         mostrar_erro("Não foi possível excluir a conta. Nada foi apagado. Tente novamente.")
                         return
                     sessao.encerrar(("Sua conta foi excluída.", False))
 
+                botao_excluir.on_click = excluir
                 page.pop_dialog()
                 page.show_dialog(ft.AlertDialog(
                     modal=True, data="exclusao_confirmacao",
@@ -5377,9 +5611,7 @@ def main(page: ft.Page):
                     ]),
                     actions=[
                         botao_cancelar(),
-                        ft.Button(content="Excluir conta", icon=ft.Icons.DELETE_FOREVER,
-                                  bgcolor=cores.acao_destrutiva, color=cores.texto_sobre_acao,
-                                  icon_color=cores.texto_sobre_acao, on_click=excluir),
+                        botao_excluir,
                     ],
                     bgcolor=cores.fundo_dialogo,
                 ))

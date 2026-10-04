@@ -225,6 +225,7 @@ class TestDocumentosNoCadastro(ComServicoFalso, TesteDeDocumentos):
         campos["Nome completo"].value = "Carla"
         campos["E-mail"].value = "carla@sino.com"
         campos["Senha"].value = "senha9999"
+        campos["Confirmar senha"].value = "senha9999"
 
     def test_links_so_no_cadastro_antes_do_aceite(self):
         pagina, _ = self.abrir_app()

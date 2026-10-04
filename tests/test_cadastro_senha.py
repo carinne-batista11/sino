@@ -48,12 +48,13 @@ class TesteDeCadastro(ComServicoFalso, TesteDeSessao):
         self.clicar(pagina, self.botao_texto(pagina, "Não tem conta? Criar conta"))
         return pagina, sessao
 
-    def cadastrar(self, pagina, senha, aceite=True, email="carla@sino.com"):
+    def cadastrar(self, pagina, senha, aceite=True, email="carla@sino.com", confirmacao=None):
         """Preenche e envia; se o código for pedido, confirma com o código recebido."""
         campos = self.campos(pagina)
         campos["Nome completo"].value = "Carla"
         campos["E-mail"].value = email
         campos["Senha"].value = senha
+        campos["Confirmar senha"].value = senha if confirmacao is None else confirmacao
         self.aceite(pagina).value = aceite
         criar = next(b for b in self.controles(pagina, ft.Button) if b.content == "Criar conta")
         with mock.patch.object(main.database, "hash_de_nova_senha", wraps=db.hash_de_nova_senha) as hash_senha:
@@ -162,6 +163,70 @@ class TestSenhaNoCadastro(TesteDeCadastro):
         self.clicar(pagina, self.botao_texto(pagina, "Voltar"))
         self.assertEqual(self.campos(pagina)["Senha"].value, "curta")
         self.assertIn(MENSAGEM_CURTA, self.textos(pagina))
+
+
+MENSAGEM_NAO_COINCIDEM = "As senhas não coincidem."
+
+
+class TestConfirmacaoDaSenha(TesteDeCadastro):
+    """Etapa 10, Bloco 4: "Confirmar senha" no cadastro."""
+
+    def test_campo_so_no_cadastro_com_o_padrao_do_campo_senha(self):
+        pagina, _ = self.abrir_app()
+        confirmar, senha = self.campos(pagina)["Confirmar senha"], self.campos(pagina)["Senha"]
+        self.assertFalse(confirmar.visible)                                # login
+        self.clicar(pagina, self.botao_texto(pagina, "Não tem conta? Criar conta"))
+        self.assertTrue(confirmar.visible)
+        for atributo in ("password", "can_reveal_password", "width", "color", "hint_text"):
+            self.assertEqual(getattr(confirmar, atributo), getattr(senha, atributo), atributo)
+        ordem = self.controles(pagina)
+        self.assertEqual(ordem.index(confirmar), ordem.index(senha) + 1)  # logo abaixo da senha
+        self.clicar(pagina, self.botao_texto(pagina, "Já tem conta? Entrar"))
+        self.assertFalse(confirmar.visible)
+
+    def test_senhas_diferentes_nao_pedem_codigo_nem_gravam(self):
+        for confirmacao in ("senhaforte2", "", "senhaforte1 ", "SENHAFORTE1"):  # sem transformar nada
+            with self.subTest(confirmacao=confirmacao):
+                pagina, _ = self.abrir_cadastro()
+                hash_senha = self.cadastrar(pagina, "senhaforte1", confirmacao=confirmacao)
+                self.assert_recusado_sem_chamar(pagina, hash_senha, MENSAGEM_NAO_COINCIDEM, "senhaforte1")
+                self.assertEqual(self.campos(pagina)["Confirmar senha"].value, confirmacao)  # nada apagado
+
+    def test_regras_da_senha_continuam_antes_da_confirmacao(self):
+        for senha, mensagem in (("curta", MENSAGEM_CURTA), ("senha forte", MENSAGEM_ESPACOS)):
+            with self.subTest(senha=senha):
+                pagina, _ = self.abrir_cadastro()
+                hash_senha = self.cadastrar(pagina, senha, confirmacao="outra-coisa")
+                self.assert_recusado_sem_chamar(pagina, hash_senha, mensagem, senha)
+
+    def test_senhas_iguais_seguem_o_fluxo(self):
+        pagina, _ = self.abrir_cadastro()
+        self.cadastrar(pagina, "senhaforte1")
+        self.assertEqual(self.usuarios_com_email(), 1)
+        self.assertIsNotNone(db.verificar_login("carla@sino.com", "senhaforte1"))
+
+    def test_corrigir_a_confirmacao_depois_da_recusa(self):
+        pagina, _ = self.abrir_cadastro()
+        self.cadastrar(pagina, "senhaforte1", confirmacao="senhaforte2")
+        self.assertEqual(self.servidor.pedidos, [])
+        self.cadastrar(pagina, "senhaforte1")
+        self.assertEqual(self.usuarios_com_email(), 1)
+
+    def test_confirmacao_esvaziada_ao_ir_para_o_codigo_e_ao_trocar_de_modo(self):
+        pagina, _ = self.abrir_cadastro()
+        confirmar = self.campos(pagina)["Confirmar senha"]
+        confirmar.value = "qualquer"
+        self.clicar(pagina, self.botao_texto(pagina, "Já tem conta? Entrar"))
+        self.assertEqual(confirmar.value, "")
+        self.clicar(pagina, self.botao_texto(pagina, "Não tem conta? Criar conta"))
+        campos = self.campos(pagina)
+        campos["Nome completo"].value, campos["E-mail"].value = "Carla", "carla@sino.com"
+        campos["Senha"].value = campos["Confirmar senha"].value = "senhaforte1"
+        self.aceite(pagina).value = True
+        self.clicar(pagina, next(b for b in self.controles(pagina, ft.Button) if b.content == "Criar conta"))
+        pagina.executar_pendentes()
+        self.assertIn("Confirme seu e-mail", self.textos(pagina))
+        self.assertEqual(confirmar.value, "")                             # a senha não fica em memória na tela
 
 
 class TestLoginDeSenhasAntigas(TesteDeCadastro):

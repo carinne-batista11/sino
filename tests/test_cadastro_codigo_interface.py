@@ -30,10 +30,11 @@ class BaseCadastro(ComServicoFalso, TesteDeSessao):
         self.acionar(pagina, self.botao(pagina, "Não tem conta? Criar conta"))
         return pagina, sessao
 
-    def preencher(self, pagina, email="Carla@Sino.com", senha=SENHA, nome="Carla", aceite=True):
+    def preencher(self, pagina, email="Carla@Sino.com", senha=SENHA, nome="Carla", aceite=True, confirmacao=None):
         self.campo(pagina, "Nome completo").value = nome
         self.campo(pagina, "E-mail").value = email
         self.campo(pagina, "Senha").value = senha
+        self.campo(pagina, "Confirmar senha").value = senha if confirmacao is None else confirmacao
         next(c for c in self.todos(pagina) if isinstance(c, ft.Checkbox)).value = aceite
 
     def criar(self, pagina):
@@ -48,6 +49,9 @@ class BaseCadastro(ComServicoFalso, TesteDeSessao):
         self.criar(pagina)
         pagina.executar_pendentes()
         self.assertIn("Confirme seu e-mail", self.textos_visiveis(pagina))
+
+    def reenvio(self, pagina):
+        return next(b for b in self.todos(pagina) if getattr(b, "data", None) == "reenviar_codigo")
 
     def usuario(self, email="carla@sino.com"):
         linhas = self.consultar("SELECT id, email, email_verificado FROM usuarios WHERE lower(email) = ?", (email,))
@@ -136,13 +140,18 @@ class TestCadastroComCodigo(BaseCadastro):
         pagina.executar_pendentes()
         self.assertIn("Código incorreto. Solicite um novo código.", self.textos_visiveis(pagina))
 
-        self.acionar(pagina, self.botao(pagina, "Reenviar código"))   # antes de 60 s
+        # Antes de 60 s (Etapa 10, Bloco 3): contagem no botão, desativado; um
+        # clique que chegue mesmo assim não envia nada.
+        reenvio = self.reenvio(pagina)
+        self.assertTrue(reenvio.content.startswith("Reenviar código em "))
+        self.assertTrue(reenvio.disabled)
+        pedidos = len(self.servidor.pedidos)
+        self.acionar(pagina, reenvio)
         pagina.executar_pendentes()
-        self.assertTrue(any(t.startswith("Aguarde") and t.endswith("para pedir outro código.")
-                            for t in self.textos_visiveis(pagina)))
+        self.assertEqual(len(self.servidor.pedidos), pedidos)
 
         self.relogio.avancar(60)
-        self.acionar(pagina, self.botao(pagina, "Reenviar código"))
+        self.acionar(pagina, self.reenvio(pagina))
         pagina.executar_pendentes()
         self.assertIn("Enviamos um novo código para Carla@Sino.com.", self.textos_visiveis(pagina))
         novo = self.servidor.ultimo_codigo("carla@sino.com")

@@ -11,7 +11,8 @@ apoio_interface_codigos.py -- Apoio aos testes das telas com código (Etapa 8).
     teste), com relógio injetável, falhas programáveis e um portão para
     segurar pedidos em andamento. Sem rede.
   * ComServicoFalso: mistura para os testes de tela: troca
-    `main.criar_servico_codigos` pelo cliente real com o ServidorFalso.
+    `main.criar_servico_codigos` pelo cliente real com o ServidorFalso, sem
+    tique automático do contador de reenvio (nenhuma espera real).
 """
 
 import asyncio
@@ -180,7 +181,9 @@ class ComServicoFalso:
         self.servidor = ServidorFalso(self.relogio)
         cliente = sc.ClienteServicoCodigos(configuracao(), self.servidor, relogio=self.relogio,
                                            esperar=Esperas(self.relogio))
-        self.servico = main.ServicoCodigos(cliente, None, self.relogio)
+        # esperar=None: sem tique automático do contador de reenvio (Bloco 3);
+        # o valor é mostrado na hora e o clique confere o restante ao vivo.
+        self.servico = main.ServicoCodigos(cliente, None, self.relogio, esperar=None)
         fabrica = mock.patch.object(main, "criar_servico_codigos",
                                     side_effect=lambda: self.servico if self.servico_configurado else None)
         fabrica.start()

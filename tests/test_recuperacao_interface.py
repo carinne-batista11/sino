@@ -143,9 +143,17 @@ class TestRecuperacao(BaseRecuperacao):
     def test_reenvio_antes_de_60_s(self):  # CT113
         pagina, _ = self.abrir_recuperacao()
         self.pedir(pagina, "ninguem@sino.com")
-        self.acionar(pagina, self.botao(pagina, "Reenviar código"))
+        # Etapa 10, Bloco 3: contagem no botão, desativado; um clique direto não envia nada.
+        reenvio = next(b for b in self.todos(pagina) if getattr(b, "data", None) == "reenviar_codigo")
+        self.assertEqual(reenvio.content, "Reenviar código em 60 s")
+        self.assertTrue(reenvio.disabled)
+        self.acionar(pagina, reenvio)
         pagina.executar_pendentes()
-        self.assertTrue(any(t.startswith("Aguarde") for t in self.textos_visiveis(pagina)))
+        self.assertEqual(len(self.servidor.pedidos), 1)
+        self.relogio.avancar(60)
+        self.acionar(pagina, reenvio)
+        pagina.executar_pendentes()
+        self.assertEqual(len(self.servidor.pedidos), 2)
         self.assertTrue(self.servidor.pedidos[-1]["sem_envio"])        # mantém a decisão do primeiro pedido
 
     def test_servico_nao_configurado_e_sem_conexao(self):

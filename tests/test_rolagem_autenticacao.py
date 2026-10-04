@@ -63,7 +63,7 @@ class TestRolagemCadastroELogin(AssercoesDeRolagem, BaseCadastro):
         pagina.executar_pendentes()
         self.assertIn("Código incorreto. Restam 4 tentativas.", self.textos_visiveis(pagina))
         self.assert_tela_rolavel_com(pagina, "Voltar")
-        self.assert_tela_rolavel_com(pagina, "Reenviar código")
+        self.assert_tela_rolavel_com(pagina, "Reenviar código em 60 s")   # contador do Bloco 3
 
 
 class TestRolagemRecuperacao(AssercoesDeRolagem, BaseRecuperacao):
