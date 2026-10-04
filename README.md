@@ -33,13 +33,13 @@ A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está *
 
 ## 📌 Situação da v6.0
 
-**Concluído:** todas as funcionalidades acima, verificadas com 874 testes automáticos do aplicativo e 151 do serviço de códigos, além de validações manuais registradas na ERS (seções 13.3 a 13.6).
+**Concluído:** todas as funcionalidades acima, verificadas com 879 testes automáticos do aplicativo e 151 do serviço de códigos, além de validações manuais registradas na ERS (seções 13.3 a 13.6).
 
 **Parcial:**
 
 - A confirmação de e-mail por código funciona com o serviço de códigos ([`servidor/`](servidor/)) rodando **no próprio computador**. A integração com a Resend está implementada, mas a entrega real de e-mails não foi validada.
-- Contraste dos temas verificado nas cores e telas cobertas pelos testes, não em todos os estados da interface.
-- Sem medição formal de desempenho.
+- Contraste dos dois temas medido nos testes em todas as telas, nos campos, nos gráficos de barras e nos estados principais. Ficam fora as fatias do gráfico de rosca nas cores das categorias (identificadas também pela legenda em texto), os controles desativados e o que o Flutter desenha por conta própria (calendário, dicas, foco).
+- Desempenho com 1.000 contas [medido](docs/desempenho-v6.md): abaixo de 2 s por operação na consulta ao banco e na montagem das telas (máximo de 1,7 s no pior caso, com 1.000 contas no mesmo mês). A renderização da janela não foi medida.
 - Termos de Uso e Política de Privacidade integrados ao app, com revisão pela autora e revisão jurídica pendentes.
 
 **Adiado para uso por outras pessoas:** publicação do serviço de códigos e envio real de e-mails (hospedagem, domínio, responsável pela operação), revisão jurídica dos Termos e da Política e decisão sobre versionamento do texto aceito. Por isso, o Sino é hoje um projeto de **portfólio e demonstração local**, não um aplicativo pronto para uso por terceiros.
@@ -105,7 +105,7 @@ Com o ambiente virtual `.venv` ativado e as dependências instaladas (veja "Como
 python3 -m unittest discover tests
 ```
 
-A suíte (874 testes na entrega da v6.0) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
+A suíte (879 testes na entrega da v6.0) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
 
 Os testes do serviço de códigos (`servidor/`, 151 testes) usam Node.js 24 e rodam localmente, sem conta em serviços externos:
 
@@ -132,6 +132,7 @@ tests/      testes automatizados do aplicativo
 - [Notas da versão](docs/notas-da-versao.md)
 - [Contrato do serviço de códigos](docs/contrato-servico-codigos.md)
 - [Validação da Etapa 8](docs/validacao-etapa8.md): resumo das validações manuais, com ressalvas
+- [Desempenho da v6.0](docs/desempenho-v6.md): ambiente, método e resultados da medição com 1.000 contas
 
 Versões anteriores da ERS e os protótipos de interface estão em [`docs/`](docs/).
 

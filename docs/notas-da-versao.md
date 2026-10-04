@@ -7,14 +7,20 @@ Política de Privacidade. Regras completas na
 ## v6.0 — concluída para portfólio e demonstração local (04/10/2026)
 
 Todas as funcionalidades da v6.0 estão implementadas e verificadas no
-computador da autora (suíte do aplicativo com 874 testes aprovados). Situação
+computador da autora (suíte do aplicativo com 879 testes aprovados). Situação
 completa na [ERS v6.0, seção 13.6](ERS_Controle_de_Contas_v6.0.md#136-encerramento-da-v60-para-portfólio-04102026).
 
 - **Parcial:** cadastro, alteração de e-mail e recuperação de senha por código
   funcionam com o serviço de códigos no próprio computador; a entrega real de
-  e-mails não foi validada. Contraste (RNF09) parcialmente verificado. Sem
-  medição formal de desempenho. Termos de Uso e Política de Privacidade
-  integrados ao app, com revisão pela autora e revisão jurídica pendentes.
+  e-mails não foi validada. Contraste (RNF09) medido nos testes em todas as
+  telas, campos, barras e estados principais, com limites registrados na ERS.
+  Desempenho com 1.000 contas [medido](desempenho-v6.md) abaixo de 2 s na
+  consulta ao banco e na montagem das telas, sem a renderização da janela.
+  Termos de Uso e Política de Privacidade integrados ao app, com revisão pela
+  autora e revisão jurídica pendentes.
+- **Correção:** na tela Categorias, a inicial de uma categoria sem emoji passa
+  a ser escrita em branco ou preto, o que for mais legível sobre a cor da
+  categoria (antes, sempre em branco).
 - **Adiado para uso por outras pessoas:** publicação do serviço de códigos e
   envio real de e-mails, revisão jurídica dos Termos e da Política e decisão
   sobre versionamento e novo aceite (P9).

@@ -474,13 +474,13 @@ Marcadores revisados em 04/10/2026 no encerramento da v6.0, conforme as evidênc
 |---|---|---|
 | RNF01 | Interface simples, responsiva e utilizável em diferentes tamanhos de tela. | v5 |
 | RNF02 | Armazenamento local dos dados do aplicativo. | v5 (exceção: o envio de e-mails usa um serviço externo, 5.31) |
-| RNF03 | Desempenho satisfatório com até 1000 contas por usuário. | v5 (inclui a Tela Principal sem limite de contas) |
+| RNF03 | Desempenho satisfatório com até 1000 contas por usuário. | v5 (inclui a Tela Principal sem limite de contas); medido em 04/10/2026, atendido na camada medida ([desempenho-v6.md](desempenho-v6.md), 13.6) |
 | RNF04 | Aplicação leve e de fácil instalação. | v5 |
 | RNF05 | Senhas com PBKDF2-HMAC-SHA256 e salt individual, nunca em texto puro; hashes legados são atualizados no primeiro login. | v5 |
-| RNF06 | Operações comuns em até 2 segundos. | v5, ainda sem benchmark formal |
+| RNF06 | Operações comuns em até 2 segundos. | v5; medido em 04/10/2026, atendido na camada medida, sem a renderização da janela ([desempenho-v6.md](desempenho-v6.md), 13.6) |
 | RNF07 | Backup local dos dados (hoje: backup antes de migrações). | v5; política completa fora do escopo (14.2) |
 | RNF08 | Migrações de schema preservam integralmente os dados existentes. | v5; vale para as migrações da v6.0 |
-| RNF09 | Nos dois temas, textos, status, categorias, gráficos e "Sem categoria" permanecem legíveis, distinguíveis e com contraste adequado. | v6 novo |
+| RNF09 | Nos dois temas, textos, status, categorias, gráficos e "Sem categoria" permanecem legíveis, distinguíveis e com contraste adequado. | v6 novo; verificado nos testes, com os limites de 13.6 |
 | RNF10 | Códigos de verificação têm validade, limite de tentativas e uso único (5.32), e nunca são exibidos em registros ou mensagens de erro. | v6 novo |
 | RNF11 | Credenciais, chaves e segredos do serviço de e-mail ficam fora do código-fonte e do repositório GitHub. | v6 novo |
 
@@ -876,7 +876,7 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
 **Concluído**
 
 * Etapas 1–10 (seção 15), uma por commit ou grupo de commits, com testes automáticos e as validações manuais registradas em 13.3–13.5 e em [validacao-etapa8.md](validacao-etapa8.md). Etapas 2–5 e 7 têm verificação por testes automáticos; a Etapa 6 teve validação manual aprovada pela autora (30/09/2026).
-* Etapa 11 (testes): suíte do aplicativo com **874 testes aprovados** (04/10/2026) e serviço de códigos com **151 testes aprovados** e verificação de tipos (02/10/2026; `servidor/` sem mudanças desde então). Rastreabilidade abaixo.
+* Etapa 11 (testes): suíte do aplicativo com **879 testes aprovados** (04/10/2026, depois da ampliação de RNF09) e serviço de códigos com **151 testes aprovados** e verificação de tipos (02/10/2026; `servidor/` sem mudanças desde então). Rastreabilidade abaixo.
 * Etapa 12 (README): apresentação do projeto, funcionalidades da v6.0, como executar, demonstração local, testes e limitações.
 * RF02–RF15, RF17–RF35, RF37, RF38 e RF40–RF43: ✅ (seção 6).
 * RNF01, RNF02 (com a exceção do serviço de códigos), RNF04, RNF05, RNF07, RNF08, RNF10 e RNF11 atendidos: telas responsivas nas larguras testadas; dados locais; instalação por `requirements.txt`; PBKDF2 (`test_senha`, `test_usuarios_categorias`); backup e migrações sem perda (`test_migracao_v6`, `v7`, `v8`); regras dos códigos (`servidor/test/nucleo`); segredos fora do repositório (`.gitignore`, só o modelo `.dev.vars.example` é versionado).
@@ -891,7 +891,7 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
 | CT59–CT62 | Limites de caracteres | `test_limites_caracteres` | — |
 | CT63–CT80 | Gráfico | `test_grafico` | Etapa 10 (paleta) |
 | CT81–CT94 | Senha, e-mail e recuperação | `test_senha`, `test_cadastro_senha`, `test_alterar_senha_interface`, `test_cadastro_codigo_interface`, `test_alterar_email_interface`, `test_recuperacao_interface`, `test_autorizacoes_locais`, `test_fluxos_codigo`, `servidor/test` | Etapa 8 (serviço local; CT90, CT91, CT93, CT94) |
-| CT95–CT102 | Tema, documentos, sair e excluir conta | `test_sessao_tema`, `test_tela_ajustes`, `test_ajustes_usuario`, `test_documentos`, `test_legibilidade_temas`, `test_excluir_usuario` | Etapas 6 e 9 |
+| CT95–CT102 | Tema, documentos, sair e excluir conta | `test_sessao_tema`, `test_tela_ajustes`, `test_ajustes_usuario`, `test_documentos`, `test_legibilidade_temas`, `test_legibilidade_rnf09`, `test_excluir_usuario` | Etapas 6 e 9 |
 | CT103–CT107 | Escopo de categoria e descrição | `test_descricao_escopo`, `test_grafico` | — |
 | CT108–CT117 | Complementos | `test_limites_caracteres`, `test_cadastro_codigo_interface`, `test_alterar_email_interface`, `test_autorizacoes_locais`, `test_recuperacao_interface`, `test_contador_reenvio`, `test_grafico`, `test_detalhes`, `test_sessao_tema`, `test_tela_ajustes` | Etapas 8 (CT110, CT113) e 10 |
 | CT118 | Confirmação de senha no cadastro | `test_cadastro_senha` (`TestConfirmacaoDaSenha`) | Etapa 10 |
@@ -900,8 +900,15 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
 **Parcial**
 
 * **RF01, RF36 e RF39** (🧪): cadastro, alteração de e-mail e recuperação de senha por código funcionam e foram validados com o serviço de códigos no próprio computador (caixa local e modo de demonstração). A entrega real de e-mails não foi validada; a confirmação na demonstração **não comprova** acesso ao endereço.
-* **RNF09:** contraste verificado nos pares de cores mapeados e nas telas percorridas pelos testes, nos dois temas; fora da verificação ficam estados raros, telas de autenticação na varredura e gráficos em detalhe (13.5).
-* **RNF03 e RNF06:** sem medição formal de desempenho (1000 contas por usuário; operações em até 2 segundos); benchmark previsto em 14.2.
+* **RNF09** (ampliado em 04/10/2026, depois do registro de 13.5): contraste medido nos dois temas sobre o fundo efetivo, em todas as telas e diálogos autenticados e também em:
+  * telas de autenticação (Claro, P8): login e erro, cadastro e recusas, código (mensagens, erro, contagem do reenvio, faixa da demonstração), serviço indisponível e os três passos da recuperação;
+  * campos: texto, rótulo, dica e erro (4,5:1) e borda (3:1);
+  * gráficos: rótulos dos eixos, valores e cores das barras;
+  * estados: categoria sem emoji, categoria sem cor e conta que vence hoje.
+
+  Encontrado e corrigido: a inicial de categoria sem emoji na tela Categorias (branco sobre cores claras, 2,21–3,39:1) passa a usar branco ou preto, o de maior contraste (≥ 4,6:1 nas 30 cores da paleta). Testes: `test_legibilidade_temas` e `test_legibilidade_rnf09`; iniciais conferidas visualmente pela autora.
+  **Fora da verificação:** fatias da rosca nas cores das categorias (pastéis, da paleta oficial; a legenda identifica cada fatia por nome, valor e percentual em texto, o que é verificado); controles desativados (isentos pela WCAG 1.4.3); o que o Flutter desenha por conta própria (calendário, dicas flutuantes, foco e destaque ao passar o mouse ou clicar); a imagem final em pixels. Por isso RNF09 não é declarado integralmente atendido.
+* **RNF03 e RNF06** (medidos em 04/10/2026, [desempenho-v6.md](desempenho-v6.md)): com 1.000 contas, todas as operações medidas ficaram abaixo de 2 s na camada medida (consulta ao banco + montagem da tela no Python); máximo de 0,35 s no cenário distribuído e de 1,70 s no pior caso (1.000 contas num único mês). **Não medidos:** a renderização da janela pelo Flutter e a comunicação com ela. Observação visual da autora com 1.000 contas: sem demora perceptível nem travamento (qualitativa, não substitui a medição). Por isso ficam como atendidos na camada medida, sem declaração de atendimento integral.
 * **Termos de Uso e Política de Privacidade:** texto integrado ao app (atualização de 03/10/2026); a **revisão pela autora** e a **revisão jurídica** continuam pendentes.
 
 **Adiado para uso por terceiros**
@@ -934,7 +941,7 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
 * **Dependências:** formalizar com `requirements.txt` ou `pyproject.toml`.
 * **Backup:** política completa (frequência, retenção, localização, restauração, automático/manual). Não aprovada automaticamente para a v6.0.
 * **Bancos `sino.db` antigos:** o banco em uso é `/home/carinne/Projetos/sino/database/sino.db`. Os demais arquivos `sino.db` devem ser investigados antes de qualquer exclusão.
-* **Benchmark de RNF06:** medir formalmente o limite de 2 segundos.
+* **Benchmark de RNF06:** feito em 04/10/2026 na camada do Python ([desempenho-v6.md](desempenho-v6.md)); falta medir a renderização na janela.
 
 ## 14.3 Documentação
 
@@ -980,3 +987,4 @@ Situação em 04/10/2026: Etapas 1–12 concluídas para portfólio e demonstra�
 | 6.0 (P12) | 04/10/2026 | Decisão P12: Detalhes com campos fixos e textos de ausência (Etapa 10); 5.22, 8.4, CT57 e CT115. |
 | 6.0 (estado) | 04/10/2026 | Registro do estado da Etapa 10 (13.5), incluindo a situação parcial de RNF09. |
 | 6.0 (encerramento) | 04/10/2026 | v6.0 concluída para portfólio e demonstração local (13.6): marcadores dos RFs revisados, rastreabilidade dos testes, Etapas 11 e 12; parciais e adiados separados. |
+| 6.0 (RNF) | 04/10/2026 | RNF09 ampliado (autenticação, campos, gráficos e estados; inicial de categoria corrigida) e medição de RNF03/RNF06 ([desempenho-v6.md](desempenho-v6.md)); limites registrados em 13.6. |
