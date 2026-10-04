@@ -6,8 +6,8 @@
 **Versão:** 6.0
 **Data:** 23 de setembro de 2026
 **Versão anterior:** 5.0 (fechada e auditada em 22/09/2026)
-**Status:** Especificação fechada. Todas as decisões de produto estão tomadas (seção 13.1); restam apenas decisões técnicas de implementação (seção 13.2).
-**Atualização de estado (04/10/2026):** situação das Etapas 8, 9 e 10 registrada em 13.3, 13.4 e 13.5. Decisões novas da Etapa 10: confirmação de senha no cadastro (P11) e Detalhes com campos fixos (P12); nenhuma outra regra foi alterada.
+**Status:** **Concluída para portfólio e demonstração local (04/10/2026)**, com requisitos parciais e itens adiados para uso por terceiros separados na seção 13.6. Especificação fechada: todas as decisões de produto estão tomadas (seção 13.1).
+**Atualização de estado (04/10/2026):** situação das Etapas 8, 9 e 10 em 13.3, 13.4 e 13.5; encerramento da v6.0 (Etapas 11 e 12, rastreabilidade dos testes) em 13.6. Decisões novas da Etapa 10: confirmação de senha no cadastro (P11) e Detalhes com campos fixos (P12); nenhuma outra regra foi alterada.
 
 ---
 
@@ -409,9 +409,9 @@ A estratégia técnica de exclusão e dos relacionamentos no banco é decisão t
 
 # 6. Requisitos Funcionais
 
-**Implementação:** ✅ implementado · 🧪 implementado, com validação final pendente (ver 13.3 e 13.4) · 🔨 a implementar na v6.0 · ⏸️ fora do escopo / não aplicável.
+**Implementação:** ✅ implementado e verificado (testes automáticos; validação manual quando registrada em 13.3–13.6) · 🧪 implementado e validado localmente, com a entrega real de e-mails adiada para uso por terceiros (13.3, 13.6) · ⏸️ fora do escopo / não aplicável.
 
-Nas atualizações de 02/10/2026 a 04/10/2026 só foram revisados os marcadores das Etapas 8 (RF01, RF36, RF39) e 9 (RF43); os das Etapas 1–7 ainda não foram revisados. A Etapa 10 não tem RF próprio: seu estado (incluindo RNF09) está em 13.5.
+Marcadores revisados em 04/10/2026 no encerramento da v6.0, conforme as evidências da seção 13.6. A Etapa 10 não tem RF próprio: seu estado (incluindo RNF09) está em 13.5.
 
 ## 6.1 Requisitos vigentes (RF01–RF29)
 
@@ -420,26 +420,26 @@ Nas atualizações de 02/10/2026 a 04/10/2026 só foram revisados os marcadores 
 | RF01 | Criar conta de usuário com nome, e-mail verificado por código e senha de no mínimo 8 caracteres, com confirmação da senha. | v6 alterado (5.31, 5.33, P11) | 🧪 |
 | RF02 | Login com e-mail e senha. | v5 | ✅ |
 | RF03 | Associar as contas financeiras ao usuário logado. | v5 | ✅ |
-| RF04 | Cadastrar conta com nome, valor, vencimento, categoria e, opcionalmente, descrição. | v6 alterado (5.22) | 🔨 |
-| RF05 | Listar **todas** as contas do mês selecionado na Tela Principal, com rolagem normal da página e título "Suas contas de [mês]". | v6 alterado (5.15) | 🔨 |
+| RF04 | Cadastrar conta com nome, valor, vencimento, categoria e, opcionalmente, descrição. | v6 alterado (5.22) | ✅ |
+| RF05 | Listar **todas** as contas do mês selecionado na Tela Principal, com rolagem normal da página e título "Suas contas de [mês]". | v6 alterado (5.15) | ✅ |
 | RF06 | Marcar como paga ou pendente, com data de pagamento. | v5 (5.10) | ✅ |
-| RF07 | Editar conta, incluindo a descrição. | v6 alterado (5.22) | 🔨 |
+| RF07 | Editar conta, incluindo a descrição. | v6 alterado (5.22) | ✅ |
 | RF08 | Excluir conta, com escopo em séries. | v5 (5.7) | ✅ |
-| RF09 | Tela "Ver status" com filtros Todas, Pendentes, Pagas e Atrasadas para o mês de referência. | v6 alterado (5.21) | 🔨 |
+| RF09 | Tela "Ver status" com filtros Todas, Pendentes, Pagas e Atrasadas para o mês de referência. | v6 alterado (5.21) | ✅ |
 | RF10 | Recorrência Única/Mensal/Anual, sem arrasto e com término opcional. | v5 (5.2, 5.3, 5.18, 5.20) | ✅ |
 | RF11 | Mensagens de vencimento em linguagem natural. | v5 (5.17) | ✅ |
-| RF12 | Exibir o total do mês na Tela Principal, somando todas as contas do mês, sem filtros de status. | v6 alterado (5.16) | 🔨 |
+| RF12 | Exibir o total do mês na Tela Principal, somando todas as contas do mês, sem filtros de status. | v6 alterado (5.16) | ✅ |
 | RF13 | Status `atrasado` automático. | v5 | ✅ |
-| RF14 | CRUD de categorias, catálogo de 11, limite de 30 e nome com até 30 caracteres. | v6 alterado (5.11) | 🔨 |
+| RF14 | CRUD de categorias, catálogo de 11, limite de 30 e nome com até 30 caracteres. | v6 alterado (5.11) | ✅ |
 | RF15 | Aceite obrigatório de Termos e Política no cadastro. | v5 | ✅ |
 | RF16 | Login por biometria. | condicionado a evolução mobile | ⏸️ |
 | RF17 | Resumo das contas dos próximos 7 dias. | v5 (5.17) | ✅ |
-| RF18 | Emoji e cor exclusiva por categoria, com cinza reservado a "Sem categoria". | v6 alterado (5.13) | 🔨 |
+| RF18 | Emoji e cor exclusiva por categoria, com cinza reservado a "Sem categoria". | v6 alterado (5.13) | ✅ |
 | RF19 | Criar conta a partir de uma categoria. | v5 | ✅ |
-| RF20 | Escopo de edição em séries para nome, valor, vencimento, categoria e descrição, com mensagem de confirmação. | v6 alterado (5.6) | 🔨 |
-| RF21 | Evolução dos gastos nas perspectivas "6 meses" e "Anual". | v6 especificado (5.27) | 🔨 |
-| RF22 | Distribuição do total do período por categoria. | v6 especificado (5.28, 5.25) | 🔨 |
-| RF23 | Comparação compacta com o período anterior. | v6 especificado (5.29) | 🔨 |
+| RF20 | Escopo de edição em séries para nome, valor, vencimento, categoria e descrição, com mensagem de confirmação. | v6 alterado (5.6) | ✅ |
+| RF21 | Evolução dos gastos nas perspectivas "6 meses" e "Anual". | v6 especificado (5.27) | ✅ |
+| RF22 | Distribuição do total do período por categoria. | v6 especificado (5.28, 5.25) | ✅ |
+| RF23 | Comparação compacta com o período anterior. | v6 especificado (5.29) | ✅ |
 | RF24 | Marcar como paga na tela de Detalhes. | v5 | ✅ |
 | RF25 | Banner de atraso e tela "Contas em atraso". | v5 (5.14) | ✅ |
 | RF26 | "Parcela X de Y" / "Parcela X". | v5 (5.19) | ✅ |
@@ -451,19 +451,19 @@ Nas atualizações de 02/10/2026 a 04/10/2026 só foram revisados os marcadores 
 
 | ID | Descrição | Regra | Impl. |
 |---|---|---|---|
-| RF30 | Exibir em cada conta da Tela Principal um atalho ✏️ que abre Editar conta; o clique na conta abre Detalhes. | 5.15 | 🔨 |
-| RF31 | Exibir Detalhes da conta com hierarquia visual, emoji e cor da categoria, status junto da ação de pagamento e descrição quando preenchida. | 8.4 | 🔨 |
-| RF32 | Permitir descrição opcional da conta, com até 500 caracteres. | 5.22 | 🔨 |
-| RF33 | Validar os limites de caracteres de nome do usuário, nome da conta, nome da categoria e descrição. | 5.23 | 🔨 |
-| RF34 | Exibir a tela Gráfico com navegação mensal/anual, total do período, total pago e estado de período vazio. | 5.24, 5.26, 5.30 | 🔨 |
-| RF35 | Exibir e permitir alterar o nome do usuário em Ajustes. | 5.23 | 🔨 |
+| RF30 | Exibir em cada conta da Tela Principal um atalho ✏️ que abre Editar conta; o clique na conta abre Detalhes. | 5.15 | ✅ |
+| RF31 | Exibir Detalhes da conta com hierarquia visual, emoji e cor da categoria, status junto da ação de pagamento e campos fixos, incluindo a descrição (P12). | 8.4 | ✅ |
+| RF32 | Permitir descrição opcional da conta, com até 500 caracteres. | 5.22 | ✅ |
+| RF33 | Validar os limites de caracteres de nome do usuário, nome da conta, nome da categoria e descrição. | 5.23 | ✅ |
+| RF34 | Exibir a tela Gráfico com navegação mensal/anual, total do período, total pago e estado de período vazio. | 5.24, 5.26, 5.30 | ✅ |
+| RF35 | Exibir e permitir alterar o nome do usuário em Ajustes. | 5.23 | ✅ |
 | RF36 | Exibir e permitir alterar o e-mail, com verificação por código. | 5.31, 5.32 | 🧪 |
-| RF37 | Exigir senha com no mínimo 8 caracteres sempre que uma senha for definida. | 5.33 | 🔨 |
-| RF38 | Permitir alterar a senha em Ajustes. | 5.34 | 🔨 |
+| RF37 | Exigir senha com no mínimo 8 caracteres sempre que uma senha for definida. | 5.33 | ✅ |
+| RF38 | Permitir alterar a senha em Ajustes. | 5.34 | ✅ |
 | RF39 | Permitir recuperar a senha por código enviado ao e-mail, a partir do Login. | 5.35 | 🧪 |
-| RF40 | Permitir escolher tema Claro ou Escuro. | 5.36 | 🔨 |
-| RF41 | Permitir consultar Termos de Uso e Política de Privacidade em Ajustes. | 5.37 | 🔨 |
-| RF42 | Permitir sair da conta sem remover dados. | 5.38 | 🔨 |
+| RF40 | Permitir escolher tema Claro ou Escuro. | 5.36 | ✅ |
+| RF41 | Permitir consultar Termos de Uso e Política de Privacidade em Ajustes. | 5.37 | ✅ |
+| RF42 | Permitir sair da conta sem remover dados. | 5.38 | ✅ |
 | RF43 | Permitir excluir definitivamente a conta de usuário, com senha e confirmação final. | 5.39 | ✅ |
 
 ---
@@ -869,6 +869,51 @@ Registro de situação. **Revisão de UX e legibilidade implementada e validada*
 * O contador do reenvio atualiza a tela a cada segundo enquanto há contagem.
 * No Linux, o Flutter/GTK pode registrar avisos técnicos ao fechar a janela; o processo encerra normalmente.
 
+## 13.6 Encerramento da v6.0 para portfólio (04/10/2026)
+
+A v6.0 está **concluída como entrega de portfólio e demonstração local**: todas as funcionalidades especificadas estão implementadas e verificadas no computador da autora. O uso por outras pessoas depende dos itens adiados abaixo, que **não** fazem parte desta entrega.
+
+**Concluído**
+
+* Etapas 1–10 (seção 15), uma por commit ou grupo de commits, com testes automáticos e as validações manuais registradas em 13.3–13.5 e em [validacao-etapa8.md](validacao-etapa8.md). Etapas 2–5 e 7 têm verificação por testes automáticos; a Etapa 6 teve validação manual aprovada pela autora (30/09/2026).
+* Etapa 11 (testes): suíte do aplicativo com **874 testes aprovados** (04/10/2026) e serviço de códigos com **151 testes aprovados** e verificação de tipos (02/10/2026; `servidor/` sem mudanças desde então). Rastreabilidade abaixo.
+* Etapa 12 (README): apresentação do projeto, funcionalidades da v6.0, como executar, demonstração local, testes e limitações.
+* RF02–RF15, RF17–RF35, RF37, RF38 e RF40–RF43: ✅ (seção 6).
+* RNF01, RNF02 (com a exceção do serviço de códigos), RNF04, RNF05, RNF07, RNF08, RNF10 e RNF11 atendidos: telas responsivas nas larguras testadas; dados locais; instalação por `requirements.txt`; PBKDF2 (`test_senha`, `test_usuarios_categorias`); backup e migrações sem perda (`test_migracao_v6`, `v7`, `v8`); regras dos códigos (`servidor/test/nucleo`); segredos fora do repositório (`.gitignore`, só o modelo `.dev.vars.example` é versionado).
+
+**Rastreabilidade dos casos de teste (Etapa 11)**
+
+| Casos | Tema | Evidência automática | Validação manual |
+|---|---|---|---|
+| CT01–CT48 | Regressão da v5.0 | `test_recorrencia`, `test_posicao_serie`, `test_edicao_exclusao`, `test_bug_este_mes_em_diante`, `test_pagamento_listagens`, `test_usuarios_categorias`, `test_interface_edicao` | Auditoria final da v5.0 (22/09/2026) |
+| CT49–CT54 | Tela Principal e Ver status | `test_tela_principal` | — |
+| CT55–CT58 | Detalhes e descrição | `test_detalhes`, `test_descricao_escopo` | Etapa 10 (Detalhes, P12) |
+| CT59–CT62 | Limites de caracteres | `test_limites_caracteres` | — |
+| CT63–CT80 | Gráfico | `test_grafico` | Etapa 10 (paleta) |
+| CT81–CT94 | Senha, e-mail e recuperação | `test_senha`, `test_cadastro_senha`, `test_alterar_senha_interface`, `test_cadastro_codigo_interface`, `test_alterar_email_interface`, `test_recuperacao_interface`, `test_autorizacoes_locais`, `test_fluxos_codigo`, `servidor/test` | Etapa 8 (serviço local; CT90, CT91, CT93, CT94) |
+| CT95–CT102 | Tema, documentos, sair e excluir conta | `test_sessao_tema`, `test_tela_ajustes`, `test_ajustes_usuario`, `test_documentos`, `test_legibilidade_temas`, `test_excluir_usuario` | Etapas 6 e 9 |
+| CT103–CT107 | Escopo de categoria e descrição | `test_descricao_escopo`, `test_grafico` | — |
+| CT108–CT117 | Complementos | `test_limites_caracteres`, `test_cadastro_codigo_interface`, `test_alterar_email_interface`, `test_autorizacoes_locais`, `test_recuperacao_interface`, `test_contador_reenvio`, `test_grafico`, `test_detalhes`, `test_sessao_tema`, `test_tela_ajustes` | Etapas 8 (CT110, CT113) e 10 |
+| CT118 | Confirmação de senha no cadastro | `test_cadastro_senha` (`TestConfirmacaoDaSenha`) | Etapa 10 |
+| — | Etapa 10 (nova tentativa, fechamento, campos e contador) | `test_nova_tentativa`, `test_fechamento`, `test_contador_reenvio` | Etapa 10 (fechamento, contador) |
+
+**Parcial**
+
+* **RF01, RF36 e RF39** (🧪): cadastro, alteração de e-mail e recuperação de senha por código funcionam e foram validados com o serviço de códigos no próprio computador (caixa local e modo de demonstração). A entrega real de e-mails não foi validada; a confirmação na demonstração **não comprova** acesso ao endereço.
+* **RNF09:** contraste verificado nos pares de cores mapeados e nas telas percorridas pelos testes, nos dois temas; fora da verificação ficam estados raros, telas de autenticação na varredura e gráficos em detalhe (13.5).
+* **RNF03 e RNF06:** sem medição formal de desempenho (1000 contas por usuário; operações em até 2 segundos); benchmark previsto em 14.2.
+* **Termos de Uso e Política de Privacidade:** texto integrado ao app (atualização de 03/10/2026); a **revisão pela autora** e a **revisão jurídica** continuam pendentes.
+
+**Adiado para uso por terceiros**
+
+* Publicação do serviço de códigos e entrega real de e-mails pela Resend: hospedagem, domínio e remetente, responsável pela operação, retenção pelos provedores e limites adicionais contra abuso (13.3).
+* Revisão jurídica dos Termos e da Política e revisão da P9 (versionamento e novo aceite), antes do uso por outras pessoas.
+* RF16 (biometria): fora do escopo da v6.0 (3.2).
+
+**Para depois, sem bloquear a entrega**
+
+* Capturas reais das telas no README (hoje, protótipos identificados como tal).
+
 ---
 
 # 14. Fora dos Requisitos Funcionais
@@ -893,7 +938,7 @@ Registro de situação. **Revisão de UX e legibilidade implementada e validada*
 
 ## 14.3 Documentação
 
-Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs: o que é o Sino, objetivo do projeto, principais funcionalidades, tecnologias e apresentação como portfólio.
+Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs: o que é o Sino, objetivo do projeto, principais funcionalidades, tecnologias e apresentação como portfólio. **Feita em 04/10/2026 (Etapa 12, ver 13.6)**; capturas reais das telas ficam para depois (o README mostra protótipos, identificados como tal).
 
 ---
 
@@ -914,6 +959,8 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 11 | Testes: regressão CT01–CT48 e novos CT49–CT118 | Etapas 1–10 |
 | 12 | README.md | Pode ocorrer em paralelo |
 
+Situação em 04/10/2026: Etapas 1–12 concluídas para portfólio e demonstração local; requisitos parciais e itens adiados em 13.6.
+
 ---
 
 # Histórico de Versões
@@ -932,3 +979,4 @@ Melhoria do **README.md** do repositório, associada à v6.0 e separada dos RFs:
 | 6.0 (P11) | 03/10/2026 | Decisão P11: confirmação de senha no cadastro (Etapa 10); RF01, 5.31, 8.8 e CT118. |
 | 6.0 (P12) | 04/10/2026 | Decisão P12: Detalhes com campos fixos e textos de ausência (Etapa 10); 5.22, 8.4, CT57 e CT115. |
 | 6.0 (estado) | 04/10/2026 | Registro do estado da Etapa 10 (13.5), incluindo a situação parcial de RNF09. |
+| 6.0 (encerramento) | 04/10/2026 | v6.0 concluída para portfólio e demonstração local (13.6): marcadores dos RFs revisados, rastreabilidade dos testes, Etapas 11 e 12; parciais e adiados separados. |

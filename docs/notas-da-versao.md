@@ -4,7 +4,20 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
-## v6.0 — em implementação
+## v6.0 — concluída para portfólio e demonstração local (04/10/2026)
+
+Todas as funcionalidades da v6.0 estão implementadas e verificadas no
+computador da autora (suíte do aplicativo com 874 testes aprovados). Situação
+completa na [ERS v6.0, seção 13.6](ERS_Controle_de_Contas_v6.0.md#136-encerramento-da-v60-para-portfólio-04102026).
+
+- **Parcial:** cadastro, alteração de e-mail e recuperação de senha por código
+  funcionam com o serviço de códigos no próprio computador; a entrega real de
+  e-mails não foi validada. Contraste (RNF09) parcialmente verificado. Sem
+  medição formal de desempenho. Termos de Uso e Política de Privacidade
+  integrados ao app, com revisão pela autora e revisão jurídica pendentes.
+- **Adiado para uso por outras pessoas:** publicação do serviço de códigos e
+  envio real de e-mails, revisão jurídica dos Termos e da Política e decisão
+  sobre versionamento e novo aceite (P9).
 
 ### Etapa 10 — visual e experiência de uso (04/10/2026)
 
@@ -95,7 +108,7 @@ da Política pendente.
 - P9 mantida: sem versionamento do texto nem novo aceite; revisar antes do uso
   por outras pessoas.
 
-### Etapa 8 — e-mail com código (02/10/2026, em andamento)
+### Etapa 8 — e-mail com código (02/10/2026; entrega local concluída, publicação adiada)
 
 Entrega local de códigos **concluída e validada**; publicação para outras
 pessoas **pendente**.
