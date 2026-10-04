@@ -4017,8 +4017,7 @@ def main(page: ft.Page):
             height=52,
             border_radius=26,
             alignment=ft.Alignment.CENTER,
-            right=20,
-            bottom=16,
+            data="nova_conta",
             on_click=lambda e: mostrar_tela_nova_conta(),
         )
 
@@ -4043,18 +4042,23 @@ def main(page: ft.Page):
                             cabecalho_contas,
                             ft.Container(height=8),
                             lista_contas,
-                            ft.Container(height=80),
+                            ft.Container(height=8),
                         ],
                     ),
                 ),
             ],
         )
 
-        corpo = ft.Stack(
+        # Etapa 10: o "+" fica numa faixa própria acima da barra de navegação
+        # (mesmo lugar e estilo), e não mais sobre a área que rola -- assim
+        # nunca cobre "Ver status" nem as ações das linhas.
+        corpo = ft.Column(
             expand=True,
+            spacing=0,
             controls=[
                 conteudo,
-                fab,
+                ft.Container(padding=ft.Padding(0, 8, 20, 8), alignment=ft.Alignment.CENTER_RIGHT,
+                             data="faixa_nova_conta", content=fab),
             ],
         )
 

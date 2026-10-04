@@ -920,6 +920,10 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
 **Para depois, sem bloquear a entrega**
 
 * Capturas reais das telas no README (hoje, protótipos identificados como tal).
+* Calendário de escolha de datas (Nova/Editar conta) exibido em inglês ("Select date", "Cancel", nomes de meses e dias), padrão do Flutter; tradução pendente (registrado em 04/10/2026).
+* Em janelas mais estreitas que o tamanho padrão do app (cerca de 330 px úteis), o nome da conta nas linhas da Tela Principal quebra letra a letra; no tamanho padrão o layout está correto (observado em 04/10/2026).
+
+Correção de 04/10/2026, depois deste registro: na Tela Principal, o botão "+" (nova conta) passou a ocupar uma faixa própria acima da barra de navegação, com o mesmo estilo, e não cobre mais "Ver status" nem as ações das linhas (`test_tela_principal`).
 
 ---
 

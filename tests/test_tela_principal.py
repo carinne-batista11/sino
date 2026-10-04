@@ -128,6 +128,25 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         return [db.criar_conta_unica(self.usuario_id, f"Conta {i}", 10.0, f"2026-10-{i + 1:02d}")
                 for i in range(quantidade)]
 
+    # ---------------------------------------------------------------- botão "+"
+    def test_botao_nova_conta_fora_da_area_que_rola(self):
+        # Etapa 10: o "+" fica numa faixa própria, depois da área com rolagem;
+        # não flutua sobre ela, então nunca cobre "Ver status" nem as ações das linhas.
+        self.criar_contas_de_outubro(12)
+        self.entrar()
+        self.ir_para_outubro()
+        fab = next(c for c in self.controles(ft.Container) if c.data == "nova_conta")
+        rolagem = next(c for c in self.controles(ft.Column) if c.scroll == ft.ScrollMode.AUTO
+                       and any(isinstance(t, ft.Text) and t.value == "Ver status" for t in percorrer(c)))
+        self.assertNotIn(fab, list(percorrer(rolagem)))
+        self.assertFalse(any(isinstance(c, ft.Stack) and fab in list(percorrer(c)) for c in self.controles(ft.Stack)))
+        faixa = next(c for c in self.controles(ft.Container) if c.data == "faixa_nova_conta")
+        corpo = next(c for c in self.controles(ft.Column) if faixa in c.controls)
+        self.assertEqual(corpo.controls.index(rolagem), corpo.controls.index(faixa) - 1)
+        self.assertEqual((fab.width, fab.height, fab.border_radius), (52, 52, 26))   # mesmo estilo
+        self.clicar(fab)
+        self.assertIn("Nova conta", self.textos())
+
     # ---------------------------------------------------------------- lista
     def test_todas_as_contas_do_mes_na_rolagem_da_pagina(self):
         self.criar_contas_de_outubro(12)

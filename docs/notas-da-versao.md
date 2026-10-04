@@ -22,6 +22,12 @@ completa na [ERS v6.0, seção 13.6](ERS_Controle_de_Contas_v6.0.md#136-encerram
 - **Correção:** na tela Categorias, a inicial de uma categoria sem emoji passa
   a ser escrita em branco ou preto, o que for mais legível sobre a cor da
   categoria (antes, sempre em branco).
+- **Correção:** na Tela Principal, o botão "+" fica numa faixa própria acima da
+  barra de navegação, com o mesmo estilo, e não cobre mais "Ver status" nem os
+  botões das linhas.
+- **Limitações conhecidas:** o calendário de escolha de datas aparece em
+  inglês (padrão do Flutter); em janelas mais estreitas que o tamanho padrão,
+  o nome das contas na Tela Principal quebra letra a letra.
 - **Adiado para uso por outras pessoas:** publicação do serviço de códigos e
   envio real de e-mails, revisão jurídica dos Termos e da Política e decisão
   sobre versionamento e novo aceite (P9).
