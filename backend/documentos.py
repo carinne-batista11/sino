@@ -5,8 +5,10 @@ documentos.py — Termos de Uso e Política de Privacidade do Sino (ERS v6.0,
 Texto aprovado pela autora em 30/09/2026; atualização de 02/10/2026
 (Etapa 8: códigos por e-mail), rascunho de 03/10/2026 (Etapa 9: excluir
 a conta de usuário) e ajustes de 04/10/2026 (Termos item 4 e Política
-item 2, pedidos pela autora na leitura) EM REVISÃO pela autora, com
-revisão jurídica pendente.
+item 2, pedidos pela autora na leitura). O texto atual foi REVISADO E
+APROVADO pela autora em 04/10/2026 para a versão de portfólio e
+demonstração local, com apoio de revisão técnica e de clareza. A revisão
+jurídica continua PENDENTE e é necessária antes do uso por terceiros.
 É a mesma fonte exibida no cadastro (antes do aceite) e em Ajustes > Sobre e
 privacidade. Qualquer mudança de conteúdo deve ser revisada
 antes e mencionada nas notas da versão (docs/notas-da-versao.md). O endereço

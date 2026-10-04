@@ -16,8 +16,9 @@ completa na [ERS v6.0, seção 13.6](ERS_Controle_de_Contas_v6.0.md#136-encerram
   telas, campos, barras e estados principais, com limites registrados na ERS.
   Desempenho com 1.000 contas [medido](desempenho-v6.md) abaixo de 2 s na
   consulta ao banco e na montagem das telas, sem a renderização da janela.
-  Termos de Uso e Política de Privacidade integrados ao app, com revisão pela
-  autora e revisão jurídica pendentes.
+  Termos de Uso e Política de Privacidade integrados ao app e aprovados pela
+  autora em 04/10/2026 para portfólio e demonstração local; revisão jurídica
+  pendente.
 - **Correção:** na tela Categorias, a inicial de uma categoria sem emoji passa
   a ser escrita em branco ou preto, o que for mais legível sobre a cor da
   categoria (antes, sempre em branco).
@@ -25,7 +26,7 @@ completa na [ERS v6.0, seção 13.6](ERS_Controle_de_Contas_v6.0.md#136-encerram
   envio real de e-mails, revisão jurídica dos Termos e da Política e decisão
   sobre versionamento e novo aceite (P9).
 
-### Termos de Uso e Política de Privacidade (ajustes de 04/10/2026, em revisão)
+### Termos de Uso e Política de Privacidade (ajustes de 04/10/2026)
 
 - Termos, item 4: desde a primeira frase, distingue o envio real (o código
   confirma acesso à mensagem enviada ao endereço informado) da demonstração
@@ -33,7 +34,10 @@ completa na [ERS v6.0, seção 13.6](ERS_Controle_de_Contas_v6.0.md#136-encerram
 - Política, item 2: a afirmação de que o Sino não coleta outros dados passa a
   ressalvar os dados técnicos da confirmação por código (como o endereço IP do
   pedido), com referência ao item 7.
-- Revisão pela autora e revisão jurídica continuam pendentes; P9 mantida.
+- **Revisão pela autora concluída em 04/10/2026:** o texto atual dos Termos e
+  da Política está aprovado para a versão de portfólio e demonstração local,
+  com apoio de revisão técnica e de clareza. A **revisão jurídica continua
+  pendente** e é necessária antes do uso por outras pessoas; P9 mantida.
 
 ### Etapa 10 — visual e experiência de uso (04/10/2026)
 
@@ -92,7 +96,8 @@ isolada do banco (item nos dois temas, cancelamento nos três passos, senha
 errada, exclusão com retorno ao Login e recusa do login antigo, dados dos
 demais usuários preservados). O texto da mensagem "Sua conta foi excluída." no
 Login tem cobertura automática, sem confirmação visual. Revisão dos Termos e
-da Política pendente.
+da Política pendente (04/10/2026: revisão da autora concluída; revisão
+jurídica pendente).
 
 **Novidades**
 
@@ -110,7 +115,7 @@ da Política pendente.
   o registro técnico das confirmações por código (que não identifica usuários)
   nem o que o serviço de códigos e o provedor de envio já guardaram.
 
-**Termos de Uso e Política de Privacidade (rascunho de 03/10/2026, em revisão)**
+**Termos de Uso e Política de Privacidade (rascunho de 03/10/2026; aprovado pela autora em 04/10/2026, revisão jurídica pendente)**
 
 - Termos, item 4: Ajustes também permite excluir a conta de usuário.
 - Termos, item 6 (agora "Sair da conta e excluir a conta"): descreve os passos,
@@ -171,7 +176,7 @@ pessoas **pendente**.
   separado do banco real. Um e-mail confirmado na demonstração **não comprova**
   acesso ao endereço.
 
-**Termos de Uso e Política de Privacidade (atualização de 02/10/2026, em revisão)**
+**Termos de Uso e Política de Privacidade (atualização de 02/10/2026; aprovada pela autora em 04/10/2026, revisão jurídica pendente)**
 
 - Termos, item 1: a confirmação por código é a única função que conversa com
   um serviço fora do aplicativo (pela internet, quando publicado; no próprio

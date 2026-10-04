@@ -809,7 +809,7 @@ Registro de situação, sem mudança de regra. Detalhes técnicos no [contrato d
 
 * Entrega real de e-mails pela Resend, hospedagem e publicação do serviço.
 * Decisões: empresa de hospedagem e responsável pela operação do serviço publicado; domínio e remetente de envio; tratamento e retenção dos dados pelos provedores de hospedagem e de envio; limites adicionais contra abuso.
-* Termos de Uso e Política de Privacidade atualizados em 02/10/2026, aguardando revisão da autora e revisão jurídica.
+* Termos de Uso e Política de Privacidade atualizados em 02/10/2026, aguardando revisão da autora e revisão jurídica. *(04/10/2026: revisão da autora concluída; revisão jurídica pendente — ver 13.6.)*
 * P9 (sem versionamento dos documentos nem novo aceite) continua valendo; precisa ser revista **antes do uso por outras pessoas**, porque o texto mudou de forma relevante na Etapa 8.
 * O cadastro continua dependente do serviço de códigos; em desenvolvimento, o caminho documentado é o modo de demonstração. Não há cadastro sem verificação.
 * Etapa 10: fechamento seguro da janela, pendências de UX da Etapa 8 (falha transitória na gravação exige novo código, formulário editável durante o envio, contador do reenvio, confirmação de senha no cadastro) e RNF09.
@@ -835,7 +835,7 @@ Registro de situação, sem mudança de regra. **Excluir conta (RF43) implementa
 
 **Pendente**
 
-* Revisão da autora e revisão jurídica dos Termos e da Política (03/10/2026); P9 deve ser revista antes do uso por outras pessoas.
+* Revisão da autora e revisão jurídica dos Termos e da Política (03/10/2026); P9 deve ser revista antes do uso por outras pessoas. *(04/10/2026: revisão da autora concluída; revisão jurídica pendente — ver 13.6.)*
 
 ## 13.5 Estado da Etapa 10 (04/10/2026)
 
@@ -877,6 +877,7 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
 
 * Etapas 1–10 (seção 15), uma por commit ou grupo de commits, com testes automáticos e as validações manuais registradas em 13.3–13.5 e em [validacao-etapa8.md](validacao-etapa8.md). Etapas 2–5 e 7 têm verificação por testes automáticos; a Etapa 6 teve validação manual aprovada pela autora (30/09/2026).
 * Etapa 11 (testes): suíte do aplicativo com **879 testes aprovados** (04/10/2026, depois da ampliação de RNF09) e serviço de códigos com **151 testes aprovados** e verificação de tipos (02/10/2026; `servidor/` sem mudanças desde então). Rastreabilidade abaixo.
+* Termos de Uso e Política de Privacidade (texto de 04/10/2026, com os ajustes do item 4 dos Termos e do item 2 da Política): **revisados e aprovados pela autora em 04/10/2026** para a versão de portfólio e demonstração local, com apoio de revisão técnica e de clareza. A revisão jurídica continua pendente (ver "Adiado para uso por terceiros").
 * Etapa 12 (README): apresentação do projeto, funcionalidades da v6.0, como executar, demonstração local, testes e limitações.
 * RF02–RF15, RF17–RF35, RF37, RF38 e RF40–RF43: ✅ (seção 6).
 * RNF01, RNF02 (com a exceção do serviço de códigos), RNF04, RNF05, RNF07, RNF08, RNF10 e RNF11 atendidos: telas responsivas nas larguras testadas; dados locais; instalação por `requirements.txt`; PBKDF2 (`test_senha`, `test_usuarios_categorias`); backup e migrações sem perda (`test_migracao_v6`, `v7`, `v8`); regras dos códigos (`servidor/test/nucleo`); segredos fora do repositório (`.gitignore`, só o modelo `.dev.vars.example` é versionado).
@@ -909,7 +910,6 @@ A v6.0 está **concluída como entrega de portfólio e demonstração local**: t
   Encontrado e corrigido: a inicial de categoria sem emoji na tela Categorias (branco sobre cores claras, 2,21–3,39:1) passa a usar branco ou preto, o de maior contraste (≥ 4,6:1 nas 30 cores da paleta). Testes: `test_legibilidade_temas` e `test_legibilidade_rnf09`; iniciais conferidas visualmente pela autora.
   **Fora da verificação:** fatias da rosca nas cores das categorias (pastéis, da paleta oficial; a legenda identifica cada fatia por nome, valor e percentual em texto, o que é verificado); controles desativados (isentos pela WCAG 1.4.3); o que o Flutter desenha por conta própria (calendário, dicas flutuantes, foco e destaque ao passar o mouse ou clicar); a imagem final em pixels. Por isso RNF09 não é declarado integralmente atendido.
 * **RNF03 e RNF06** (medidos em 04/10/2026, [desempenho-v6.md](desempenho-v6.md)): com 1.000 contas, todas as operações medidas ficaram abaixo de 2 s na camada medida (consulta ao banco + montagem da tela no Python); máximo de 0,35 s no cenário distribuído e de 1,70 s no pior caso (1.000 contas num único mês). **Não medidos:** a renderização da janela pelo Flutter e a comunicação com ela. Observação visual da autora com 1.000 contas: sem demora perceptível nem travamento (qualitativa, não substitui a medição). Por isso ficam como atendidos na camada medida, sem declaração de atendimento integral.
-* **Termos de Uso e Política de Privacidade:** texto integrado ao app (atualização de 03/10/2026); a **revisão pela autora** e a **revisão jurídica** continuam pendentes.
 
 **Adiado para uso por terceiros**
 
@@ -988,3 +988,4 @@ Situação em 04/10/2026: Etapas 1–12 concluídas para portfólio e demonstra�
 | 6.0 (estado) | 04/10/2026 | Registro do estado da Etapa 10 (13.5), incluindo a situação parcial de RNF09. |
 | 6.0 (encerramento) | 04/10/2026 | v6.0 concluída para portfólio e demonstração local (13.6): marcadores dos RFs revisados, rastreabilidade dos testes, Etapas 11 e 12; parciais e adiados separados. |
 | 6.0 (RNF) | 04/10/2026 | RNF09 ampliado (autenticação, campos, gráficos e estados; inicial de categoria corrigida) e medição de RNF03/RNF06 ([desempenho-v6.md](desempenho-v6.md)); limites registrados em 13.6. |
+| 6.0 (Termos) | 04/10/2026 | Termos e Política: ajustes do item 4 dos Termos e do item 2 da Política; revisão pela autora concluída para portfólio e demonstração local; revisão jurídica pendente (13.6). |
