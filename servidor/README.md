@@ -89,3 +89,10 @@ ficaram livres.
 - Não serve para usuários reais nem para produção.
 - As regras dos códigos são as normais (validade de 10 minutos, 5 tentativas,
   reenvio após 60 segundos e limites por endereço e por conexão).
+
+## Licença
+
+O serviço faz parte do Sino e segue o [`LICENSE`](../LICENSE) da raiz do
+repositório: licença MIT com a condição "Commons Clause" v1.0 (código-fonte
+disponível, não open source; o direito de vender não é concedido). As
+dependências seguem as próprias licenças.

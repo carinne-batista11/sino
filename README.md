@@ -9,7 +9,7 @@
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![Flet 0.86.5](https://img.shields.io/badge/Flet-0.86.5-1D9E75)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
-![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)
+![Licença: MIT + Commons Clause](https://img.shields.io/badge/licen%C3%A7a-MIT%20%2B%20Commons%20Clause-lightgrey)
 
 O Sino é um aplicativo desktop para registrar e acompanhar as contas do dia a dia: aluguel, internet, faculdade, assinaturas e parcelas. Ele mostra o que vence, o que está em atraso e quanto do mês já foi pago, com os dados guardados localmente no seu computador. A única comunicação do app com a internet é a confirmação de e-mail por código, descrita abaixo.
 
@@ -187,4 +187,11 @@ O Sino é um projeto de portfólio, construído para praticar o ciclo completo d
 
 ## Licença
 
-Distribuído sob a licença MIT. Veja o arquivo [`LICENSE`](LICENSE).
+O Sino é distribuído sob a **licença MIT com a condição "Commons Clause" v1.0**. O texto completo está no arquivo [`LICENSE`](LICENSE). **Não é uma licença open source:** o código-fonte está disponível, mas o direito de vender não é concedido.
+
+Em resumo (o que vale é o texto do [`LICENSE`](LICENSE)):
+
+* **Permitido:** usar, estudar, copiar, modificar e redistribuir, inclusive versões modificadas, mantendo os avisos de licença (com a Commons Clause).
+* **Não concedido:** vender o Sino, ou seja, fornecer a terceiros, mediante pagamento ou outra contrapartida, um produto ou serviço cujo valor derive inteira ou substancialmente da funcionalidade do Sino. Cobranças por hospedagem, consultoria ou suporte relacionados ao Sino só entram nessa condição quando o valor do serviço deriva inteira ou substancialmente da funcionalidade do Sino; serviços que não se enquadram nisso não são afetados por ela. Para o que se enquadra, é preciso autorização da autora.
+* **Alcance:** o código, os testes, as ferramentas e os documentos e imagens de autoria de Carinne Batista neste repositório. Bibliotecas, fontes, emojis e ícones de terceiros seguem as próprias licenças.
+* **Versões anteriores:** até o commit `a8302c2`, inclusive, o repositório foi distribuído somente sob a licença MIT. Quem obteve essas versões mantém, sobre elas, as permissões da MIT.

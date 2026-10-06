@@ -2,6 +2,7 @@
   "name": "sino-servico-codigos",
   "version": "0.1.0",
   "private": true,
+  "license": "SEE LICENSE IN ../LICENSE",
   "description": "Serviço centralizado dos códigos de e-mail do Sino (ERS v6.0, Etapa 8): gera, envia e valida códigos e assina a autorização usada pelo app.",
   "type": "module",
   "engines": {

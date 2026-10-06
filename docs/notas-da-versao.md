@@ -4,6 +4,17 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
+## Licença: MIT + Commons Clause (decidida em 06/10/2026; vale a partir do commit que a introduz)
+
+Mudança só de licença: o funcionamento do aplicativo, o banco e os Termos de Uso não mudam, e não há nova versão do aplicativo.
+
+- **Nova licença:** licença MIT com a condição "Commons Clause" v1.0, com os textos oficiais sem alteração (veja o [`LICENSE`](../LICENSE)). **Não é uma licença open source:** o código-fonte está disponível, mas o direito de vender o Sino não é concedido.
+- **Continua permitido:** usar, estudar, copiar, modificar e redistribuir, inclusive versões modificadas, mantendo os avisos de licença.
+- **Não concedido:** fornecer a terceiros, mediante pagamento ou outra contrapartida, um produto ou serviço cujo valor derive inteira ou substancialmente da funcionalidade do Sino. Cobranças por hospedagem, consultoria ou suporte relacionados ao Sino só entram nessa condição quando o valor do serviço deriva inteira ou substancialmente da funcionalidade do Sino; serviços que não se enquadram nisso não são afetados por ela. Para o que se enquadra, é preciso autorização da autora.
+- **Alcance:** código, testes, ferramentas, documentos e imagens de autoria da autora neste repositório. Componentes de terceiros mantêm as próprias licenças.
+- **Versões anteriores:** até o commit `a8302c2`, inclusive, o repositório foi distribuído somente sob a licença MIT. Quem obteve essas versões mantém, sobre elas, as permissões da MIT.
+- **Revisão jurídica:** pendente (ERS v7.0, seção 13.4).
+
 ## v6.0 — concluída para portfólio e demonstração local (04/10/2026)
 
 Todas as funcionalidades da v6.0 estão implementadas e verificadas no

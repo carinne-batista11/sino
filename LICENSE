@@ -1,6 +1,20 @@
+"Commons Clause" License Condition v1.0
+
+The Software is provided to you by the Licensor under the License, as defined below, subject to the following condition.
+
+Without limiting other conditions in the License, the grant of rights under the License will not include, and the License does not grant to you, the right to Sell the Software.
+
+For purposes of the foregoing, "Sell" means practicing any or all of the rights granted to you under the License to provide to third parties, for a fee or other consideration (including without limitation fees for hosting or consulting/support services related to the Software), a product or service whose value derives, entirely or substantially, from the functionality of the Software. Any license notice or attribution required by the License must also include this Commons Clause License Condition notice.
+
+Software: Sino
+License: MIT License
+Licensor: Carinne Batista
+
+---
+
 MIT License
 
-Copyright (c) 2026 Carinne
+Copyright (c) 2026 Carinne Batista
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +33,24 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Aviso da licenciante (não altera os textos acima)
+
+Este arquivo combina a licença MIT com a condição "Commons Clause" v1.0. O
+resultado não é uma licença open source: o código-fonte está disponível, mas
+o direito de vender o Software ("Sell", conforme definido acima) não é
+concedido.
+
+Alcance: "Software" abrange o conteúdo de autoria de Carinne Batista neste
+repositório (código-fonte, testes, ferramentas e arquivos de documentação
+associados, inclusive documentos, imagens, paleta, capturas de tela e
+protótipos). Componentes de terceiros (bibliotecas, fontes, emojis, ícones e
+outros), inclusive os que aparecem em capturas e protótipos, seguem as
+próprias licenças e não são licenciados por este arquivo.
+
+Versões anteriores: até o commit a8302c2, inclusive, o repositório foi
+distribuído somente sob a licença MIT. Quem obteve essas versões mantém, sobre
+elas, as permissões da licença MIT. A combinação MIT + Commons Clause vale a
+partir do commit que introduz este arquivo.
