@@ -6,9 +6,9 @@ a autorização que o aplicativo confere localmente. O contrato está em
 [`docs/contrato-servico-codigos.md`](../docs/contrato-servico-codigos.md).
 
 **Estado:** contrato v1.1 (restrição de destinatários da E3, ERS v7.0 5.49),
-implementado localmente e aguardando revisão e validação. O serviço **não foi
-publicado**, não há conta na Cloudflare nem na Resend, e nenhum e-mail real é
-enviado.
+validado localmente e publicado no repositório com a Sino 6.2. O serviço **não
+foi publicado** (sem deploy), não há conta na Cloudflare nem na Resend, e
+nenhum e-mail real é enviado.
 
 ## Organização
 

@@ -464,7 +464,7 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 | T7 | Comprovantes em arquivos com nome aleatório fora do banco, processados com biblioteca de imagens (Pillow) de versão fixada, fora da linha da interface |
 | T8 | Pacote de backup: formato versionado, chave derivada por scrypt, AES-256-GCM em blocos autenticados com marca de fim. **Não é um formato aprovado como seguro:** na implementação, comparar com formatos e ferramentas de criptografia estabelecidos antes de criar um formato próprio, e submeter a escolha a revisão |
 | T9 | Bloqueio compartilhado app/ferramenta por trava do sistema operacional; diferenças entre Linux e Windows testadas |
-| T10 | Restrição de destinatários comparada por HMAC no serviço, com evolução do contrato (novo código de erro e testes de conformidade). *Implementada na E3 (contrato v1.1), aguardando revisão e validação; não concluída.* |
+| T10 | Restrição de destinatários comparada por HMAC no serviço, com evolução do contrato (novo código de erro e testes de conformidade). *Concluída na E3 (contrato v1.1), publicada com a Sino 6.2; o serviço continua sem deploy.* |
 | T11 | Calendário: idioma da página (pt-BR) e cor do número de hoje dependente do estado; pares de cores do calendário em `test_cores` |
 | T12 | Rótulos do comparativo como controles focáveis; contorno das colunas entre 1 e 1,5 px |
 | T13 | Linha de conta empilhada abaixo de uma largura medida na implementação; testes em três larguras |
@@ -553,7 +553,7 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 |---|---|---|
 | E1 | **Concluída** (publicada em 06/10/2026, commit 58b4382): licença MIT + Commons Clause | — (sem código) |
 | E2 | **Concluída** (publicada em 06/10/2026): versões dos documentos (04/10 inicial; 06/10 relevante, P38), registro dos aceites e da ciência, tela de novo aceite e aviso, migração v9. 926 testes aprovados (bancos temporários); validação visual em cópia isolada aprovada (leitura dos documentos; novo aceite com "Sair" e "Aceitar"; aviso de ajuste menor com versão fictícia). Banco principal na v9 desde 06/10 21:25 (abertura de origem não confirmada; mantido pela autora; ref7) | Sino 6.1 |
-| E3 | **Pendente** — implementada em 07/10/2026 (restrição de destinatários, contrato v1.1, P39), **aguardando revisão e validação**; não publicada, sem commit. Suítes: 950 testes do aplicativo e 215 do serviço aprovados (bancos temporários e ambientes isolados). Serviço de códigos não publicado | Sino 6.2 (candidata) |
+| E3 | **Concluída** (publicada no GitHub em 07/10/2026; código no commit a76da70): restrição de destinatários, contrato v1.1, P39. Publicação do código no GitHub: o serviço de códigos **não** foi publicado (sem deploy), não há envio real de e-mails nem liberação para terceiros (E4 e 11.3). Suítes: 950 testes do aplicativo e 215 do serviço aprovados (bancos temporários e ambientes isolados); validação manual em demonstração isolada do commit local a76da70 (07/10/2026): as mensagens das telas foram observadas pela autora (restrição no cadastro e na alteração fora da lista; mensagem neutra na recuperação); os efeitos foram confirmados pelos artefatos (caixa local com exatamente duas mensagens, cadastro para `pessoa1@demonstracao.invalid` e alteração para `pessoa2@demonstracao.invalid`; banco da demonstração com uma conta, no e-mail alterado, e nenhuma conta dos pedidos recusados; registro do serviço com os dois 403 e o 202 neutro). CT157 e CT158 cobertos só pelos testes automáticos. | Sino 6.2 |
 | E4 a E18, F1 | **Pendente** | — |
 
 Legenda:
@@ -569,6 +569,7 @@ Legenda:
 | Versão | Data | Descrição |
 |---|---|---|
 | 6.0 | 23/09/2026 – 04/10/2026 | Ver a [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) (preservada sem alterações). |
+| 7.0 (revisão) | 07/10/2026 | E3 concluída e publicada no GitHub como Sino 6.2 (validação manual na demonstração do commit a76da70; CT157 e CT158 só por testes automáticos); serviço de códigos sem deploy, sem envio real e sem liberação para terceiros. |
 | 7.0 (revisão) | 07/10/2026 | P39: decisões da E3 (restrição de destinatários, contrato v1.1); 5.49 com as regras técnicas e os limites aceitos; CT157 e CT158; E3 implementada, aguardando revisão e validação (Sino 6.2 candidata, não publicada). |
 | 7.0 (revisão) | 06/10/2026 | E2 concluída e publicada como Sino 6.1 (926 testes; validação visual aprovada); banco principal na v9 (ref7). |
 | 7.0 (revisão) | 06/10/2026 | P38: versão de 06/10/2026 dos Termos e da Política, relevante; usuários existentes aceitam a nova versão. |

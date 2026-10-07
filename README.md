@@ -17,7 +17,7 @@ O Sino é um aplicativo desktop para registrar e acompanhar as contas do dia a d
 
 ## ✨ Funcionalidades
 
-A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está **concluída para portfólio e demonstração local** (04/10/2026). As mudanças estão resumidas nas [notas da versão](docs/notas-da-versao.md). A **Sino 6.1** (06/10/2026), primeira entrega da [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md), acrescenta versões e registro do aceite dos Termos de Uso e da Política de Privacidade.
+A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está **concluída para portfólio e demonstração local** (04/10/2026). As mudanças estão resumidas nas [notas da versão](docs/notas-da-versao.md). A **Sino 6.1** (06/10/2026), primeira entrega da [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md), acrescenta versões e registro do aceite dos Termos de Uso e da Política de Privacidade. A **Sino 6.2** (07/10/2026) restringe o serviço de códigos a uma lista de destinatários permitidos; o serviço continua sem publicação e sem envio real de e-mails.
 
 - **Contas únicas, mensais ou anuais**, com ou sem data de término. Os vencimentos respeitam o calendário: uma conta do dia 31 vence em 28/02 e volta para 31/03.
 - **Edição e exclusão com escopo**: em contas recorrentes, você escolhe entre "Somente este mês" e "Este mês em diante", inclusive para categoria e descrição.
