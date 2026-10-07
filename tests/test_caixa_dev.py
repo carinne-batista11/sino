@@ -22,6 +22,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servidor", "ferramentas"))
 
 import caixa_dev as cd  # noqa: E402
+import destinatarios as dt  # noqa: E402
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: E402
@@ -106,6 +107,23 @@ class TestPastaEChaves(unittest.TestCase):
             self.assertNotIn("CHAVE_ASSINATURA", ler(os.path.join(pasta, "app_dev.env")))
             with self.assertRaises(SystemExit):
                 cd.gerar_chaves(pasta)  # não sobrescreve
+
+    def test_chaves_com_destinatarios_ficticios(self):  # contrato v1.1
+        with tempfile.TemporaryDirectory(prefix="sino_chaves_") as pasta:
+            with contextlib.redirect_stdout(io.StringIO()) as saida:
+                cd.gerar_chaves(pasta)
+            segredos = dict(l.split("=", 1) for l in ler(os.path.join(pasta, "segredos_dev.env")).split())
+            chave = bytes.fromhex(segredos["CHAVE_HMAC"])
+            esperado, _ = dt.montar(chave, list(dt.DESTINATARIOS_FICTICIOS))
+            self.assertEqual(segredos["DESTINATARIOS_PERMITIDOS"], esperado)
+            for resumo in esperado.split(","):
+                self.assertNotIn(resumo.split(":")[-1], saida.getvalue())
+            orientacao = os.path.join(pasta, cd.ORIENTACAO_DESTINATARIOS)
+            self.assertEqual(stat.S_IMODE(os.stat(orientacao).st_mode), 0o600)
+            texto = ler(orientacao)
+            for email in ("pessoa1@demonstracao.invalid", "pessoa2@demonstracao.invalid", "pessoa3@demonstracao.invalid"):
+                self.assertIn(email, texto)
+            self.assertIn("O envio de códigos está restrito nesta fase do Sino.", texto)
 
 
 class ProcessoFalso:

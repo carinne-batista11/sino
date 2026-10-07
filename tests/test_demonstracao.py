@@ -148,6 +148,28 @@ class TestChavesEVariaveis(unittest.TestCase):
             dm.preparar_chaves(raiz)
         self.assertFalse(os.path.exists(os.path.join(raiz, "segredos_dev.env")))
 
+    def test_pasta_de_versao_anterior_sem_lista_recusada(self):  # contrato v1.1
+        raiz = pasta_temporaria(self)
+        for nome in ("segredos_dev.env", "app_dev.env"):  # como gerava a versão anterior
+            with open(os.path.join(raiz, nome), "w") as arquivo:
+                arquivo.write("CHAVE_HMAC=x\n")
+        with self.assertRaises(dm.DemonstracaoIncompativel):
+            dm.preparar_chaves(raiz)
+        self.assertFalse(os.path.exists(os.path.join(raiz, "destinatarios_ficticios.txt")))
+        with open(os.path.join(raiz, "destinatarios_ficticios.txt"), "w") as arquivo:
+            arquivo.write("x")
+        with self.assertRaises(dm.DemonstracaoIncompativel):
+            dm.preparar_chaves(raiz)  # os três existem, mas os segredos não têm a lista
+
+    def test_lista_gerada_so_com_os_ficticios(self):
+        raiz = pasta_temporaria(self)
+        segredos, _ = dm.preparar_chaves(raiz)
+        with open(segredos) as arquivo:
+            linhas = dict(l.split("=", 1) for l in arquivo.read().split())
+        chave = bytes.fromhex(linhas["CHAVE_HMAC"])
+        self.assertEqual(linhas["DESTINATARIOS_PERMITIDOS"],
+                         dm.destinatarios.montar(chave, list(dm.destinatarios.DESTINATARIOS_FICTICIOS))[0])
+
     def test_variaveis_lidas_sem_executar_e_so_as_esperadas(self):
         raiz = pasta_temporaria(self)
         caminho = os.path.join(raiz, "app_dev.env")

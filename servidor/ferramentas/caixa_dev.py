@@ -9,8 +9,13 @@ faz parte do serviço publicado nem do aplicativo.
     python caixa_dev.py receber PASTA --abrir   # e abre cada mensagem nova no editor padrão
 
 `chaves` grava, com permissão 600 e sem sobrescrever:
-  PASTA/segredos_dev.env  CHAVE_HMAC e CHAVE_ASSINATURA (para `wrangler dev --env-file`);
-  PASTA/app_dev.env       SINO_SERVICO_URL e SINO_SERVICO_CHAVES (só a chave pública, para o app).
+  PASTA/segredos_dev.env  CHAVE_HMAC, CHAVE_ASSINATURA e DESTINATARIOS_PERMITIDOS
+                          (para `wrangler dev --env-file`);
+  PASTA/app_dev.env       SINO_SERVICO_URL e SINO_SERVICO_CHAVES (só a chave pública, para o app);
+  PASTA/destinatarios_ficticios.txt  orientação: os únicos endereços aceitos pelo
+                          serviço local, todos fictícios (domínio reservado .invalid).
+O serviço local exige a lista como o de produção (contrato v1.1); não existe
+modo sem restrição.
 Usa o `cryptography` do .venv do projeto.
 
 `receber` escuta somente em 127.0.0.1 e grava cada mensagem em um arquivo
@@ -40,6 +45,8 @@ import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import destinatarios
+
 ENDERECO = "127.0.0.1"
 PORTA_PADRAO = 8025
 PORTA_SERVICO = 8787
@@ -49,6 +56,7 @@ CAMPOS = ("para", "assunto", "texto", "chave")
 RAIZ_DO_PROJETO = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 ABRIDOR = ("xdg-open",)
 ESPERA_ABRIDOR_S = 5
+ORIENTACAO_DESTINATARIOS = "destinatarios_ficticios.txt"
 
 
 class MensagemInvalida(Exception):
@@ -218,12 +226,27 @@ def gerar_chaves(pasta):
     publica = Ed25519PrivateKey.from_private_bytes(semente).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     segredos = os.path.join(real, "segredos_dev.env")
     app = os.path.join(real, "app_dev.env")
-    if os.path.exists(segredos) or os.path.exists(app):
+    orientacao = os.path.join(real, ORIENTACAO_DESTINATARIOS)
+    if os.path.exists(segredos) or os.path.exists(app) or os.path.exists(orientacao):
         raise SystemExit("chaves já geradas para esta pasta (não sobrescrevo)")
-    gravar_privado(segredos, f"CHAVE_HMAC={secrets.token_hex(32)}\nCHAVE_ASSINATURA={semente.hex()}\n")
+    chave_hmac = secrets.token_bytes(32)
+    lista, _ = destinatarios.montar(chave_hmac, list(destinatarios.DESTINATARIOS_FICTICIOS))
+    gravar_privado(segredos, f"CHAVE_HMAC={chave_hmac.hex()}\nCHAVE_ASSINATURA={semente.hex()}\n"
+                             f"DESTINATARIOS_PERMITIDOS={lista}\n")
     gravar_privado(app, f"SINO_SERVICO_URL=http://{ENDERECO}:{PORTA_SERVICO}\n"
                         f"SINO_SERVICO_CHAVES={KID_DEV}:{publica.hex()}\n")
-    print(f"chaves: {segredos}\nchaves: {app}")
+    gravar_privado(orientacao, texto_orientacao())
+    print(f"chaves: {segredos}\nchaves: {app}\ndestinatários: {orientacao}")
+
+
+def texto_orientacao():
+    enderecos = "\n".join(f"  {e}" for e in destinatarios.DESTINATARIOS_FICTICIOS)
+    return ("Endereços aceitos pelo serviço de códigos local (desenvolvimento e demonstração).\n"
+            "São fictícios (domínio reservado .invalid): nenhum e-mail real é enviado; as mensagens\n"
+            "ficam só na caixa local deste computador. Use-os no cadastro e na alteração de e-mail.\n"
+            "Qualquer outro endereço recebe \"O envio de códigos está restrito nesta fase do Sino.\"\n"
+            "(na recuperação de senha, a resposta é a mesma de sempre e nada é enviado).\n\n"
+            f"{enderecos}\n")
 
 
 def main(argv=None):

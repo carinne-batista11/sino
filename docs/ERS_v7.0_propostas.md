@@ -534,6 +534,24 @@ Configurar o envio real de e-mails pela Resend e publicar o serviço de códigos
 * Lista vazia ou ausente no ambiente de produção **não** significa "aberto a todos": a abertura a terceiros exige uma mudança explícita de configuração, registrada e feita só depois da M12.
 * Exige uma pequena evolução do contrato (novo código de erro e a regra da lista), com testes de conformidade. A limitação da própria Resend sem domínio verificado não substitui essa regra.
 
+### Restrição de destinatários — decisões da E3 (autora, 07/10/2026; P39)
+
+Implementação e contrato v1.1 aprovados a partir do plano revisado. **Implementada, aguardando revisão e validação** (E3 não concluída nem publicada; serviço não publicado).
+
+* **Configuração:** segredo `DESTINATARIOS_PERMITIDOS` por ambiente, só com resumos HMAC: `v1:<verificação>,<resumo>,…`, até 50 únicos. A verificação é um HMAC fixo pela `CHAVE_HMAC` e **só detecta** uma lista gerada com outra chave; não prova a integridade do restante do conteúdo. Ausente, vazia ou inválida (inclusive com resumo repetido): 503. Trocar a `CHAVE_HMAC` exige gerar a lista de novo.
+* **Ferramenta local** (`servidor/ferramentas/destinatarios.py`): lê os e-mails sem eco, aplica a regra de e-mail do contrato (sem a M1), ignora repetidos, grava um arquivo novo com permissão 600 e mostra só contagens.
+* **Respostas (contrato v1.1):** `403 destinatario_nao_permitido` só no cadastro e na alteração, no pedido (inclusive reenvio e repetição) e na validação; o app mostra "O envio de códigos está restrito nesta fase do Sino.". Recuperação: resposta neutra, desafio sem envio, nunca autoriza.
+* **Pontos de conferência:** no pedido (antes do objeto do destinatário); camada A no início do envio (antes da reserva global; estado `bloqueado`); camada B (`EnviadorRestrito`) imediatamente antes do provedor, sem rede e sem repetição; e em toda validação.
+* **Desenvolvimento e demonstração:** a lista é exigida também ali, sem modo irrestrito; três endereços fictícios (`pessoa1@demonstracao.invalid`, `pessoa2@…`, `pessoa3@…`), mostrados no terminal e em `destinatarios_ficticios.txt`; envio só na caixa local. Nenhum destinatário real está autorizado.
+* **Limites aceitos e documentados:**
+  * sem revogação instantânea: autorizações já emitidas valem até o `exp` original; execuções em andamento usam a configuração com que começaram;
+  * a recusa pela lista atual é diferente da invalidação persistida do desafio: só uma validação feita com o endereço fora da lista invalida o desafio de forma permanente; remover e incluir de novo sem validação no meio não invalida (limitação registrada; a arquitetura não foi ampliada para isso nesta entrega);
+  * pedido de cadastro ou alteração recusado não grava nada e pode ser aceito com a mesma chave depois da inclusão;
+  * recuperação sem envio nunca é reativada por repetição.
+* **Neutralidade da revogação na recuperação (ajuste da revisão, 07/10/2026):** a marca que impede a reativação só é aplicada quando o código tinha sido enviado, com o instante de invalidação igual ao fim da validade, e é substituída por um novo pedido como qualquer desafio; assim, retenção, repetição e substituição continuam iguais às de um endereço dentro da lista.
+* **Estado local antigo:** os objetos do destinatário ganharam uma marca de versão do esquema (v2); estado local de versão anterior não é reaproveitado (503). Aceitável sem migração porque o serviço nunca foi publicado.
+* **Versão do app:** Sino 6.2 como candidata para a conclusão da E3, separada da publicação do serviço.
+
 ### Pendências da M8 (não resolvidas)
 
 * Domínio e remetente (M8-B).

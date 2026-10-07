@@ -18,9 +18,11 @@ import { AleatorioDeTeste, CONTEXTO, INICIO, chaveHashDe, novoDestino, segredoHa
 
 type Criado = Extract<ResultadoSolicitar, { tipo: "criado" }>;
 
-function pedir(regras: RegrasDestino, agora: number, n = 1, finalidade: Finalidade = "cadastro", semEnvio = false) {
+function pedir(
+  regras: RegrasDestino, agora: number, n = 1, finalidade: Finalidade = "cadastro", semEnvio = false, permitido = true,
+) {
   return regras.solicitar({
-    finalidade, contexto: CONTEXTO, segredoHash: segredoHashDe(n), chaveHash: chaveHashDe(n), semEnvio, agora,
+    finalidade, contexto: CONTEXTO, segredoHash: segredoHashDe(n), chaveHash: chaveHashDe(n), semEnvio, permitido, agora,
   });
 }
 
@@ -38,8 +40,10 @@ function pronto(regras: RegrasDestino, agora: number, n = 1, finalidade: Finalid
   return r;
 }
 
-function validar(regras: RegrasDestino, r: { desafioId: string }, codigo: string, agora: number, k = "v1", s = 1) {
-  return regras.validar({ desafioId: r.desafioId, segredoHash: segredoHashDe(s), chaveHash: k, codigo, agora });
+function validar(
+  regras: RegrasDestino, r: { desafioId: string }, codigo: string, agora: number, k = "v1", s = 1, permitido = true,
+) {
+  return regras.validar({ desafioId: r.desafioId, segredoHash: segredoHashDe(s), chaveHash: k, codigo, permitido, agora });
 }
 
 const errado = (codigo: string) => (codigo === "000000" ? "000001" : "000000");
@@ -277,7 +281,7 @@ describe("repetição do pedido", () => {
     pronto(regras, INICIO);
     const r = regras.solicitar({
       finalidade: "cadastro", contexto: "d".repeat(64), segredoHash: segredoHashDe(1), chaveHash: chaveHashDe(1),
-      semEnvio: false, agora: INICIO + 1,
+      semEnvio: false, permitido: true, agora: INICIO + 1,
     });
     expect(r.tipo).toBe("conflito");
   });

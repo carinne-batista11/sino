@@ -13,7 +13,12 @@ export type ResultadoEnviador =
   /** Não se sabe se a mensagem foi aceita (tempo esgotado, rede, 5xx...). */
   | { tipo: "incerto" }
   /** A mensagem certamente não foi aceita. */
-  | { tipo: "falha" };
+  | { tipo: "falha" }
+  /**
+   * Destinatário fora da lista: nada foi enviado nem tentado. Só o
+   * EnviadorRestrito devolve; não é falha do provedor e não se repete.
+   */
+  | { tipo: "bloqueado" };
 
 export interface Enviador {
   /**

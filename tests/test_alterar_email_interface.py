@@ -17,6 +17,7 @@ import flet as ft
 
 from apoio_banco import db
 from apoio_interface_codigos import ComServicoFalso
+from apoio_servico import resposta
 from test_sessao_tema import TesteDeSessao, main
 
 import fluxos_codigo as fc  # noqa: E402 -- backend/ entra no caminho pelos módulos de apoio
@@ -108,6 +109,30 @@ class TestAlteracaoDeEmail(BaseAlteracao):
                 self.acionar(pagina, self.botao(pagina, "Cancelar"))
         self.assertEqual(self.servidor.pedidos, [])
         self.assertEqual(self.email_de(self.bia), ("bia@sino.com", 0))
+
+    def test_envio_restrito_no_pedido_no_reenvio_e_na_validacao(self):  # ERS v7.0, 5.49 (contrato v1.1)
+        recusa = resposta(403, {"erro": "destinatario_nao_permitido"})
+        pagina, _ = self.abrir_ajustes()
+        self.editar(pagina)
+        self.servidor.falhas = [recusa]
+        self.pedir(pagina)
+        self.assertIn(fc.MENSAGEM_ENVIO_RESTRITO, self.textos_visiveis(pagina))
+        self.assertTrue(self.campo(pagina, "Novo e-mail").visible)     # continua no pedido
+        self.acionar(pagina, self.botao(pagina, "Cancelar"))
+
+        self.editar(pagina)
+        self.pedir(pagina)
+        self.relogio.avancar(60)
+        self.servidor.falhas = [recusa]
+        reenvio = next(b for b in self.todos(pagina) if getattr(b, "data", None) == "reenviar_codigo")
+        self.acionar(pagina, reenvio)
+        pagina.executar_pendentes()
+        self.assertIn(fc.MENSAGEM_ENVIO_RESTRITO, self.textos_visiveis(pagina))
+        self.servidor.falhas = [recusa]
+        self.confirmar(pagina, self.servidor.ultimo_codigo(NOVO))
+        self.assertIn(fc.MENSAGEM_ENVIO_RESTRITO, self.textos_visiveis(pagina))
+        self.assertEqual(self.email_de(self.bia), ("bia@sino.com", 0))
+        self.assertEqual(self.autorizacoes_usadas(), 0)
 
     def test_senha_atual_antiga_continua_aceita(self):
         legado = hashlib.sha256("a b".encode()).hexdigest()           # formato antigo, curta e com espaço

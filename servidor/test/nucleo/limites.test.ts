@@ -23,7 +23,7 @@ describe("limites por destino", () => {
       tipos.push(
         regras.solicitar({
           finalidade: FINALIDADES[i % 3], contexto: CONTEXTO, segredoHash: `s${i}`, chaveHash: `k${i}`,
-          semEnvio: false, agora: INICIO + i * INTERVALO_REENVIO_MS,
+          semEnvio: false, permitido: true, agora: INICIO + i * INTERVALO_REENVIO_MS,
         }).tipo,
       );
     }
@@ -39,7 +39,7 @@ describe("limites por destino", () => {
       const agora = inicioDoDia + Math.floor(i / 2) * HORA_MS + (i % 2) * INTERVALO_REENVIO_MS;
       tipos.push(
         regras.solicitar({
-          finalidade: "cadastro", contexto: CONTEXTO, segredoHash: `s${i}`, chaveHash: `k${i}`, semEnvio: false, agora,
+          finalidade: "cadastro", contexto: CONTEXTO, segredoHash: `s${i}`, chaveHash: `k${i}`, semEnvio: false, permitido: true, agora,
         }).tipo,
       );
     }
@@ -47,7 +47,7 @@ describe("limites por destino", () => {
     expect(tipos[10]).toBe("limite");
     // No dia seguinte, volta a aceitar.
     const amanha = regras.solicitar({
-      finalidade: "cadastro", contexto: CONTEXTO, segredoHash: "s-x", chaveHash: "k-x", semEnvio: false,
+      finalidade: "cadastro", contexto: CONTEXTO, segredoHash: "s-x", chaveHash: "k-x", semEnvio: false, permitido: true,
       agora: inicioDoDia + DIA_MS,
     });
     expect(amanha.tipo).toBe("criado");
@@ -58,11 +58,11 @@ describe("limites por destino", () => {
     for (let i = 0; i < 5; i++) {
       regras.solicitar({
         finalidade: "recuperacao_senha", contexto: CONTEXTO, segredoHash: `s${i}`, chaveHash: `k${i}`,
-        semEnvio: i % 2 === 0, agora: INICIO + i * INTERVALO_REENVIO_MS,
+        semEnvio: i % 2 === 0, permitido: true, agora: INICIO + i * INTERVALO_REENVIO_MS,
       });
     }
     const sexto = regras.solicitar({
-      finalidade: "recuperacao_senha", contexto: CONTEXTO, segredoHash: "s5", chaveHash: "k5", semEnvio: true,
+      finalidade: "recuperacao_senha", contexto: CONTEXTO, segredoHash: "s5", chaveHash: "k5", semEnvio: true, permitido: true,
       agora: INICIO + 5 * INTERVALO_REENVIO_MS,
     });
     expect(sexto.tipo).toBe("limite");

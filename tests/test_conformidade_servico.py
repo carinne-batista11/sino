@@ -110,6 +110,23 @@ class TestTranscricoesDoServidor(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await cliente.pedir_codigo(op), sc.CodigoSolicitado())
         self.assertEqual(await cliente.validar_codigo(op, cenario["codigo"]), sc.DesafioEncerrado())
 
+    async def test_cadastro_fora_da_lista(self):
+        _, cliente, op = self.preparar("cadastro_fora_da_lista")
+        self.assertEqual(await cliente.pedir_codigo(op), sc.DestinatarioNaoPermitido())
+        self.assertIsNone(op.desafio_id)
+
+    async def test_alteracao_removida_antes_da_validacao(self):
+        cenario, cliente, op = self.preparar("alteracao_removida_antes_da_validacao")
+        self.assertEqual(await cliente.pedir_codigo(op), sc.CodigoSolicitado())
+        self.assertEqual(await cliente.validar_codigo(op, cenario["codigo"]), sc.DestinatarioNaoPermitido())
+        self.assertIsNone(op.desafio_id)
+
+    async def test_recuperacao_fora_da_lista(self):
+        cenario, cliente, op = self.preparar("recuperacao_fora_da_lista")
+        # Mesma resposta neutra de um pedido com envio; o código certo não autoriza.
+        self.assertEqual(await cliente.pedir_codigo(op, sem_envio=False), sc.CodigoSolicitado())
+        self.assertEqual(await cliente.validar_codigo(op, cenario["codigo"]), sc.CodigoInvalido(4))
+
     def test_todos_os_cenarios_tem_teste(self):
         nomes = {n[len("test_"):] for n in dir(self) if n.startswith("test_") and n != "test_todos_os_cenarios_tem_teste"}
         self.assertEqual(set(self.dados["cenarios"]), nomes)

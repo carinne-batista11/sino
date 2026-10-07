@@ -13,7 +13,11 @@ O que faz, nesta ordem:
   3. confere que db.py, banco e backups da cópia apontam para PASTA/app;
      o banco nasce vazio pelo inicializador normal do Sino na abertura do app
      (o banco real nunca é copiado);
-  4. gera as chaves da demonstração (uma vez, permissão 600);
+  4. gera as chaves da demonstração e a lista de destinatários (uma vez,
+     permissão 600): só os três endereços FICTÍCIOS de
+     destinatarios.DESTINATARIOS_FICTICIOS (domínio reservado .invalid),
+     mostrados no terminal e em PASTA/destinatarios_ficticios.txt. O serviço
+     local exige a lista como o de produção; não há modo sem restrição;
   5. sobe a caixa (com abertura das mensagens no editor) e o `wrangler dev`
      da configuração de desenvolvimento, só em 127.0.0.1;
   6. abre o app com SINO_MODO_DEMONSTRACAO=1: janela "Sino — Demonstração" e
@@ -41,6 +45,7 @@ import time
 from http.server import HTTPServer
 
 import caixa_dev as cd
+import destinatarios
 
 PORTA_INSPETOR = 9229
 PORTAS = (cd.PORTA_SERVICO, cd.PORTA_PADRAO, PORTA_INSPETOR)
@@ -162,14 +167,23 @@ def conferir_caminhos(app):
     return caminhos
 
 
+ARQUIVOS_DE_CHAVES = ("segredos_dev.env", "app_dev.env", cd.ORIENTACAO_DESTINATARIOS)
+
+
 def preparar_chaves(raiz):
-    existentes = [n for n in ("segredos_dev.env", "app_dev.env") if os.path.exists(os.path.join(raiz, n))]
-    if len(existentes) == 1:
-        raise DemonstracaoIncompativel(f"só {existentes[0]} existe na pasta; não gero nem sobrescrevo chaves.")
+    existentes = [n for n in ARQUIVOS_DE_CHAVES if os.path.exists(os.path.join(raiz, n))]
+    if existentes and len(existentes) < len(ARQUIVOS_DE_CHAVES):
+        raise DemonstracaoIncompativel(
+            f"a pasta tem só parte das chaves ({', '.join(existentes)}); não gero nem sobrescrevo nada. "
+            "Pastas de versões anteriores (sem a lista de destinatários) não são reaproveitadas: use outra pasta.")
     if not existentes:
         with open(os.devnull, "w") as nulo, contextlib.redirect_stdout(nulo):
             cd.gerar_chaves(raiz)
-    return os.path.join(raiz, "segredos_dev.env"), os.path.join(raiz, "app_dev.env")
+    segredos = os.path.join(raiz, "segredos_dev.env")
+    with open(segredos, encoding="utf-8") as arquivo:
+        if not any(l.startswith("DESTINATARIOS_PERMITIDOS=") for l in arquivo.read().splitlines()):
+            raise DemonstracaoIncompativel("segredos_dev.env sem a lista de destinatários; use outra pasta.")
+    return segredos, os.path.join(raiz, "app_dev.env")
 
 
 def ler_variaveis_do_app(caminho):
@@ -266,6 +280,9 @@ def demonstrar(pasta, revisao="HEAD", node_bin=None):
     print(f"demonstração: banco {caminhos['banco']}"
           f"{'' if os.path.exists(caminhos['banco']) else ' (será criado vazio ao abrir o app)'}")
     print(f"demonstração: mensagens em {caixa}; logs em {logs}")
+    print("demonstração: endereços aceitos (fictícios, nenhum e-mail real é enviado): "
+          + ", ".join(destinatarios.DESTINATARIOS_FICTICIOS))
+    print(f"demonstração: orientação em {os.path.join(raiz, cd.ORIENTACAO_DESTINATARIOS)}")
 
     servidor_caixa = HTTPServer((cd.ENDERECO, cd.PORTA_PADRAO), cd.criar_receptor(caixa, cd.abrir_mensagem))
     threading.Thread(target=servidor_caixa.serve_forever, daemon=True).start()

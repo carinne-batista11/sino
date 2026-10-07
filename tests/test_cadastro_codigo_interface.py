@@ -126,6 +126,34 @@ class TestCadastroComCodigo(BaseCadastro):
                 self.assertEqual(self.campo(pagina, "Senha").value, SENHA)  # pode tentar de novo
                 self.assertIsNone(self.usuario())
 
+    def test_envio_restrito_no_pedido_no_reenvio_e_na_validacao(self):  # ERS v7.0, 5.49 (contrato v1.1)
+        recusa = resposta(403, {"erro": "destinatario_nao_permitido"})
+        # Pedido: a mensagem aparece, o formulário é liberado e nada é gravado.
+        self.servidor.falhas = [recusa]
+        pagina, _ = self.abrir_cadastro()
+        self.preencher(pagina)
+        self.criar(pagina)
+        pagina.executar_pendentes()
+        self.assertIn(fc.MENSAGEM_ENVIO_RESTRITO, self.textos_visiveis(pagina))
+        self.assertIn("Crie sua conta", self.textos_visiveis(pagina))
+        self.assertFalse(self.botao(pagina, "Criar conta").disabled)
+        self.assertIsNone(self.usuario())
+
+        # Reenvio e validação na etapa do código.
+        pagina, _ = self.abrir_cadastro()
+        self.ate_o_codigo(pagina)
+        self.relogio.avancar(60)
+        self.servidor.falhas = [recusa]
+        self.acionar(pagina, self.reenvio(pagina))
+        pagina.executar_pendentes()
+        self.assertIn(fc.MENSAGEM_ENVIO_RESTRITO, self.textos_visiveis(pagina))
+        self.servidor.falhas = [recusa]
+        self.confirmar(pagina, self.servidor.ultimo_codigo("carla@sino.com"))
+        pagina.executar_pendentes()
+        self.assertIn(fc.MENSAGEM_ENVIO_RESTRITO, self.textos_visiveis(pagina))
+        self.assertIsNone(self.usuario())
+        self.assertEqual(self.autorizacoes_usadas(), 0)
+
     def test_codigo_errado_esgotado_reenvio_e_codigo_anterior(self):  # CT90, CT91, CT113
         pagina, _ = self.abrir_cadastro()
         self.ate_o_codigo(pagina)

@@ -34,6 +34,7 @@ class TestMensagens(unittest.TestCase):
             sc.ServicoIndisponivel(): ("O serviço de confirmação por e-mail não está disponível agora. "
                                        "Tente novamente mais tarde.", True),
             sc.RespostaInvalida(): (fc.MENSAGEM_FALHA_GENERICA, True),
+            sc.DestinatarioNaoPermitido(): ("O envio de códigos está restrito nesta fase do Sino.", True),
         }
         for resultado, esperado in casos.items():
             with self.subTest(resultado=type(resultado).__name__):
@@ -52,6 +53,8 @@ class TestMensagens(unittest.TestCase):
                          ("Código incorreto. Solicite um novo código.", True))
         self.assertEqual(fc.mensagem_da_validacao(sc.DesafioEncerrado())[1], True)
         self.assertEqual(fc.mensagem_da_validacao(sc.SemConexao()), fc.mensagem_do_pedido(sc.SemConexao()))
+        self.assertEqual(fc.mensagem_da_validacao(sc.DestinatarioNaoPermitido()),
+                         ("O envio de códigos está restrito nesta fase do Sino.", True))
 
 
 class OperacaoFalsa:

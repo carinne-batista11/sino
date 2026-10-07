@@ -1,9 +1,10 @@
-// Rotas HTTP do contrato v1 (docs/contrato-servico-codigos.md): validação
+// Rotas HTTP do contrato v1.1 (docs/contrato-servico-codigos.md): validação
 // estrita da entrada e respostas JSON sem dados sensíveis.
 
 import { FINALIDADES, type Finalidade } from "./config";
 import { emailValido } from "./email";
 import { pedirDesafio, validarDesafio, type Dependencias, type Resposta } from "./fluxos";
+import { ERRO_ESQUEMA_INCOMPATIVEL } from "./nucleo/desafios";
 import { registrarFalha } from "./nucleo/registro";
 
 const RE_CHAVE = /^[A-Za-z0-9_-]{16,128}$/;
@@ -80,6 +81,10 @@ export function criarApp(deps: Dependencias) {
         return await rotear(deps, requisicao);
       } catch (erro) {
         registrarFalha("requisição", erro);
+        // Estado local de versão anterior num objeto: serviço indisponível.
+        if (erro instanceof Error && erro.message === ERRO_ESQUEMA_INCOMPATIVEL) {
+          return json({ status: 503, corpo: { erro: "servico_indisponivel" } });
+        }
         return json({ status: 500, corpo: { erro: "erro_interno" } });
       }
     },

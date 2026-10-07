@@ -1,6 +1,7 @@
-// Vetores de assinatura e transcrições do contrato v1, compartilhados com o
-// cliente Python (tests/test_conformidade_servico.py e
-// tests/test_autorizacao_servico.py). O teste falha se o servidor deixar de
+// Vetores de assinatura, transcrições do contrato v1.1 e vetores da lista de
+// destinatários, compartilhados com o
+// cliente Python (tests/test_conformidade_servico.py,
+// tests/test_autorizacao_servico.py e tests/test_ferramenta_destinatarios.py). O teste falha se o servidor deixar de
 // produzir exatamente o que está versionado em servidor/test/conformidade/.
 // Para regenerar depois de uma mudança intencional do contrato:
 //   SINO_ATUALIZAR_CONFORMIDADE=1 npx vitest run --project nucleo conformidade
@@ -20,6 +21,12 @@ import {
   verificarAutorizacao,
 } from "../../src/nucleo/autorizacao";
 import { paraBase64Url, sha256Hex } from "../../src/nucleo/cripto";
+import {
+  lerDestinatarios,
+  montarDestinatarios,
+  resumoDoEmail,
+  verificacaoDaLista,
+} from "../../src/nucleo/destinatarios";
 import type { DadosAutorizacao } from "../../src/nucleo/desafios";
 import { CHAVE_ASSINATURA, KID, Mundo } from "./apoio";
 
@@ -258,8 +265,47 @@ async function transcricoes() {
     const p2 = await passo(app, `/v1/desafios/${idDe(p1)}/validacao`, op.chaves[1], corpoValidacao(EMAIL, op, codigo));
     cenarios.desafio_substituido = { finalidade: "cadastro", email: EMAIL, aleatorios: a, codigo, passos: [p1, p2] };
   }
+  const FORA = "Fora@Exemplo.com";
+  {
+    // v1.1: cadastro para destinatário fora da lista: 403 e nada gravado.
+    const mundo = new Mundo();
+    const app = criarApp(mundo.deps());
+    const a = aleatorios("fora-da-lista", 1);
+    const op = operacao("cadastro", FORA, a);
+    const p1 = await passo(app, "/v1/desafios", op.chaves[0], corpoPedido("cadastro", FORA, op));
+    cenarios.cadastro_fora_da_lista = { finalidade: "cadastro", email: FORA, aleatorios: a, passos: [p1] };
+  }
+  {
+    // v1.1: código enviado, destinatário removido da lista antes da validação.
+    const mundo = new Mundo();
+    const app = criarApp(mundo.deps());
+    const a = aleatorios("removido", 2);
+    const op = operacao("alteracao_email", EMAIL, a);
+    const p1 = await passo(app, "/v1/desafios", op.chaves[0], corpoPedido("alteracao_email", EMAIL, op));
+    const codigo = mundo.enviador.ultimoCodigo(EMAIL)!;
+    mundo.remover(EMAIL);
+    const p2 = await passo(app, `/v1/desafios/${idDe(p1)}/validacao`, op.chaves[1], corpoValidacao(EMAIL, op, codigo));
+    cenarios.alteracao_removida_antes_da_validacao = {
+      finalidade: "alteracao_email", email: EMAIL, aleatorios: a, codigo, passos: [p1, p2],
+    };
+  }
+  {
+    // v1.1: recuperação fora da lista: mesma resposta neutra, nunca autoriza.
+    const mundo = new Mundo();
+    const app = criarApp(mundo.deps());
+    const a = aleatorios("recuperacao-fora", 2);
+    const op = operacao("recuperacao_senha", FORA, a);
+    const codigo = mundo.aleatorio.proximoCodigo();
+    const p1 = await passo(app, "/v1/desafios", op.chaves[0], corpoPedido("recuperacao_senha", FORA, op, false));
+    await mundo.concluirSegundoPlano();
+    expect(mundo.enviador.enviadas).toHaveLength(0);
+    const p2 = await passo(app, `/v1/desafios/${idDe(p1)}/validacao`, op.chaves[1], corpoValidacao(FORA, op, codigo));
+    cenarios.recuperacao_fora_da_lista = {
+      finalidade: "recuperacao_senha", sem_envio: false, email: FORA, aleatorios: a, codigo, passos: [p1, p2],
+    };
+  }
   return {
-    descricao: "Transcrições do contrato v1 geradas pelo servidor com relógio e aleatoriedade fixos.",
+    descricao: "Transcrições do contrato v1.1 geradas pelo servidor com relógio e aleatoriedade fixos.",
     kid: KID,
     chave_publica_hex: bytesToHex(chavePublicaDe(CHAVE_ASSINATURA)),
     cenarios,
@@ -323,6 +369,34 @@ describe("formato de e-mail compartilhado", () => {
       descricao: "Formato de e-mail dos fluxos com código: aparar só espaços U+0020 nas bordas; "
         + "ASCII imprimível, exatamente um @, partes não vazias, até 254; minúsculas ASCII.",
       casos,
+    });
+  });
+});
+
+// ------------------------------------------------------------ destinatários
+
+describe("lista de destinatários compartilhada", () => {
+  it("coincide com o arquivo compartilhado", () => {
+    // Chave de teste (não é credencial) e endereços fictícios.
+    const chave = new Uint8Array(32).fill(0x11);
+    const entradas = [
+      "pessoa@exemplo.com", "  Pessoa@Exemplo.COM ", "PESSOA+tag@Sub.Example.ORG", "pessoa1@demonstracao.invalid",
+      "\u212Aelvin@exemplo.com", "pessoa@exemplo.com\u00a0", "sem-arroba",
+    ];
+    const casos = entradas.map((entrada) => ({
+      entrada,
+      resumo: emailValido(entrada) ? resumoDoEmail(chave, entrada) : null,
+    }));
+    const lista = ["pessoa@exemplo.com", "Pessoa@Exemplo.com", "pessoa1@demonstracao.invalid"];
+    const texto = montarDestinatarios(chave, lista);
+    expect(lerDestinatarios(texto, chave)?.size).toBe(2);
+    conferirArquivo("destinatarios.json", {
+      descricao: "Resumos da lista de destinatários (contrato v1.1): HMAC-SHA256 com rótulo 'email' do e-mail "
+        + "normalizado; verificação 'v1:' + HMAC do rótulo 'verificacao-lista'. Chave de teste, não é credencial.",
+      chave_hmac_hex: bytesToHex(chave),
+      verificacao: verificacaoDaLista(chave),
+      casos,
+      lista: { emails: lista, texto },
     });
   });
 });

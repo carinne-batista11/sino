@@ -1,6 +1,11 @@
 # Contrato do serviço de códigos do Sino (Etapa 8)
 
-Versão do contrato: **v1** (rascunho do primeiro bloco local; o serviço ainda não foi publicado).
+Versão do contrato: **v1.1** (v1 da Etapa 8 + restrição de destinatários da E3,
+ERS v7.0 5.49; o serviço ainda não foi publicado). A v1.1 só acrescenta: a
+lista de destinatários, a resposta `403 destinatario_nao_permitido` (cadastro e
+alteração), o estado de envio `bloqueado` e o segredo `DESTINATARIOS_PERMITIDOS`.
+A autorização assinada não muda (`"v":1`). Um cliente da v1 trata o 403 como
+resposta fora do contrato (falha genérica), sem risco.
 
 O serviço centralizado gera, envia e valida os códigos de e-mail usados no
 cadastro, na alteração de e-mail e na recuperação de senha (ERS v6.0, 5.31,
@@ -32,6 +37,56 @@ com SQLite; envio pela Resend).
 
 Janelas fixas: hora cheia e dia UTC. Cada objeto conta de forma atômica; entre
 objetos, uma vaga reservada nunca é devolvida (contagem a mais, nunca a menos).
+
+## Restrição de destinatários (v1.1)
+
+O serviço só envia códigos aos endereços da lista do ambiente (uso restrito,
+ERS v7.0 5.49). Não existe modo sem restrição, nem no desenvolvimento.
+
+* **Lista:** segredo `DESTINATARIOS_PERMITIDOS`, numa linha:
+  `v1:<verificação>,<resumo>,<resumo>,…` (uma quebra de linha final é aceita).
+  * `resumo` = HMAC-SHA256 pela `CHAVE_HMAC`, em hexadecimal minúsculo, do
+    texto `"email" + "\x1f" + e-mail normalizado` (o mesmo resumo que identifica
+    o objeto do destinatário); de 1 a **50**, sem repetição;
+  * `verificação` = o mesmo HMAC do texto `"verificacao-lista"`. Ela **só
+    detecta** uma lista gerada com outra `CHAVE_HMAC`; não prova a integridade
+    do restante do conteúdo;
+  * ausente, vazia ou fora desse formato (inclusive com resumo repetido): o
+    serviço responde `503 servico_indisponivel` em todas as rotas;
+  * trocar a `CHAVE_HMAC` exige gerar a lista de novo com a chave nova;
+  * gerada pela ferramenta local `servidor/ferramentas/destinatarios.py`, que
+    não mostra e-mails, chave nem resumos.
+* **Comparação:** pela forma normalizada do formato de e-mail abaixo (espaços
+  comuns nas bordas e minúsculas ASCII). Nenhuma outra limpeza é aplicada.
+* **Onde a lista é conferida:**
+  1. **no pedido**, depois do limite por IP (que é consumido) e antes do teto e
+     do objeto do destinatário, também nas repetições com a mesma
+     `Idempotency-Key`:
+     * cadastro e alteração fora da lista: `403 destinatario_nao_permitido`;
+       nada é gravado e os limites do destinatário e o teto não são consumidos;
+     * recuperação fora da lista: o desafio é criado **sem envio**, com a mesma
+       resposta, os mesmos limites e o mesmo comportamento na validação de um
+       pedido `sem_envio` (a resposta não revela se o endereço está na lista);
+       a impressão do pedido continua só com o que o cliente enviou;
+  2. **antes de enviar** (camada A, no início do envio, inclusive o envio em
+     segundo plano da recuperação): fora da lista, o desafio fica `bloqueado`,
+     invalidado, sem reserva global;
+  3. **imediatamente antes do provedor** (camada B, que envolve o enviador):
+     fora da lista, nada é chamado nem repetido e o desafio fica `bloqueado`
+     (a vaga do teto já reservada não é devolvida). Bloqueio pela lista nunca é
+     tratado como falha nem como resultado incerto do provedor;
+  4. **em toda validação** (revogação): ver a validação abaixo.
+* **Limites (aceitos e documentados):**
+  * a revogação **não é instantânea**: uma autorização já emitida continua
+    válida até o `exp` original (o fim da validade do código), porque o
+    aplicativo a confere localmente e não consulta o serviço; execuções já em
+    andamento usam a configuração com que começaram;
+  * a recusa vale para a lista **atual**; o desafio só fica invalidado de
+    forma permanente quando uma validação acontece com o endereço fora da lista.
+    Remover e incluir de novo, sem validação no meio, não invalida o desafio;
+  * um pedido de cadastro ou alteração recusado não grava nada: a mesma
+    `Idempotency-Key` pode ser aceita (e enviar) depois da inclusão do endereço;
+  * um desafio de recuperação sem envio nunca é reativado por repetição.
 
 ## Endpoints
 
@@ -91,6 +146,7 @@ Respostas:
 | 202 | `{desafio_id, expira_em, reenvio_permitido_em, agora}` | recuperação: **sempre** a mesma resposta, com ou sem envio; o envio ocorre depois da resposta |
 | 202 | `{estado: "em_processamento", desafio_id, expira_em, reenvio_permitido_em, agora}` + `Retry-After: 2` | cadastro/alteração: repetição enquanto a requisição original ainda reserva a vaga de envio |
 | 400 | `{erro: "requisicao_invalida"}` | corpo ou cabeçalho fora do formato |
+| 403 | `{erro: "destinatario_nao_permitido"}` | v1.1, só cadastro/alteração: destinatário fora da lista (pedido ou repetição), ou envio barrado pela lista na mesma requisição |
 | 410 | `{erro: "desafio_encerrado"}` | repetição de um pedido cujo desafio expirou ou foi invalidado (ver abaixo) |
 | 413 | `{erro: "corpo_grande_demais"}` | corpo acima de 4 KiB |
 | 409 | `{erro: "conflito_idempotencia"}` | mesma `Idempotency-Key` com outro conteúdo |
@@ -111,9 +167,11 @@ desafio, **sem criar outro e sem novo envio**.
   * envio aceito, em andamento ou incerto → 201;
   * falha de envio, ou reserva abandonada (sem avanço em 60 s) → 502;
   * teto global atingido para esse desafio → 503;
+  * destinatário fora da lista atual → 403, mesmo que o pedido original tenha
+    sido aceito (nenhum envio novo);
   * desafio expirado, substituído, com tentativas esgotadas ou de outra forma
-    invalidado → 410. Um desafio já validado continua respondendo 201 até o
-    `expira_em`.
+    invalidado (inclusive bloqueado pela lista, se o endereço voltou à lista) →
+    410. Um desafio já validado continua respondendo 201 até o `expira_em`.
 * Recuperação: 202 enquanto o desafio estiver ativo e 410 depois de expirado,
   substituído ou com tentativas esgotadas — igual com e sem envio. Falhas de
   envio, teto atingido e reserva abandonada **não** encerram o desafio para
@@ -133,6 +191,7 @@ tentativa do usuário.
 |---|---|---|
 | 200 | `{autorizacao, expira_em, agora}` | código correto |
 | 400 | `{erro: "requisicao_invalida"}` | formato inválido (não conta tentativa) |
+| 403 | `{erro: "destinatario_nao_permitido"}` | v1.1, só cadastro/alteração: destinatário fora da lista atual (não conta tentativa; invalida o desafio) |
 | 404 | `{erro: "desafio_nao_encontrado"}` | desafio inexistente ou `segredo` que não confere (não conta tentativa) |
 | 409 | `{erro: "conflito_idempotencia"}` | mesma `Idempotency-Key` com outro código |
 | 410 | `{erro: "desafio_encerrado"}` | expirado, invalidado, tentativas esgotadas ou já validado por outra tentativa |
@@ -153,9 +212,25 @@ Regras de repetição:
 * Um desafio só pode autorizar se tiver reserva global registrada e envio em
   andamento, concluído ou incerto. Desafios sem reserva ou `sem_envio` tratam o
   código como errado, mesmo que ele coincida.
-* Na recuperação, um desafio invalidado por falha de envio, teto atingido ou
-  reserva abandonada responde como o desafio sem envio: `422 codigo_invalido`
-  (contando tentativas) até esgotá-las ou expirar, nunca autorização.
+* Na recuperação, um desafio invalidado por falha de envio, teto atingido,
+  reserva abandonada ou pela lista de destinatários responde como o desafio sem
+  envio: `422 codigo_invalido` (contando tentativas) até esgotá-las ou expirar,
+  nunca autorização.
+* **Lista de destinatários (v1.1)**, conferida em toda validação, depois do
+  `segredo` (sem ele, a resposta continua `404`):
+  * cadastro e alteração fora da lista: `403`, para qualquer código e também na
+    repetição de uma validação que já tinha autorizado; a tentativa não conta e
+    o desafio é invalidado (motivo `destinatario_nao_permitido`), de modo que
+    incluir o endereço de novo não o reativa (depois disso, `410`);
+  * recuperação fora da lista: como o desafio sem envio — `422` contando a
+    tentativa, mesmo com o código certo; a repetição de um `422` devolve o mesmo
+    resultado; a repetição de uma validação que já tinha autorizado recebe
+    `410`, nunca a autorização. Se o código tinha sido enviado, o desafio
+    recebe uma marca neutra (motivo `destinatario_nao_permitido`, com o
+    instante de invalidação igual ao `expira_em`) que impede a reativação sem
+    mudar nada que quem pediu possa observar: ele segue parecendo ativo até
+    expirar ou esgotar as tentativas, a retenção é a mesma e um novo pedido o
+    substitui como a qualquer outro (`410` depois disso).
 
 ## Autorização assinada
 
@@ -179,8 +254,10 @@ foi usado. A autorização não contém e-mail, nome, senha nem dados do aplicat
 ## Envio e estados
 
 `estado_envio` de um desafio: `pendente_reserva` → `reservado` → `enviando` →
-`enviado` | `incerto` | `falhou`; ou `sem_reserva` (teto global atingido) ou
-`sem_envio`.
+`enviado` | `incerto` | `falhou`; ou `sem_reserva` (teto global atingido),
+`sem_envio` (pedido sem envio, ou recuperação fora da lista) ou `bloqueado`
+(v1.1: envio barrado pela lista; invalidado, nunca autoriza). Um desafio
+`sem_envio` nunca passa a enviar.
 
 * Sem reserva global registrada, o desafio nunca autoriza, mesmo que a
   invalidação posterior falhe.
@@ -240,9 +317,10 @@ segredos ou corpos de mensagem em logs.
 | `KID_ASSINATURA` | identificador da chave de assinatura |
 | `RESEND_API_KEY` | chave da API da Resend |
 | `REMETENTE` | `Sino <endereço>`; na fase de teste, `Sino <onboarding@resend.dev>` |
+| `DESTINATARIOS_PERMITIDOS` | v1.1: lista de resumos dos destinatários permitidos (ver "Restrição de destinatários") |
 
-Sem `CHAVE_HMAC`, `CHAVE_ASSINATURA` ou `KID_ASSINATURA` válidos, o serviço responde
-`503 servico_indisponivel`. Nenhum segredo fica no aplicativo nem no repositório.
+Sem `CHAVE_HMAC`, `CHAVE_ASSINATURA`, `KID_ASSINATURA` ou `DESTINATARIOS_PERMITIDOS`
+válidos, o serviço responde `503 servico_indisponivel`. Nenhum segredo fica no aplicativo nem no repositório.
 
 ## Comportamento esperado do cliente
 
@@ -252,6 +330,11 @@ Referência: `backend/servico_codigos.py` (cliente do aplicativo) e
 * Corpo JSON compacto (sem espaços), com as chaves na ordem deste contrato. Na
   recuperação, `sem_envio` vai sempre no corpo (`true` ou `false`), para que os
   pedidos com e sem envio tenham o mesmo formato.
+* `403 destinatario_nao_permitido` (v1.1) só é aceito no cadastro e na
+  alteração, com exatamente esse corpo: é uma resposta definitiva (sem
+  repetição). Na validação, o desafio da operação é encerrado. O app mostra
+  "O envio de códigos está restrito nesta fase do Sino.". Um 403 na
+  recuperação, ou com outro corpo, é resposta fora do contrato.
 * Cada ação do usuário usa uma `Idempotency-Key` nova (18 bytes aleatórios em
   base64url). Falha de rede, tempo esgotado, `503` na validação e `202
   em_processamento` são repetidos com a **mesma** chave e o mesmo corpo.
@@ -297,6 +380,11 @@ autorização assinada —, com estas diferenças:
   resultado incerto;
 * `RESEND_API_KEY` não é exigida; `CHAVE_HMAC` e `CHAVE_ASSINATURA` são
   geradas localmente para cada pasta de teste;
+* a lista de destinatários é **exigida** como na produção (sem modo
+  irrestrito) e é gerada na mesma pasta só com três endereços fictícios
+  (`pessoa1@demonstracao.invalid`, `pessoa2@demonstracao.invalid` e
+  `pessoa3@demonstracao.invalid`; domínio reservado, que nunca recebe e-mail),
+  listados também em `destinatarios_ficticios.txt`;
 * o serviço escuta só em `127.0.0.1`, e a configuração aceita um atraso
   artificial de 0 a 15 s antes de cada entrega, para observar o carregamento
   nas telas.
@@ -310,9 +398,11 @@ confirmado por ela não comprova acesso ao endereço.
 
 ## Conformidade
 
-`servidor/test/conformidade/autorizacao.json` (vetores de assinatura) e
-`servidor/test/conformidade/transcricoes.json` (requisições e respostas reais)
-são gerados pelos testes do servidor com relógio e aleatoriedade fixos, e
-reproduzidos byte a byte pelos testes do cliente Python. Uma mudança no
+`servidor/test/conformidade/autorizacao.json` (vetores de assinatura),
+`servidor/test/conformidade/transcricoes.json` (requisições e respostas reais,
+inclusive os cenários da v1.1) e `servidor/test/conformidade/destinatarios.json`
+(resumos e verificação da lista, com chave de teste) são gerados pelos testes do
+servidor com relógio e aleatoriedade fixos, e reproduzidos pelos testes do
+cliente Python e da ferramenta local. Uma mudança no
 contrato exige regenerá-los (`SINO_ATUALIZAR_CONFORMIDADE=1`) e conferir as
 duas suítes.

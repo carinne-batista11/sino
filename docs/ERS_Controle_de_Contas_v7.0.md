@@ -161,9 +161,19 @@ Os 29 primeiros são o conjunto que o Python 3.11 considera espaço em branco; a
 ## 5.49 Envio real de códigos em uso restrito [v7 novo, M8; completa 5.31 e 5.32]
 
 * O serviço de códigos é publicado primeiro em **uso restrito aos endereços da autora**, com **restrição técnica de destinatários** no próprio serviço: fora da lista, nenhum código é enviado.
-  * **Cadastro e alteração de e-mail:** recusa com mensagem própria (proposta: "O envio de códigos está restrito nesta fase do Sino.").
-  * **Recuperação de senha:** mantém a resposta neutra e não envia.
+  * **Cadastro e alteração de e-mail:** recusa com a mensagem **"O envio de códigos está restrito nesta fase do Sino."**, no pedido, no reenvio e na validação do código (P39).
+  * **Recuperação de senha:** mantém a resposta neutra e não envia; a resposta não revela se o endereço está na lista.
 * Lista ausente **não** significa "aberto a todos"; a abertura exige uma mudança explícita de configuração, feita só depois das condições da seção 11.3.
+* **Regras técnicas (E3, contrato v1.1; P39):**
+  * a lista é um segredo de cada ambiente (`DESTINATARIOS_PERMITIDOS`), só com resumos HMAC dos endereços, até **50**; lista ausente, vazia ou inválida deixa o serviço **indisponível** (503); não existe modo sem restrição, nem no desenvolvimento;
+  * a lista é conferida no pedido, imediatamente antes do envio (inclusive o envio em segundo plano da recuperação) e em **toda validação**: um destinatário removido não obtém nova autorização com um código antigo;
+  * a comparação usa a regra de e-mail do contrato (espaços comuns nas bordas e minúsculas ASCII), sem a limpeza da M1;
+  * o desenvolvimento e o modo de demonstração aceitam só três endereços fictícios (`pessoa1@demonstracao.invalid` a `pessoa3@…`), com envio apenas simulado na caixa local.
+* **Limites aceitos e documentados (P39):**
+  * a revogação **não é instantânea**: uma autorização já emitida continua válida até o `exp` original (no máximo o fim da validade do código); execuções já em andamento usam a configuração com que começaram;
+  * a recusa pela lista vale para a lista **atual**; o desafio só fica invalidado de forma permanente quando uma validação acontece com o endereço fora da lista. Remover e incluir de novo, sem validação no meio, não invalida o desafio;
+  * um pedido de cadastro ou alteração recusado não grava nada: a mesma `Idempotency-Key` pode ser aceita depois da inclusão do destinatário;
+  * um desafio de recuperação sem envio nunca é reativado por repetição.
 * Limites contra abuso do contrato v1 mantidos no uso restrito; reavaliados antes de abrir a terceiros.
 * **Antes de habilitar o envio real**, os Termos e a Política são atualizados e o novo aceite é exigido (5.53).
 
@@ -311,6 +321,8 @@ Os casos CT01–CT118 continuam válidos como regressão, com as alterações in
 | CT136 | Comparativo no mensal e no anual | Mesmas categorias, ordem e cores da rosca; contorno com 3:1; valor e nome legíveis | 5.48 |
 | CT137 | Nome completo de uma categoria pelo teclado e por clique | Exibido nos dois casos | 5.48 |
 | CT138 | Pedido de código para endereço fora da lista em uso restrito | Cadastro e alteração recusados; recuperação neutra; nada enviado | 5.49 |
+| CT157 | Código enviado; endereço removido da lista antes da validação | Cadastro e alteração: "O envio de códigos está restrito nesta fase do Sino.", sem contar tentativa e sem autorização; recuperação: mesma resposta de código incorreto, nunca autoriza; incluir o endereço de novo não reativa o desafio | 5.49 |
+| CT158 | Envio barrado pela lista imediatamente antes do provedor (inclusive em segundo plano) | Nada enviado nem repetido; desafio registrado como bloqueado, nunca como falha do provedor; nenhuma autorização | 5.49 |
 | CT139 | Anexar JPEG com GPS | Cópia guardada sem metadados e com orientação correta; original intacto | 5.50 |
 | CT140 | Anexar arquivo acima de 5 MB, PNG animado, imagem de 12.000 px ou arquivo corrompido | Recusado com mensagem; nada gravado | 5.50 |
 | CT141 | Quarto comprovante numa conta | Recusado | 5.50 |
@@ -365,7 +377,7 @@ O escopo completo está atendido quando:
 * as migrações v9 (aceites) e v10 (comprovantes) rodaram sem perda de dados;
 * a escolha criptográfica do pacote de backup foi revisada (T8);
 * a legibilidade (RNF09) e o acesso pelo teclado (RNF14) dos componentes novos foram verificados nos dois temas;
-* os casos CT119–CT156 aplicáveis foram aprovados, com a regressão CT01–CT118 passando.
+* os casos CT119–CT158 aplicáveis foram aprovados, com a regressão CT01–CT118 passando.
 
 Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declarado completo, mesmo com as demais entregas publicadas (P30).
 
@@ -433,6 +445,7 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 | P27 | Linhas empilhadas em janela estreita; nomes inteiros | 5.52 |
 | P28 | Versões e aceite; critério de relevância; revisão jurídica antes de terceiros; histórico no repositório | 5.53 |
 | P29 | M9 adiada; MIT mantida até pedido explícito da autora. **Reaberta em 06/10/2026** pelo pedido explícito previsto (P32) | 2.2 |
+| P39 | (07/10/2026) **E3 — restrição de destinatários:** lista de resumos HMAC em segredo por ambiente, até 50 únicos; ausente, vazia ou inválida = 503; contrato v1.1 com `403 destinatario_nao_permitido` só no cadastro e na alteração (pedido, reenvio e validação), com a mensagem "O envio de códigos está restrito nesta fase do Sino."; recuperação neutra; conferência também na validação; ferramenta local sem mostrar e-mails, segredos ou resumos; restrição também no desenvolvimento e na demonstração, com três endereços fictícios (`pessoa1@demonstracao.invalid` a `pessoa3@…`) e envio só simulado. Limites aceitos: sem revogação instantânea (autorizações emitidas valem até o `exp`; execuções em andamento usam a configuração inicial); invalidação permanente só com validação durante a remoção; pedido recusado sem gravação pode ser aceito com a mesma chave depois da inclusão; recuperação sem envio nunca reativada. Sino 6.2 como versão candidata da E3, separada da publicação do serviço. Nenhum destinatário real autorizado | 5.49 |
 | P38 | (06/10/2026) **Versão de 06/10/2026 dos Termos e da Política**, relevante (introduz registros de dados antes não descritos): corrige as afirmações sobre versionamento e descreve os registros de aceite e de ciência, a finalidade, a exclusão e a permanência em backups; usuários existentes aceitam a nova versão no próximo login, sem versão atribuída ao aceite original; textos de 04/10 preservados em `docs/legal/` | 5.53 |
 | P37 | (06/10/2026) **E2 — versões e aceite:** textos atuais = primeira versão registrada (mesma data e conteúdo); quem aceitou antes do versionamento não recebe versão atribuída nem precisa aceitar de novo por esta mudança técnica; novo aceite obrigatório só com as mudanças relevantes do envio real; textos históricos em `docs/legal/` | 5.53 |
 | P36 | (06/10/2026) **Licença: MIT + Commons Clause v1.0**, textos oficiais sem alteração, para usar um texto pronto. Substitui a P35 (caminho A e licença própria, mantidos só no histórico). A autora aceita as permissões de modificação e redistribuição gratuita da MIT, sujeitas à Commons Clause, e o alcance da restrição sobre produtos e serviços pagos. Alcance: código, documentos e imagens da autora; terceiros com as próprias licenças; histórico MIT até `a8302c2` preservado; não é open source | 2.5 |
@@ -451,7 +464,7 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 | T7 | Comprovantes em arquivos com nome aleatório fora do banco, processados com biblioteca de imagens (Pillow) de versão fixada, fora da linha da interface |
 | T8 | Pacote de backup: formato versionado, chave derivada por scrypt, AES-256-GCM em blocos autenticados com marca de fim. **Não é um formato aprovado como seguro:** na implementação, comparar com formatos e ferramentas de criptografia estabelecidos antes de criar um formato próprio, e submeter a escolha a revisão |
 | T9 | Bloqueio compartilhado app/ferramenta por trava do sistema operacional; diferenças entre Linux e Windows testadas |
-| T10 | Restrição de destinatários comparada por HMAC no serviço, com evolução do contrato (novo código de erro e testes de conformidade) |
+| T10 | Restrição de destinatários comparada por HMAC no serviço, com evolução do contrato (novo código de erro e testes de conformidade). *Implementada na E3 (contrato v1.1), aguardando revisão e validação; não concluída.* |
 | T11 | Calendário: idioma da página (pt-BR) e cor do número de hoje dependente do estado; pares de cores do calendário em `test_cores` |
 | T12 | Rótulos do comparativo como controles focáveis; contorno das colunas entre 1 e 1,5 px |
 | T13 | Linha de conta empilhada abaixo de uma largura medida na implementação; testes em três larguras |
@@ -540,7 +553,8 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 |---|---|---|
 | E1 | **Concluída** (publicada em 06/10/2026, commit 58b4382): licença MIT + Commons Clause | — (sem código) |
 | E2 | **Concluída** (publicada em 06/10/2026): versões dos documentos (04/10 inicial; 06/10 relevante, P38), registro dos aceites e da ciência, tela de novo aceite e aviso, migração v9. 926 testes aprovados (bancos temporários); validação visual em cópia isolada aprovada (leitura dos documentos; novo aceite com "Sair" e "Aceitar"; aviso de ajuste menor com versão fictícia). Banco principal na v9 desde 06/10 21:25 (abertura de origem não confirmada; mantido pela autora; ref7) | Sino 6.1 |
-| E3 a E18, F1 | **Pendente** | — |
+| E3 | **Pendente** — implementada em 07/10/2026 (restrição de destinatários, contrato v1.1, P39), **aguardando revisão e validação**; não publicada, sem commit. Suítes: 950 testes do aplicativo e 215 do serviço aprovados (bancos temporários e ambientes isolados). Serviço de códigos não publicado | Sino 6.2 (candidata) |
+| E4 a E18, F1 | **Pendente** | — |
 
 Legenda:
 
@@ -555,6 +569,7 @@ Legenda:
 | Versão | Data | Descrição |
 |---|---|---|
 | 6.0 | 23/09/2026 – 04/10/2026 | Ver a [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) (preservada sem alterações). |
+| 7.0 (revisão) | 07/10/2026 | P39: decisões da E3 (restrição de destinatários, contrato v1.1); 5.49 com as regras técnicas e os limites aceitos; CT157 e CT158; E3 implementada, aguardando revisão e validação (Sino 6.2 candidata, não publicada). |
 | 7.0 (revisão) | 06/10/2026 | E2 concluída e publicada como Sino 6.1 (926 testes; validação visual aprovada); banco principal na v9 (ref7). |
 | 7.0 (revisão) | 06/10/2026 | P38: versão de 06/10/2026 dos Termos e da Política, relevante; usuários existentes aceitam a nova versão. |
 | 7.0 (revisão) | 06/10/2026 | P37: decisões da E2 (versão inicial, aceites anteriores sem versão atribuída, `docs/legal/`); E1 concluída; E2 implementada, não publicada. |

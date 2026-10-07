@@ -4,6 +4,16 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
+## Sino 6.2 — candidata, **não publicada** (E3: restrição de destinatários)
+
+Implementada em 07/10/2026, aguardando revisão e validação (regra 5.49, P39, contrato v1.1). A versão só será publicada depois da revisão e da validação; ela é separada da publicação do serviço de códigos, que continua não publicado e sem envio real de e-mails (E4). Suítes: 950 testes do aplicativo e 215 do serviço aprovados, em bancos temporários e ambientes isolados.
+
+- **Envio restrito:** no cadastro e na alteração de e-mail, um endereço fora da lista do serviço recebe "O envio de códigos está restrito nesta fase do Sino." (no pedido, no reenvio e na confirmação do código). Nada é gravado.
+- **Recuperação de senha:** continua com a mesma mensagem neutra; nada é enviado a endereços fora da lista.
+- **Modo de demonstração:** aceita só três endereços fictícios (`pessoa1@demonstracao.invalid`, `pessoa2@…` e `pessoa3@…`), mostrados no terminal e num arquivo de orientação; as mensagens continuam só na caixa local. Pastas de demonstração antigas não são reaproveitadas.
+- **Sem mudanças** no banco de dados, nos Termos de Uso ou na Política de Privacidade.
+- **Pendente:** revisão, validação e publicação da 6.2; envio real em ambiente restrito (E4), com textos atualizados e novo aceite.
+
 ## Sino 6.1 — publicada em 06/10/2026 (E2: versões e aceite dos Termos e da Política)
 
 Primeira entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.53). Suíte com 926 testes aprovados. Validação visual em cópia isolada aprovada: leitura dos documentos, novo aceite com "Sair" e "Aceitar", e aviso de ajuste menor (com uma versão fictícia, só para o teste).

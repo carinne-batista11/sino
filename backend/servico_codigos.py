@@ -1,6 +1,6 @@
 """
 servico_codigos.py -- Cliente do serviço de códigos de e-mail do Sino (ERS
-v6.0, Etapa 8; contrato em docs/contrato-servico-codigos.md).
+v6.0, Etapa 8; contrato v1.1 em docs/contrato-servico-codigos.md).
 
 Responsabilidades deste módulo (sem banco e sem telas):
   * chamadas HTTP assíncronas por um transporte injetável (httpx no app);
@@ -370,6 +370,15 @@ class ServicoIndisponivel:
 
 
 @dataclass(frozen=True)
+class DestinatarioNaoPermitido:
+    """
+    Contrato v1.1: o envio de códigos está restrito e o endereço não está na
+    lista do serviço. Só no cadastro e na alteração de e-mail (no pedido ou
+    na validação); na recuperação, o serviço responde de forma neutra.
+    """
+
+
+@dataclass(frozen=True)
 class SemConexao:
     pass
 
@@ -627,6 +636,9 @@ class ClienteServicoCodigos:
                 return Aguarde(segundos=self._registrar_reenvio(operacao, corpo, recebido))
             _erro(corpo, "limite_excedido")
             return LimiteExcedido()
+        if status == 403 and not recuperacao:
+            _erro(corpo, "destinatario_nao_permitido")
+            return DestinatarioNaoPermitido()
         if status == 502:
             _erro(corpo, "falha_envio", "reenvio_permitido_em", "agora")
             operacao._encerrar_desafio()
@@ -726,6 +738,10 @@ class ClienteServicoCodigos:
             _erro(corpo, "desafio_nao_encontrado" if status == 404 else "desafio_encerrado")
             operacao._encerrar_desafio()
             return DesafioEncerrado()
+        if status == 403 and operacao.finalidade != "recuperacao_senha":
+            _erro(corpo, "destinatario_nao_permitido")
+            operacao._encerrar_desafio()
+            return DestinatarioNaoPermitido()
         if status == 429:
             _erro(corpo, "limite_excedido")
             return LimiteExcedido()

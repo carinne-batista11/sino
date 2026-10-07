@@ -42,6 +42,9 @@ MENSAGEM_NAO_CONFIGURADO = "A confirmação por e-mail não está disponível ne
 MENSAGEM_CODIGO_FORMATO = "Digite o código de 6 dígitos."
 MENSAGEM_EXPIRADA = "O código expirou. Solicite um novo código."
 MENSAGEM_FALHA_GENERICA = "Não foi possível concluir agora. Tente novamente mais tarde."
+# Contrato v1.1 (ERS v7.0, 5.49): cadastro e alteração de e-mail para endereço
+# fora da lista do serviço, no pedido, no reenvio e na validação.
+MENSAGEM_ENVIO_RESTRITO = "O envio de códigos está restrito nesta fase do Sino."
 MENSAGEM_NOVA_TENTATIVA = "Não foi possível salvar agora. Seu código já foi confirmado: tente novamente."
 # Erro inesperado DEPOIS de uma gravação concluída: os dados foram salvos; só a
 # atualização da tela falhou (nunca apresentado como falha da operação).
@@ -175,6 +178,8 @@ def mensagem_do_pedido(resultado, email=None, recuperacao=False):
         return "Sem conexão com a internet. Verifique sua conexão e tente novamente.", True
     if nome == "ServicoIndisponivel":
         return "O serviço de confirmação por e-mail não está disponível agora. Tente novamente mais tarde.", True
+    if nome == "DestinatarioNaoPermitido":
+        return MENSAGEM_ENVIO_RESTRITO, True
     if nome == "DesafioEncerrado":
         return "Este pedido não vale mais. Solicite um novo código.", True
     if nome == "OperacaoCancelada":

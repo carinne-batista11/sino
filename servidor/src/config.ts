@@ -27,6 +27,9 @@ export const LIMITE_IP_PEDIDOS_DIA = 30;
 export const LIMITE_IP_VALIDACOES_HORA = 30;
 export const TETO_GLOBAL_DIA = 80;
 
+// Restrição de destinatários (ERS v7.0, 5.49): máximo de resumos na lista.
+export const LIMITE_DESTINATARIOS = 50;
+
 // Retenção.
 export const HORA_MS = 3_600_000;
 export const DIA_MS = 24 * HORA_MS;

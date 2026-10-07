@@ -412,6 +412,65 @@ class TestValidacao(unittest.IsolatedAsyncioTestCase):
                     await self.cliente.validar_codigo(self.op, codigo)
 
 
+class TestDestinatarioNaoPermitido(unittest.IsolatedAsyncioTestCase):
+    """Contrato v1.1: 403 destinatario_nao_permitido só no cadastro e na alteração."""
+
+    RECUSA = {"erro": "destinatario_nao_permitido"}
+
+    async def test_pedido_recusado_no_cadastro_e_na_alteracao(self):
+        for finalidade in ("cadastro", "alteracao_email"):
+            with self.subTest(finalidade=finalidade):
+                cliente, transporte, *_ = novo_cliente([resposta(403, self.RECUSA)])
+                op = cliente.nova_operacao(finalidade, EMAIL)
+                self.assertEqual(await cliente.pedir_codigo(op), sc.DestinatarioNaoPermitido())
+                # Resposta definitiva: nenhuma repetição e nenhum desafio registrado.
+                self.assertEqual(len(transporte.requisicoes), 1)
+                self.assertIsNone(op.desafio_id)
+
+    async def test_reenvio_recusado_nao_registra_novo_desafio(self):
+        cliente, transporte, *_ = novo_cliente([resposta(201, corpo_desafio()), resposta(403, self.RECUSA)])
+        op = cliente.nova_operacao("cadastro", EMAIL)
+        await cliente.pedir_codigo(op)
+        self.assertEqual(await cliente.pedir_codigo(op), sc.DestinatarioNaoPermitido())
+        self.assertEqual(len(transporte.requisicoes), 2)
+
+    async def test_403_na_recuperacao_esta_fora_do_contrato(self):
+        cliente, *_ = novo_cliente([resposta(403, self.RECUSA)])
+        with capturar_stderr():
+            resultado = await cliente.pedir_codigo(cliente.nova_operacao("recuperacao_senha", EMAIL), sem_envio=False)
+        self.assertEqual(resultado, sc.RespostaInvalida())
+
+    async def test_403_com_outro_corpo_esta_fora_do_contrato(self):
+        casos = {
+            "outro_erro": resposta(403, {"erro": "proibido"}),
+            "chave_extra": resposta(403, {**self.RECUSA, "email": "x@y.z"}),
+            "sem_json": resposta(403, b"<html>403</html>", tipo="text/html"),
+        }
+        for nome, item in casos.items():
+            with self.subTest(caso=nome):
+                cliente, *_ = novo_cliente([item])
+                with capturar_stderr():
+                    self.assertEqual(
+                        await cliente.pedir_codigo(cliente.nova_operacao("cadastro", EMAIL)), sc.RespostaInvalida(),
+                    )
+
+    async def test_validacao_recusada_encerra_o_desafio(self):
+        for finalidade in ("cadastro", "alteracao_email"):
+            with self.subTest(finalidade=finalidade):
+                cliente, *_ = novo_cliente([resposta(201, corpo_desafio()), resposta(403, self.RECUSA)])
+                op = cliente.nova_operacao(finalidade, EMAIL)
+                await cliente.pedir_codigo(op)
+                self.assertEqual(await cliente.validar_codigo(op, "123456"), sc.DestinatarioNaoPermitido())
+                self.assertIsNone(op.desafio_id)
+
+    async def test_validacao_403_na_recuperacao_esta_fora_do_contrato(self):
+        cliente, *_ = novo_cliente([resposta(202, corpo_desafio()), resposta(403, self.RECUSA)])
+        op = cliente.nova_operacao("recuperacao_senha", EMAIL)
+        await cliente.pedir_codigo(op, sem_envio=False)
+        with capturar_stderr():
+            self.assertEqual(await cliente.validar_codigo(op, "123456"), sc.RespostaInvalida())
+
+
 class TestCancelamento(unittest.IsolatedAsyncioTestCase):
     async def test_descartar_durante_a_espera_do_em_processamento(self):
         em_proc = resposta(202, corpo_desafio(estado="em_processamento"), {"Retry-After": "2"})

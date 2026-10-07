@@ -1,7 +1,9 @@
 // Orquestração dos pedidos e validações entre os objetos (IP, destino e teto
 // global) e o enviador. Cada objeto é atômico por si; entre objetos, a ordem
 // e as reservas sem devolução garantem que nunca se envia além dos limites e
-// que um desafio sem reserva global registrada não autoriza.
+// que um desafio sem reserva global registrada não autoriza. A lista de
+// destinatários (contrato v1.1) é conferida no pedido, antes de enviar e em
+// toda validação.
 
 import { REPETIR_APOS_S, type Finalidade } from "./config";
 import { emailAparado, normalizarEmail } from "./email";
@@ -9,6 +11,7 @@ import type { Enviador } from "./envio/enviador";
 import { montarMensagem } from "./envio/mensagens";
 import { assinarAutorizacao } from "./nucleo/autorizacao";
 import { hmacHex, sha256Hex } from "./nucleo/cripto";
+import { resumoDoEmail, type Destinatarios } from "./nucleo/destinatarios";
 import type {
   EstadoEnvio,
   PedidoDesafio,
@@ -23,6 +26,7 @@ export interface PortaDestino {
   solicitar(p: PedidoDesafio): Promise<ResultadoSolicitar>;
   registrarReserva(desafioId: string, reservaId: string, agora: number): Promise<boolean>;
   marcarSemReserva(desafioId: string, agora: number): Promise<boolean>;
+  marcarBloqueado(desafioId: string, agora: number): Promise<boolean>;
   iniciarEnvio(desafioId: string, agora: number): Promise<boolean>;
   registrarResultado(desafioId: string, resultado: ResultadoEnvio, agora: number): Promise<EstadoEnvio | null>;
   validar(p: PedidoValidacao): Promise<ResultadoValidar>;
@@ -42,6 +46,8 @@ export interface Segredos {
   chaveHmac: Uint8Array;
   chaveAssinatura: Uint8Array;
   kid: string;
+  /** Resumos dos destinatários permitidos (DESTINATARIOS_PERMITIDOS). */
+  destinatarios: Destinatarios;
 }
 
 export interface Dependencias {
@@ -101,6 +107,9 @@ export function prefixoIp(ip: string): string {
 
 const INDISPONIVEL: Resposta = { status: 503, corpo: { erro: "servico_indisponivel" } };
 
+/** Cadastro e alteração para destinatário fora da lista (pedido ou validação). */
+const NAO_PERMITIDO: Resposta = { status: 403, corpo: { erro: "destinatario_nao_permitido" } };
+
 export interface EntradaPedido {
   finalidade: Finalidade;
   email: string;
@@ -115,12 +124,17 @@ export async function pedirDesafio(deps: Dependencias, e: EntradaPedido): Promis
   const segredos = deps.segredos;
   if (!segredos) return INDISPONIVEL;
   const agora = deps.relogio();
-  const emailHash = hmacHex(segredos.chaveHmac, "email", normalizarEmail(e.email));
+  const emailHash = resumoDoEmail(segredos.chaveHmac, e.email);
   const ipHash = hmacHex(segredos.chaveHmac, "ip", prefixoIp(e.ip));
 
   if (!(await deps.ip(ipHash).reservarPedido(agora))) {
     return { status: 429, corpo: { erro: "limite_excedido" } };
   }
+  // Lista atual, também nas repetições. Cadastro e alteração fora dela: nada
+  // é gravado (só o limite do IP foi consumido). Recuperação: o desafio é
+  // criado sem envio, com a mesma resposta (neutralidade).
+  const permitido = segredos.destinatarios.has(emailHash);
+  if (!permitido && e.finalidade !== "recuperacao_senha") return NAO_PERMITIDO;
   // O estado do teto vale também para pedidos sem envio (neutralidade).
   const teto = deps.tetoGlobal();
   if (await teto.esgotado(agora)) return INDISPONIVEL;
@@ -132,6 +146,7 @@ export async function pedirDesafio(deps: Dependencias, e: EntradaPedido): Promis
     segredoHash: sha256Hex(e.segredo),
     chaveHash: sha256Hex(e.chave),
     semEnvio: e.semEnvio,
+    permitido,
     agora,
   });
 
@@ -197,13 +212,15 @@ function statusDoEnvio(
 ): Resposta {
   if (estado === "enviando" || estado === "enviado" || estado === "incerto") return { status: 201, corpo };
   if (estado === "sem_reserva") return INDISPONIVEL;
+  if (estado === "bloqueado") return NAO_PERMITIDO;
   return falhaEnvio;
 }
 
 /**
- * Reserva a vaga global, registra-a no desafio e só então envia. Qualquer
- * falha entre objetos deixa o desafio sem autorização possível ou o envio
- * como "incerto" (convertido pelo alarme); nunca envia sem reserva.
+ * Confere a lista, reserva a vaga global, registra-a no desafio e só então
+ * envia. Qualquer falha entre objetos deixa o desafio sem autorização
+ * possível ou o envio como "incerto" (convertido pelo alarme); nunca envia
+ * sem reserva nem para destinatário fora da lista.
  */
 export async function executarEnvio(
   deps: Dependencias,
@@ -213,6 +230,19 @@ export async function executarEnvio(
   para: string,
   codigo: string,
 ): Promise<EstadoEnvio | "nao_iniciado"> {
+  // Camada A: vale para todo envio, inclusive o da recuperação em segundo
+  // plano. Fora da lista, o desafio fica "bloqueado" sem consumir o teto.
+  const segredos = deps.segredos;
+  if (!segredos || !segredos.destinatarios.has(resumoDoEmail(segredos.chaveHmac, para))) {
+    try {
+      await destino.marcarBloqueado(desafioId, deps.relogio());
+    } catch (erro) {
+      // Sem reserva registrada, o desafio não autoriza de qualquer forma.
+      registrarFalha("bloqueio pela lista de destinatários", erro);
+    }
+    return "bloqueado";
+  }
+
   let reserva: string | null;
   try {
     reserva = await deps.tetoGlobal().reservar(deps.relogio());
@@ -241,7 +271,10 @@ export async function executarEnvio(
   let resultado: ResultadoEnvio;
   try {
     const r = await deps.enviador.enviar(montarMensagem(finalidade, para, codigo), `sino/${finalidade}/${desafioId}`);
-    resultado = r.tipo === "aceito" ? "enviado" : r.tipo === "incerto" ? "incerto" : "falhou";
+    // "bloqueado" vem da camada B (EnviadorRestrito), antes de qualquer rede:
+    // não é falha do provedor e não é repetido.
+    resultado =
+      r.tipo === "aceito" ? "enviado" : r.tipo === "incerto" ? "incerto" : r.tipo === "bloqueado" ? "bloqueado" : "falhou";
   } catch (erro) {
     registrarFalha("envio", erro);
     resultado = "incerto";
@@ -274,12 +307,13 @@ export async function validarDesafio(deps: Dependencias, e: EntradaValidacao): P
     return { status: 429, corpo: { erro: "limite_excedido" } };
   }
 
-  const emailHash = hmacHex(segredos.chaveHmac, "email", normalizarEmail(e.email));
+  const emailHash = resumoDoEmail(segredos.chaveHmac, e.email);
   const r = await deps.destino(emailHash).validar({
     desafioId: e.desafioId,
     segredoHash: sha256Hex(e.segredo),
     chaveHash: sha256Hex(e.chave),
     codigo: e.codigo,
+    permitido: segredos.destinatarios.has(emailHash),
     agora,
   });
 
@@ -301,5 +335,7 @@ export async function validarDesafio(deps: Dependencias, e: EntradaValidacao): P
       return { status: 409, corpo: { erro: "conflito_idempotencia" } };
     case "nao_encontrado":
       return { status: 404, corpo: { erro: "desafio_nao_encontrado" } };
+    case "nao_permitido":
+      return NAO_PERMITIDO;
   }
 }

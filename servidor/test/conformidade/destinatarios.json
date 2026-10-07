@@ -1,0 +1,43 @@
+{
+  "descricao": "Resumos da lista de destinatários (contrato v1.1): HMAC-SHA256 com rótulo 'email' do e-mail normalizado; verificação 'v1:' + HMAC do rótulo 'verificacao-lista'. Chave de teste, não é credencial.",
+  "chave_hmac_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+  "verificacao": "v1:f98f4b9da0762bc86af43216243654864289e278d27ed442e6c973e2c6733d3c",
+  "casos": [
+    {
+      "entrada": "pessoa@exemplo.com",
+      "resumo": "cd1331049feafe798a9f77a9fae1451294f1250eba27e59041fff337bb11ef09"
+    },
+    {
+      "entrada": "  Pessoa@Exemplo.COM ",
+      "resumo": "cd1331049feafe798a9f77a9fae1451294f1250eba27e59041fff337bb11ef09"
+    },
+    {
+      "entrada": "PESSOA+tag@Sub.Example.ORG",
+      "resumo": "c939fc996dac50ee2104c1f8669b4bdb6a10efe366623808c79d3b3f1ca50cc2"
+    },
+    {
+      "entrada": "pessoa1@demonstracao.invalid",
+      "resumo": "a0dd77057be0bf323e24d4cae9d16e5a7e46dcd992b94a5c293a827b6d491efe"
+    },
+    {
+      "entrada": "Kelvin@exemplo.com",
+      "resumo": null
+    },
+    {
+      "entrada": "pessoa@exemplo.com ",
+      "resumo": null
+    },
+    {
+      "entrada": "sem-arroba",
+      "resumo": null
+    }
+  ],
+  "lista": {
+    "emails": [
+      "pessoa@exemplo.com",
+      "Pessoa@Exemplo.com",
+      "pessoa1@demonstracao.invalid"
+    ],
+    "texto": "v1:f98f4b9da0762bc86af43216243654864289e278d27ed442e6c973e2c6733d3c,cd1331049feafe798a9f77a9fae1451294f1250eba27e59041fff337bb11ef09,a0dd77057be0bf323e24d4cae9d16e5a7e46dcd992b94a5c293a827b6d491efe"
+  }
+}

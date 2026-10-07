@@ -1,7 +1,7 @@
 // Regras dos desafios de um destino (um objeto por e-mail, em HMAC): ERS 5.32,
 // limites por destino, reserva global obrigatória, envio incerto, resultados
-// tardios e repetição de pedidos/validações. Cada operação pública roda numa
-// única transação síncrona.
+// tardios, repetição de pedidos/validações e restrição de destinatários
+// (contrato v1.1). Cada operação pública roda numa única transação síncrona.
 
 import {
   INTERVALO_REENVIO_MS,
@@ -32,9 +32,11 @@ export type EstadoEnvio =
   | "enviando"
   | "enviado"
   | "incerto"
-  | "falhou";
+  | "falhou"
+  /** Envio barrado pela lista de destinatários: nunca autoriza. */
+  | "bloqueado";
 
-export type ResultadoEnvio = "enviado" | "incerto" | "falhou";
+export type ResultadoEnvio = "enviado" | "incerto" | "falhou" | "bloqueado";
 
 export type MotivoInvalidacao =
   | "substituido"
@@ -42,10 +44,32 @@ export type MotivoInvalidacao =
   | "tentativas"
   | "falha_envio"
   | "sem_reserva"
-  | "reserva_abandonada";
+  | "reserva_abandonada"
+  | "destinatario_nao_permitido";
 
-/** Motivos ligados ao envio: um pedido sem envio nunca os recebe. */
-export const MOTIVOS_DE_ENVIO: readonly MotivoInvalidacao[] = ["falha_envio", "sem_reserva", "reserva_abandonada"];
+/**
+ * Motivos ligados ao envio ou à lista de destinatários: um pedido sem envio
+ * nunca os recebe, e na recuperação eles não podem ser distinguidos dele.
+ */
+export const MOTIVOS_DE_ENVIO: readonly MotivoInvalidacao[] = [
+  "falha_envio", "sem_reserva", "reserva_abandonada", "destinatario_nao_permitido",
+];
+
+/**
+ * Versão do esquema das tabelas deste objeto. A v2 (contrato v1.1) acrescenta
+ * o estado "bloqueado" e o motivo "destinatario_nao_permitido". Um estado
+ * local criado por uma versão anterior não é reaproveitado: as operações
+ * respondem como serviço indisponível.
+ */
+export const VERSAO_ESQUEMA_DESTINO = 2;
+export const ERRO_ESQUEMA_INCOMPATIVEL = "sino:esquema_incompativel";
+
+export class EsquemaIncompativelError extends Error {
+  override name = "EsquemaIncompativelError";
+  constructor() {
+    super(ERRO_ESQUEMA_INCOMPATIVEL);
+  }
+}
 
 /**
  * Na recuperação, o desafio real invalidado por motivo de envio precisa se
@@ -69,7 +93,13 @@ export interface PedidoDesafio {
   contexto: string;
   segredoHash: string;
   chaveHash: string;
+  /** Pedido sem envio feito pelo cliente; entra na impressão do pedido. */
   semEnvio: boolean;
+  /**
+   * O destinatário está na lista atual. Fora dela, o desafio é criado sem
+   * envio (só ocorre na recuperação); não entra na impressão do pedido.
+   */
+  permitido: boolean;
   agora: number;
 }
 
@@ -94,6 +124,8 @@ export interface PedidoValidacao {
   segredoHash: string;
   chaveHash: string;
   codigo: string;
+  /** O destinatário está na lista atual (verificado em toda validação). */
+  permitido: boolean;
   agora: number;
 }
 
@@ -110,7 +142,9 @@ export type ResultadoValidar =
   | { tipo: "codigo_invalido"; tentativasRestantes: number }
   | { tipo: "encerrado" }
   | { tipo: "nao_encontrado" }
-  | { tipo: "conflito" };
+  | { tipo: "conflito" }
+  /** Cadastro ou alteração cujo destinatário saiu da lista. */
+  | { tipo: "nao_permitido" };
 
 interface LinhaDesafio {
   id: string;
@@ -153,6 +187,18 @@ export class RegrasDestino {
   garantirEsquema(): void {
     this.contadores.garantirEsquema();
     this.banco.executar(`
+      CREATE TABLE IF NOT EXISTS esquema_destino (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        versao INTEGER NOT NULL
+      )`);
+    const marca = this.banco.um<{ versao: number }>("SELECT versao FROM esquema_destino WHERE id = 1");
+    if (marca) {
+      if (marca.versao !== VERSAO_ESQUEMA_DESTINO) throw new EsquemaIncompativelError();
+    } else if (this.existeTabelaDesafios()) {
+      // Tabela criada antes da marca de versão (contrato v1).
+      throw new EsquemaIncompativelError();
+    }
+    this.banco.executar(`
       CREATE TABLE IF NOT EXISTS desafios (
         id TEXT PRIMARY KEY,
         finalidade TEXT NOT NULL CHECK (finalidade IN ('cadastro', 'alteracao_email', 'recuperacao_senha')),
@@ -166,15 +212,18 @@ export class RegrasDestino {
         expira_em INTEGER NOT NULL,
         tentativas INTEGER NOT NULL DEFAULT 0 CHECK (tentativas BETWEEN 0 AND ${MAX_TENTATIVAS}),
         estado_envio TEXT NOT NULL CHECK (estado_envio IN
-          ('pendente_reserva', 'sem_reserva', 'sem_envio', 'reservado', 'enviando', 'enviado', 'incerto', 'falhou')),
+          ('pendente_reserva', 'sem_reserva', 'sem_envio', 'reservado', 'enviando', 'enviado', 'incerto', 'falhou',
+           'bloqueado')),
         reserva_global TEXT,
         envio_iniciado_em INTEGER,
         validado_em INTEGER,
         autorizacao_jti TEXT,
         invalidado_em INTEGER,
         motivo_invalidacao TEXT CHECK (motivo_invalidacao IN
-          ('substituido', 'expirado', 'tentativas', 'falha_envio', 'sem_reserva', 'reserva_abandonada')),
-        CHECK (estado_envio IN ('pendente_reserva', 'sem_reserva', 'sem_envio') OR reserva_global IS NOT NULL),
+          ('substituido', 'expirado', 'tentativas', 'falha_envio', 'sem_reserva', 'reserva_abandonada',
+           'destinatario_nao_permitido')),
+        CHECK (estado_envio IN ('pendente_reserva', 'sem_reserva', 'sem_envio', 'bloqueado')
+               OR reserva_global IS NOT NULL),
         CHECK (autorizacao_jti IS NULL
                OR (reserva_global IS NOT NULL AND estado_envio IN ('enviando', 'enviado', 'incerto'))),
         CHECK ((invalidado_em IS NULL) = (motivo_invalidacao IS NULL))
@@ -193,6 +242,18 @@ export class RegrasDestino {
         tentativas_restantes INTEGER NOT NULL,
         PRIMARY KEY (desafio_id, chave_hash)
       )`);
+    if (!marca) {
+      this.banco.executar("INSERT INTO esquema_destino (id, versao) VALUES (1, ?)", VERSAO_ESQUEMA_DESTINO);
+    }
+  }
+
+  private existeTabelaDesafios(): boolean {
+    try {
+      this.banco.um("SELECT 1 FROM desafios LIMIT 1");
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // ------------------------------------------------------------------ pedido
@@ -234,15 +295,23 @@ export class RegrasDestino {
       }
 
       // 5.32: o novo código invalida imediatamente o anterior da mesma
-      // finalidade; linhas já expiradas são encerradas como 'expirado'.
+      // finalidade; linhas já expiradas são encerradas como 'expirado'. Na
+      // recuperação, a marca neutra da lista de destinatários (ver
+      // invalidarNaoPermitido) também é substituída, para o desafio antigo
+      // responder igual a qualquer outro substituído.
       this.banco.executar(
         `UPDATE desafios
            SET invalidado_em = ?,
                motivo_invalidacao = CASE WHEN expira_em <= ? THEN 'expirado' ELSE 'substituido' END
-         WHERE finalidade = ? AND invalidado_em IS NULL`,
+         WHERE finalidade = ?
+           AND (invalidado_em IS NULL
+                OR (finalidade = 'recuperacao_senha' AND motivo_invalidacao = 'destinatario_nao_permitido'))`,
         p.agora, p.agora, p.finalidade,
       );
 
+      // Fora da lista, o desafio nasce sem envio, como o pedido sem envio do
+      // cliente (um desafio sem envio nunca passa a enviar nem autoriza).
+      const enviar = !p.semEnvio && p.permitido;
       const id = identificadorAleatorio(this.aleatorio);
       const codigo = gerarCodigo(this.aleatorio);
       const salt = identificadorAleatorio(this.aleatorio);
@@ -253,7 +322,7 @@ export class RegrasDestino {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id, p.finalidade, p.contexto, p.segredoHash, p.chaveHash, impressao,
         this.hashCodigo(id, p.finalidade, salt, codigo), salt, p.agora, expiraEm,
-        p.semEnvio ? "sem_envio" : "pendente_reserva",
+        enviar ? "pendente_reserva" : "sem_envio",
       );
       this.contadores.incrementar("pedidos", "hora", p.agora);
       this.contadores.incrementar("pedidos", "dia", p.agora);
@@ -261,7 +330,7 @@ export class RegrasDestino {
       return {
         tipo: "criado",
         desafioId: id,
-        codigo: p.semEnvio ? null : codigo,
+        codigo: enviar ? codigo : null,
         expiraEm,
         reenvioEm: p.agora + INTERVALO_REENVIO_MS,
       };
@@ -308,6 +377,25 @@ export class RegrasDestino {
     );
   }
 
+  /**
+   * Destinatário fora da lista na hora de enviar (antes da reserva global):
+   * o desafio fica "bloqueado", invalidado, e nunca chega a enviar.
+   */
+  marcarBloqueado(desafioId: string, agora: number): boolean {
+    return this.banco.transacao(
+      () =>
+        this.banco.todos(
+          `UPDATE desafios
+              SET estado_envio = 'bloqueado',
+                  invalidado_em = COALESCE(invalidado_em, ?),
+                  motivo_invalidacao = COALESCE(motivo_invalidacao, 'destinatario_nao_permitido')
+            WHERE id = ? AND estado_envio = 'pendente_reserva'
+           RETURNING id`,
+          agora, desafioId,
+        ).length === 1,
+    );
+  }
+
   /** Mesmas garantias de `registrarReserva`: só um desafio ativo e no prazo começa a ser enviado. */
   iniciarEnvio(desafioId: string, agora: number): boolean {
     return this.banco.transacao(() => {
@@ -335,7 +423,14 @@ export class RegrasDestino {
       this.encerrarVencidos(agora);
       const ativo = `id = ? AND estado_envio IN ('enviando', 'incerto')
                      AND invalidado_em IS NULL AND validado_em IS NULL AND expira_em > ?`;
-      if (resultado === "falhou") {
+      if (resultado === "bloqueado") {
+        this.banco.executar(
+          `UPDATE desafios SET estado_envio = 'bloqueado', invalidado_em = ?,
+                  motivo_invalidacao = 'destinatario_nao_permitido'
+            WHERE ${ativo}`,
+          agora, desafioId, agora,
+        );
+      } else if (resultado === "falhou") {
         this.banco.executar(
           `UPDATE desafios SET estado_envio = 'falhou', invalidado_em = ?, motivo_invalidacao = 'falha_envio'
             WHERE ${ativo}`,
@@ -363,6 +458,15 @@ export class RegrasDestino {
       const linha = this.banco.um<LinhaDesafio>("SELECT * FROM desafios WHERE id = ?", p.desafioId);
       if (!linha || !iguaisTempoConstante(linha.segredo_hash, p.segredoHash)) return { tipo: "nao_encontrado" };
 
+      // Destinatário fora da lista atual: nenhuma autorização, nem a repetição
+      // de uma já emitida. O desafio é invalidado; readicionar o endereço
+      // depois disso não o reativa.
+      if (!p.permitido) {
+        this.invalidarNaoPermitido(linha, p.agora);
+        if (linha.finalidade !== "recuperacao_senha") return { tipo: "nao_permitido" };
+        // Recuperação: segue como o desafio sem envio (neutralidade).
+      }
+
       const impressao = hmacHex(this.chaveHmac, "tentativa", linha.id, p.codigo);
       const repetida = this.banco.um<{ impressao: string; resultado: string; tentativas_restantes: number }>(
         "SELECT impressao, resultado, tentativas_restantes FROM validacoes WHERE desafio_id = ? AND chave_hash = ?",
@@ -374,7 +478,10 @@ export class RegrasDestino {
           return { tipo: "codigo_invalido", tentativasRestantes: repetida.tentativas_restantes };
         }
         // Mesma operação repetida: a mesma autorização, até o expira_em original.
-        if (linha.invalidado_em !== null || p.agora >= linha.expira_em || linha.autorizacao_jti === null) {
+        if (
+          !p.permitido ||
+          linha.invalidado_em !== null || p.agora >= linha.expira_em || linha.autorizacao_jti === null
+        ) {
           return { tipo: "encerrado" };
         }
         return { tipo: "autorizado", dados: this.dadosAutorizacao(linha) };
@@ -395,6 +502,7 @@ export class RegrasDestino {
       // Sem reserva global registrada, ou desafio sem envio: nunca autoriza,
       // mesmo que o código coincida (é tratado como código errado).
       const elegivel =
+        p.permitido &&
         linha.invalidado_em === null &&
         linha.reserva_global !== null &&
         ESTADOS_VALIDAVEIS.includes(linha.estado_envio);
@@ -436,6 +544,31 @@ export class RegrasDestino {
       );
       return { tipo: "codigo_invalido", tentativasRestantes: restantes };
     });
+  }
+
+  /**
+   * Invalida o desafio ainda ativo e não validado (motivo: destinatário fora
+   * da lista), para que incluir o endereço de novo não o reative.
+   *
+   * Na recuperação, a marca precisa ser invisível para quem pediu: só um
+   * desafio que pode autorizar (código realmente enviado) é marcado, e com
+   * invalidado_em = expira_em, de modo que a retenção, a repetição do pedido e
+   * a substituição se comportem como num desafio sem envio comum.
+   */
+  private invalidarNaoPermitido(linha: LinhaDesafio, agora: number): void {
+    if (linha.invalidado_em !== null || linha.validado_em !== null) return;
+    let quando = agora;
+    if (linha.finalidade === "recuperacao_senha") {
+      if (linha.reserva_global === null || !ESTADOS_VALIDAVEIS.includes(linha.estado_envio)) return;
+      quando = linha.expira_em;
+    }
+    this.banco.executar(
+      `UPDATE desafios SET invalidado_em = ?, motivo_invalidacao = 'destinatario_nao_permitido'
+        WHERE id = ? AND invalidado_em IS NULL AND validado_em IS NULL`,
+      quando, linha.id,
+    );
+    linha.invalidado_em = quando;
+    linha.motivo_invalidacao = "destinatario_nao_permitido";
   }
 
   // ------------------------------------------------------ prazos e retenção

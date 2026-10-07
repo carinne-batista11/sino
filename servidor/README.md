@@ -5,8 +5,10 @@ e-mail do cadastro, da alteração de e-mail e da recuperação de senha, e assi
 a autorização que o aplicativo confere localmente. O contrato está em
 [`docs/contrato-servico-codigos.md`](../docs/contrato-servico-codigos.md).
 
-**Estado:** primeiro bloco local. O serviço **não foi publicado**, não há conta
-na Cloudflare nem na Resend, e nenhum e-mail real é enviado.
+**Estado:** contrato v1.1 (restrição de destinatários da E3, ERS v7.0 5.49),
+implementado localmente e aguardando revisão e validação. O serviço **não foi
+publicado**, não há conta na Cloudflare nem na Resend, e nenhum e-mail real é
+enviado.
 
 ## Organização
 
@@ -18,6 +20,7 @@ na Cloudflare nem na Resend, e nenhum e-mail real é enviado.
 | `src/objetos.ts`, `src/index.ts` | Durable Objects com SQLite e entrada do Worker |
 | `test/nucleo/` | Testes das regras com o SQLite do Node (mesmos comandos SQL dos objetos) |
 | `test/workers/` | Testes no simulador local dos Durable Objects (concorrência, falhas parciais, alarmes) |
+| `ferramentas/` | Ferramentas locais: caixa de mensagens e modo de demonstração (desenvolvimento) e `destinatarios.py` (gera a lista de destinatários) |
 
 ## Testes
 
@@ -38,6 +41,23 @@ Nenhum segredo fica no repositório. Para rodar o Worker localmente, copie
 `.dev.vars.example` para `.dev.vars` (ignorado pelo Git) e preencha só na sua
 máquina. Os valores usados nos testes (`vitest.config.ts`) são fixos e não são
 credenciais.
+
+## Lista de destinatários (contrato v1.1)
+
+O serviço só envia códigos aos endereços da lista do ambiente
+(`DESTINATARIOS_PERMITIDOS`), em todas as entradas, inclusive a de
+desenvolvimento: sem lista válida, responde indisponível (503). A lista guarda
+só resumos HMAC (até 50) e é gerada localmente, sem mostrar e-mails, a chave ou
+os resumos:
+
+```bash
+.venv/bin/python servidor/ferramentas/destinatarios.py gerar --chave <arquivo com CHAVE_HMAC> --saida <arquivo novo>
+```
+
+Os e-mails são digitados sem eco (vazio termina). O arquivo de saída (600, nunca
+sobrescrito) tem o valor do segredo. Trocar a `CHAVE_HMAC` exige gerar a lista
+de novo. A publicação do segredo só acontece com autorização (E4). Regras,
+respostas e limites (a revogação não é instantânea) estão no contrato.
 
 ## Modo de demonstração (desenvolvimento)
 
@@ -89,6 +109,15 @@ ficaram livres.
 - Não serve para usuários reais nem para produção.
 - As regras dos códigos são as normais (validade de 10 minutos, 5 tentativas,
   reenvio após 60 segundos e limites por endereço e por conexão).
+- Como na produção, o serviço local só aceita os endereços da lista, que na
+  demonstração são só três **fictícios**: `pessoa1@demonstracao.invalid`,
+  `pessoa2@demonstracao.invalid` e `pessoa3@demonstracao.invalid` (domínio
+  reservado, que nunca recebe e-mail). Eles aparecem no terminal e em
+  `destinatarios_ficticios.txt`, na pasta da demonstração. Outro endereço
+  recebe "O envio de códigos está restrito nesta fase do Sino." no cadastro e
+  na alteração; na recuperação, a resposta é a de sempre e nada é enviado.
+- Pastas de demonstração de versões anteriores (sem a lista) não são
+  reaproveitadas: o comando para sem alterar nada; use uma pasta nova.
 
 ## Licença
 

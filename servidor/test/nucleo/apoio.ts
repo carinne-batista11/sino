@@ -10,7 +10,9 @@ import { RegrasIp } from "../../src/nucleo/contadores";
 import { gerarCodigo, type Aleatorio } from "../../src/nucleo/cripto";
 import { RegrasDestino } from "../../src/nucleo/desafios";
 import { RegrasTetoGlobal } from "../../src/nucleo/teto_global";
+import { EnviadorRestrito } from "../../src/envio/restrito";
 import { EnviadorSimulado } from "../../src/envio/simulado";
+import { resumoDoEmail } from "../../src/nucleo/destinatarios";
 import type { Dependencias, PortaDestino, PortaIp, PortaTetoGlobal } from "../../src/fluxos";
 
 export const CHAVE_HMAC = new Uint8Array(32).fill(0x11);
@@ -87,6 +89,19 @@ export function novoDestino(aleatorio = new AleatorioDeTeste()) {
   return { banco, regras, aleatorio };
 }
 
+/**
+ * E-mails que os testes usam como destinatários permitidos. Os testes da
+ * restrição usam endereços fora desta lista (por exemplo, fora@exemplo.com).
+ */
+export const EMAILS_PERMITIDOS_NOS_TESTES = [
+  "pessoa@exemplo.com", "outra@exemplo.com", "reserva@exemplo.com", "teto@exemplo.com", "x@exemplo.com",
+  "a@b", "pessoa.teste@exemplo.com", "pessoa+tag@sub.example.org", "ninguem@exemplo.com",
+  ...Array.from({ length: 100 }, (_, i) => `p${i}@exemplo.com`),
+  ...Array.from({ length: 100 }, (_, i) => `q${i}@exemplo.com`),
+];
+
+export const resumoDe = (email: string) => resumoDoEmail(CHAVE_HMAC, email);
+
 export const segredoHashDe = (n: number) => `segredo-hash-${n}`;
 export const chaveHashDe = (n: number) => `chave-hash-${n}`;
 export const CONTEXTO = "c".repeat(64);
@@ -124,13 +139,16 @@ export class Mundo {
   readonly destinos = new Map<string, RegrasDestino>();
   readonly bancosDestino = new Map<string, BancoNode>();
   readonly ips = new Map<string, RegrasIp>();
+  readonly bancosIp = new Map<string, BancoNode>();
+  readonly bancoTeto = new BancoNode();
   readonly teto: RegrasTetoGlobal;
   readonly segundoPlano: Promise<unknown>[] = [];
+  /** Lista atual; alterá-la simula uma nova configuração entre requisições. */
+  readonly destinatarios = new Set(EMAILS_PERMITIDOS_NOS_TESTES.map(resumoDe));
   semSegredos = false;
 
   constructor() {
-    const banco = new BancoNode();
-    this.teto = new RegrasTetoGlobal(banco, this.aleatorio);
+    this.teto = new RegrasTetoGlobal(this.bancoTeto, this.aleatorio);
     this.teto.garantirEsquema();
   }
 
@@ -146,21 +164,35 @@ export class Mundo {
     return r;
   }
 
+  permitir(...emails: string[]): void {
+    for (const e of emails) this.destinatarios.add(resumoDe(e));
+  }
+
+  remover(...emails: string[]): void {
+    for (const e of emails) this.destinatarios.delete(resumoDe(e));
+  }
+
   deps(): Dependencias {
+    const segredos = this.semSegredos
+      ? null
+      : { chaveHmac: CHAVE_HMAC, chaveAssinatura: CHAVE_ASSINATURA, kid: KID, destinatarios: this.destinatarios };
     return {
-      segredos: this.semSegredos ? null : { chaveHmac: CHAVE_HMAC, chaveAssinatura: CHAVE_ASSINATURA, kid: KID },
+      segredos,
       destino: (h) => comFalhas(this.regrasDestino(h), this.falhas) as unknown as PortaDestino,
       ip: (h) => {
         let r = this.ips.get(h);
         if (!r) {
-          r = new RegrasIp(new BancoNode());
+          const banco = new BancoNode();
+          r = new RegrasIp(banco);
           r.garantirEsquema();
           this.ips.set(h, r);
+          this.bancosIp.set(h, banco);
         }
         return comFalhas(r, this.falhas) as unknown as PortaIp;
       },
       tetoGlobal: () => comFalhas(this.teto, this.falhas) as unknown as PortaTetoGlobal,
-      enviador: this.enviador,
+      // Como na entrada do Worker: a camada B envolve o enviador.
+      enviador: new EnviadorRestrito(this.enviador, segredos),
       relogio: this.relogio.ler,
       emSegundoPlano: (t) => {
         this.segundoPlano.push(t);

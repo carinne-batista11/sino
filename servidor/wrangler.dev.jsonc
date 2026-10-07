@@ -2,7 +2,8 @@
 // src/dev.ts, mensagens entregues ao receptor local (ferramentas/caixa_dev.py),
 // sem Resend. Use apenas com `wrangler dev -c wrangler.dev.jsonc`; nunca com
 // `wrangler deploy`. A configuração de produção é wrangler.jsonc.
-// Os segredos (CHAVE_HMAC, CHAVE_ASSINATURA) vêm de --env-file, fora do Git.
+// Os segredos (CHAVE_HMAC, CHAVE_ASSINATURA, DESTINATARIOS_PERMITIDOS) vêm de
+// --env-file, fora do Git; a lista é exigida como na produção (contrato v1.1).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sino-servico-codigos-dev",

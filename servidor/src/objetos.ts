@@ -8,6 +8,8 @@ import type { BancoSql, ValorSql } from "./nucleo/banco";
 import { RegrasIp } from "./nucleo/contadores";
 import { aleatorioSeguro, chaveDeHex } from "./nucleo/cripto";
 import {
+  ERRO_ESQUEMA_INCOMPATIVEL,
+  EsquemaIncompativelError,
   RegrasDestino,
   type EstadoEnvio,
   type PedidoDesafio,
@@ -16,6 +18,7 @@ import {
   type ResultadoSolicitar,
   type ResultadoValidar,
 } from "./nucleo/desafios";
+import { registrarEvento } from "./nucleo/registro";
 import { RegrasTetoGlobal } from "./nucleo/teto_global";
 
 export interface Env {
@@ -27,6 +30,8 @@ export interface Env {
   KID_ASSINATURA?: string;
   RESEND_API_KEY?: string;
   REMETENTE?: string;
+  /** Lista de destinatários permitidos (ver src/nucleo/destinatarios.ts). */
+  DESTINATARIOS_PERMITIDOS?: string;
 }
 
 export class ConfiguracaoAusenteError extends Error {
@@ -59,15 +64,26 @@ async function agendarAlarme(storage: DurableObjectStorage, proximo: number | nu
 
 export class DestinoDO extends DurableObject<Env> {
   private readonly regras: RegrasDestino | null;
+  private readonly esquemaIncompativel: boolean = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     const chave = chaveDeHex(env.CHAVE_HMAC);
-    this.regras = chave ? new RegrasDestino(bancoDoObjeto(ctx.storage), chave, aleatorioSeguro) : null;
-    this.regras?.garantirEsquema();
+    let regras = chave ? new RegrasDestino(bancoDoObjeto(ctx.storage), chave, aleatorioSeguro) : null;
+    try {
+      regras?.garantirEsquema();
+    } catch (erro) {
+      if (!(erro instanceof EsquemaIncompativelError)) throw erro;
+      // Estado local de uma versão anterior: não é alterado nem reaproveitado.
+      registrarEvento("estado local do destino de versão anterior; respondendo indisponível");
+      regras = null;
+      this.esquemaIncompativel = true;
+    }
+    this.regras = regras;
   }
 
   private exigirRegras(): RegrasDestino {
+    if (this.esquemaIncompativel) throw new Error(ERRO_ESQUEMA_INCOMPATIVEL);
     if (!this.regras) throw new ConfiguracaoAusenteError();
     return this.regras;
   }
@@ -87,6 +103,10 @@ export class DestinoDO extends DurableObject<Env> {
 
   async marcarSemReserva(desafioId: string, agora: number): Promise<boolean> {
     return this.aposAlterar(this.exigirRegras().marcarSemReserva(desafioId, agora));
+  }
+
+  async marcarBloqueado(desafioId: string, agora: number): Promise<boolean> {
+    return this.aposAlterar(this.exigirRegras().marcarBloqueado(desafioId, agora));
   }
 
   async iniciarEnvio(desafioId: string, agora: number): Promise<boolean> {

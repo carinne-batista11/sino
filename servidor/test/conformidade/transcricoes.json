@@ -1,5 +1,5 @@
 {
-  "descricao": "Transcrições do contrato v1 geradas pelo servidor com relógio e aleatoriedade fixos.",
+  "descricao": "Transcrições do contrato v1.1 geradas pelo servidor com relógio e aleatoriedade fixos.",
   "kid": "teste-1",
   "chave_publica_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
   "cenarios": {
@@ -304,6 +304,120 @@
             "content_type": "application/json; charset=utf-8",
             "retry_after": null,
             "corpo": "{\"erro\":\"desafio_encerrado\"}"
+          }
+        }
+      ]
+    },
+    "cadastro_fora_da_lista": {
+      "finalidade": "cadastro",
+      "email": "Fora@Exemplo.com",
+      "aleatorios": {
+        "nonce": "e4d78e27c81e665f2635946b1dd5198145c33eb5e4f6c174ed829767d955e93f",
+        "segredo": "2b8f5946c0e172438a173ec494c1cd36c307eda5ab6793df34a05f511dad3954",
+        "chaves": [
+          "308acbea6e51359ccc45b6ba0a96d10864f4"
+        ]
+      },
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "MIrL6m5RNZzMRba6CpbRCGT0",
+            "corpo": "{\"finalidade\":\"cadastro\",\"email\":\"Fora@Exemplo.com\",\"contexto\":\"a3d2e2203e53eebb3adbf95b74232a4d4973a84372dd63fe68c6c87d2a8665a2\",\"segredo\":\"K49ZRsDhckOKFz7ElMHNNsMH7aWrZ5PfNKBfUR2tOVQ\"}"
+          },
+          "resposta": {
+            "status": 403,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"destinatario_nao_permitido\"}"
+          }
+        }
+      ]
+    },
+    "alteracao_removida_antes_da_validacao": {
+      "finalidade": "alteracao_email",
+      "email": "Pessoa@Exemplo.com",
+      "aleatorios": {
+        "nonce": "9960cd42d146b3316b7fa481a86eca0f1f49fca523b1f6b7e577542d61ac5f9f",
+        "segredo": "b9051c6df9bc44eee8f9b43f52843e0bcbf1460cdf90195dd5901e09d174c085",
+        "chaves": [
+          "d936dcba7e39840ce01b464b0d6edd61edcf",
+          "6a59508033cb2d222c5ca354322b1a5a05ca"
+        ]
+      },
+      "codigo": "874211",
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "2Tbcun45hAzgG0ZLDW7dYe3P",
+            "corpo": "{\"finalidade\":\"alteracao_email\",\"email\":\"Pessoa@Exemplo.com\",\"contexto\":\"d46f503f4e0019672bedd2db0eb4a3ec59bbf7d14b0ac7048288f6c5e5b82f3b\",\"segredo\":\"uQUcbfm8RO7o-bQ_UoQ-C8vxRgzfkBld1ZAeCdF0wIU\"}"
+          },
+          "resposta": {
+            "status": 201,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios/KQEn6nBtarx6TgNpjvTRRg/validacao",
+            "idempotency_key": "allQgDPLLSIsXKNUMisaWgXK",
+            "corpo": "{\"email\":\"Pessoa@Exemplo.com\",\"segredo\":\"uQUcbfm8RO7o-bQ_UoQ-C8vxRgzfkBld1ZAeCdF0wIU\",\"codigo\":\"874211\"}"
+          },
+          "resposta": {
+            "status": 403,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"destinatario_nao_permitido\"}"
+          }
+        }
+      ]
+    },
+    "recuperacao_fora_da_lista": {
+      "finalidade": "recuperacao_senha",
+      "sem_envio": false,
+      "email": "Fora@Exemplo.com",
+      "aleatorios": {
+        "nonce": "da621ab59195cc2cc460df32f2439af0269329d11870141f82ddfe9b5739fd8b",
+        "segredo": "ab4f4c85ba6169d3c58cec81e1fc7ff37195f9998fb6e1db83655636788c1ffd",
+        "chaves": [
+          "0b1c6b1643112c1b68d8939758f7693baa82",
+          "7aa1bbd16ce9956e9424efb6af44498d50d3"
+        ]
+      },
+      "codigo": "874211",
+      "passos": [
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios",
+            "idempotency_key": "CxxrFkMRLBto2JOXWPdpO6qC",
+            "corpo": "{\"finalidade\":\"recuperacao_senha\",\"email\":\"Fora@Exemplo.com\",\"contexto\":\"c0f7433a0436f067117a4e725e9fd6393059a31a3d88528716b052dbaffa52a2\",\"segredo\":\"q09MhbphadPFjOyB4fx_83GV-ZmPtuHbg2VWNniMH_0\",\"sem_envio\":false}"
+          },
+          "resposta": {
+            "status": 202,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"desafio_id\":\"KQEn6nBtarx6TgNpjvTRRg\",\"expira_em\":\"2026-10-01T12:10:00.000Z\",\"reenvio_permitido_em\":\"2026-10-01T12:01:00.000Z\",\"agora\":\"2026-10-01T12:00:00.000Z\"}"
+          }
+        },
+        {
+          "requisicao": {
+            "metodo": "POST",
+            "caminho": "/v1/desafios/KQEn6nBtarx6TgNpjvTRRg/validacao",
+            "idempotency_key": "eqG70WzplW6UJO-2r0RJjVDT",
+            "corpo": "{\"email\":\"Fora@Exemplo.com\",\"segredo\":\"q09MhbphadPFjOyB4fx_83GV-ZmPtuHbg2VWNniMH_0\",\"codigo\":\"874211\"}"
+          },
+          "resposta": {
+            "status": 422,
+            "content_type": "application/json; charset=utf-8",
+            "retry_after": null,
+            "corpo": "{\"erro\":\"codigo_invalido\",\"tentativas_restantes\":4}"
           }
         }
       ]

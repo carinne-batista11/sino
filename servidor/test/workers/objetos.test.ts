@@ -3,13 +3,15 @@
 // falhas parciais, alarmes de envio abandonado e de retenção, e a entrada
 // publicada do Worker sem rede externa.
 
-import { env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
+import { createExecutionContext, env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { HORA_MS, TETO_GLOBAL_DIA } from "../../src/config";
 import { EnviadorSimulado } from "../../src/envio/simulado";
+import worker_dev from "../../src/dev";
 import { pedirDesafio, validarDesafio, type Dependencias, type EntradaPedido, type PortaDestino } from "../../src/fluxos";
-import { dependenciasDoAmbiente } from "../../src/index";
+import { dependenciasDoAmbiente, segredosDoAmbiente } from "../../src/index";
+import { resumoDoEmail } from "../../src/nucleo/destinatarios";
 import type { PedidoDesafio, RegrasDestino, ResultadoSolicitar } from "../../src/nucleo/desafios";
 
 const CTX = "c".repeat(64);
@@ -23,7 +25,8 @@ const ipStub = (nome = unico("ip")) => env.LIMITE_IP.get(env.LIMITE_IP.idFromNam
 
 function pedido(n: number, agora: number, extra: Partial<PedidoDesafio> = {}): PedidoDesafio {
   return {
-    finalidade: "cadastro", contexto: CTX, segredoHash: `s${n}`, chaveHash: `k${n}`, semEnvio: false, agora, ...extra,
+    finalidade: "cadastro", contexto: CTX, segredoHash: `s${n}`, chaveHash: `k${n}`, semEnvio: false, permitido: true, agora,
+    ...extra,
   };
 }
 
@@ -41,10 +44,19 @@ function linhas(stub: DurableObjectStub, sql: string) {
   return runInDurableObject(stub, (_instancia, estado) => estado.storage.sql.exec(sql).toArray());
 }
 
-/** Dependências reais (Durable Objects do simulador) com enviador simulado. */
+/**
+ * Dependências reais (Durable Objects do simulador) com enviador simulado. A
+ * lista do ambiente de teste é ampliada com p0..p99 (acima do limite de 50 da
+ * configuração, só para o teste de concorrência).
+ */
 function depsReais(enviador = new EnviadorSimulado()) {
   const tarefas: Promise<unknown>[] = [];
-  const deps = dependenciasDoAmbiente(env, (t) => void tarefas.push(t), { enviador });
+  const base = segredosDoAmbiente(env)!;
+  const destinatarios = new Set(base.destinatarios);
+  for (let i = 0; i < 100; i++) destinatarios.add(resumoDoEmail(base.chaveHmac, `p${i}@exemplo.com`));
+  const deps = dependenciasDoAmbiente(env, (t) => void tarefas.push(t), {
+    enviador, segredos: { ...base, destinatarios },
+  });
   const nomeTeto = unico("teto");
   deps.tetoGlobal = () => tetoStub(nomeTeto) as never;
   return { deps, enviador, tarefas, teto: () => tetoStub(nomeTeto) };
@@ -83,7 +95,7 @@ describe("concorrência dentro de um objeto", () => {
     const r = await pronto(stub, agora);
     const vs = await Promise.all(
       Array.from({ length: 10 }, (_, i) =>
-        stub.validar({ desafioId: r.desafioId, segredoHash: "s1", chaveHash: `v${i}`, codigo: r.codigo!, agora: agora + 1 }),
+        stub.validar({ desafioId: r.desafioId, segredoHash: "s1", chaveHash: `v${i}`, codigo: r.codigo!, permitido: true, agora: agora + 1 }),
       ),
     );
     expect(vs.filter((v) => v.tipo === "autorizado")).toHaveLength(1);
@@ -97,7 +109,7 @@ describe("concorrência dentro de um objeto", () => {
     const errado = r.codigo === "000000" ? "000001" : "000000";
     const vs = await Promise.all(
       Array.from({ length: 10 }, (_, i) =>
-        stub.validar({ desafioId: r.desafioId, segredoHash: "s1", chaveHash: `e${i}`, codigo: errado, agora: agora + 1 }),
+        stub.validar({ desafioId: r.desafioId, segredoHash: "s1", chaveHash: `e${i}`, codigo: errado, permitido: true, agora: agora + 1 }),
       ),
     );
     expect(vs.filter((v) => v.tipo === "codigo_invalido")).toHaveLength(5);
@@ -215,7 +227,8 @@ describe("alarmes", () => {
     await runDurableObjectAlarm(stub);
     expect(await linhas(stub, "SELECT estado_envio FROM desafios")).toEqual([{ estado_envio: "incerto" }]);
     const v = await stub.validar({
-      desafioId: r.desafioId, segredoHash: "s1", chaveHash: "v1", codigo: r.codigo!, agora: Date.now(),
+      desafioId: r.desafioId, segredoHash: "s1", chaveHash: "v1", codigo: r.codigo!, permitido: true,
+      agora: Date.now(),
     });
     expect(v.tipo).toBe("autorizado");
   });
@@ -233,7 +246,8 @@ describe("alarmes", () => {
     expect(await stub.registrarReserva(r.desafioId, "reserva-tardia", Date.now())).toBe(false);
     expect(await stub.iniciarEnvio(r.desafioId, base + 2000)).toBe(false);
     const v = await stub.validar({
-      desafioId: r.desafioId, segredoHash: "s1", chaveHash: "v1", codigo: r.codigo!, agora: Date.now(),
+      desafioId: r.desafioId, segredoHash: "s1", chaveHash: "v1", codigo: r.codigo!, permitido: true,
+      agora: Date.now(),
     });
     expect(v.tipo).toBe("encerrado");
   });
@@ -288,5 +302,91 @@ describe("entrada publicada do Worker (sem rede externa)", () => {
     const deps = dependenciasDoAmbiente({ ...env, CHAVE_HMAC: undefined }, () => {}, { enviador: new EnviadorSimulado() });
     const r = await pedirDesafio(deps, entrada("x@exemplo.com", "192.0.2.11"));
     expect(r).toEqual({ status: 503, corpo: { erro: "servico_indisponivel" } });
+  });
+});
+
+describe("restrição de destinatários com objetos reais (contrato v1.1)", () => {
+  it("estado 'bloqueado' e motivo novo aceitos pelas restrições da tabela; validação fora da lista", async () => {
+    const stub = destinoStub();
+    const agora = Date.now();
+    const r = (await stub.solicitar(pedido(1, agora))) as Criado;
+    expect(await stub.marcarBloqueado(r.desafioId, agora)).toBe(true);
+    const outro = destinoStub();
+    const r2 = await pronto(outro, agora);
+    expect(await outro.registrarResultado(r2.desafioId, "bloqueado", agora + 1)).toBe("bloqueado");
+    expect(await linhas(stub, "SELECT estado_envio, reserva_global, motivo_invalidacao FROM desafios")).toEqual([
+      { estado_envio: "bloqueado", reserva_global: null, motivo_invalidacao: "destinatario_nao_permitido" },
+    ]);
+    expect(await linhas(outro, "SELECT estado_envio, motivo_invalidacao FROM desafios")).toEqual([
+      { estado_envio: "bloqueado", motivo_invalidacao: "destinatario_nao_permitido" },
+    ]);
+    const terceiro = destinoStub();
+    const r3 = await pronto(terceiro, agora);
+    const v = await terceiro.validar({
+      desafioId: r3.desafioId, segredoHash: "s1", chaveHash: "v1", codigo: r3.codigo!, permitido: false, agora: agora + 1,
+    });
+    expect(v).toEqual({ tipo: "nao_permitido" });
+    expect(await linhas(terceiro, "SELECT tentativas, motivo_invalidacao FROM desafios")).toEqual([
+      { tentativas: 0, motivo_invalidacao: "destinatario_nao_permitido" },
+    ]);
+    expect(await linhas(terceiro, "SELECT versao FROM esquema_destino")).toEqual([{ versao: 2 }]);
+  });
+
+  it("recuperação fora da lista: desafio sem envio no objeto real", async () => {
+    const stub = destinoStub();
+    const r = (await stub.solicitar(pedido(1, Date.now(), { finalidade: "recuperacao_senha", permitido: false }))) as Criado;
+    expect(r.codigo).toBeNull();
+    expect(await linhas(stub, "SELECT estado_envio FROM desafios")).toEqual([{ estado_envio: "sem_envio" }]);
+  });
+
+  it.each([
+    ["ausente", undefined],
+    ["vazia", ""],
+    ["malformada", "v1:abc"],
+  ])("lista %s: 503 no pedido e na validação", async (_nome, lista) => {
+    const deps = dependenciasDoAmbiente({ ...env, DESTINATARIOS_PERMITIDOS: lista }, () => {}, {
+      enviador: new EnviadorSimulado(),
+    });
+    expect(deps.segredos).toBeNull();
+    expect(await pedirDesafio(deps, entrada("x@exemplo.com", "192.0.2.12"))).toEqual({
+      status: 503, corpo: { erro: "servico_indisponivel" },
+    });
+    expect(await validarDesafio(deps, {
+      desafioId: "A".repeat(22), email: "x@exemplo.com", segredo: SEGREDO, chave: "valida-0000000009", codigo: "123456",
+      ip: "192.0.2.12",
+    })).toEqual({ status: 503, corpo: { erro: "servico_indisponivel" } });
+  });
+
+  it("entrada publicada: cadastro fora da lista recebe 403 sem envio", async () => {
+    const resposta = await exports.default.fetch(
+      new Request("https://servico.teste/v1/desafios", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "pedido-publicado-0002",
+          "CF-Connecting-IP": "192.0.2.13",
+        },
+        body: JSON.stringify({ finalidade: "cadastro", email: "fora@exemplo.com", contexto: CTX, segredo: SEGREDO }),
+      }),
+    );
+    expect(resposta.status).toBe(403);
+    expect(await resposta.json()).toEqual({ erro: "destinatario_nao_permitido" });
+  });
+
+  it("entrada de desenvolvimento: também exige a lista, sem modo irrestrito", async () => {
+    const pedidoDev = (chave: string, email: string) =>
+      new Request("https://servico.teste/v1/desafios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": chave, "CF-Connecting-IP": "192.0.2.14" },
+        body: JSON.stringify({ finalidade: "cadastro", email, contexto: CTX, segredo: SEGREDO }),
+      });
+    const envDev = { ...env, CAIXA_DEV_URL: "http://127.0.0.1:8025" };
+    const semLista = await worker_dev.fetch(
+      pedidoDev("pedido-dev-000000001", "x@exemplo.com"), { ...envDev, DESTINATARIOS_PERMITIDOS: undefined },
+      createExecutionContext(),
+    );
+    expect(semLista.status).toBe(503);
+    const fora = await worker_dev.fetch(pedidoDev("pedido-dev-000000002", "fora@exemplo.com"), envDev, createExecutionContext());
+    expect(fora.status).toBe(403);
   });
 });
