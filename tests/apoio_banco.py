@@ -34,6 +34,11 @@ PASTA_BACKUPS_REAL = os.path.realpath(os.path.join(PASTA_DATABASE, "backups"))
 
 if PASTA_DATABASE not in sys.path:
     sys.path.insert(0, PASTA_DATABASE)
+# backend/ (documentos.py: versões vigentes dos Termos e da Política) no fim do
+# caminho, sem sombrear os módulos de database/.
+PASTA_BACKEND = os.path.join(RAIZ_PROJETO, "backend")
+if PASTA_BACKEND not in sys.path:
+    sys.path.append(PASTA_BACKEND)
 
 import db  # noqa: E402
 
@@ -111,10 +116,21 @@ class TesteComBancoTemporario(unittest.TestCase):
         finally:
             conexao.close()
 
-    def criar_usuario(self, email="teste@sino.com", senha="senha123", nome="Teste"):
+    def criar_usuario(self, email="teste@sino.com", senha="senha123", nome="Teste", aceitar_versoes_atuais=True):
+        """
+        Usuário de teste. Por padrão, com o aceite das versões vigentes dos
+        Termos e da Política registrado (ERS v7.0, 5.53), como uma conta
+        criada pelo cadastro atual: assim os testes de interface entram sem a
+        tela de novo aceite. `aceitar_versoes_atuais=False` simula uma conta
+        com aceite anterior ao versionamento (só a data).
+        """
         sucesso, _ = db.criar_usuario(nome, email, senha, aceite_termos=True)
         self.assertTrue(sucesso)
-        return self.consultar("SELECT id FROM usuarios WHERE email = ?", (email,))[0][0]
+        usuario_id = self.consultar("SELECT id FROM usuarios WHERE email = ?", (email,))[0][0]
+        if aceitar_versoes_atuais:
+            import documentos
+            db.registrar_documentos(usuario_id, aceites=documentos.versoes_atuais())
+        return usuario_id
 
     def criar_categoria(self, usuario_id, nome="Casa"):
         return db.criar_categoria(usuario_id, nome, "🏡")

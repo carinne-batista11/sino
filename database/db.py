@@ -34,14 +34,14 @@ def conectar():
 
 def criar_tabelas():
     """
-    Cria o schema atual (v8: ERS v6.0, 9.2, a posição lógica das ocorrências
-    da Etapa 2b e o registro de autorizações usadas da Etapa 8) em um banco
-    novo. Em um banco que já existe,
+    Cria o schema atual (v9: ERS v6.0, 9.2, a posição lógica das ocorrências
+    da Etapa 2b, o registro de autorizações usadas da Etapa 8 e o registro
+    dos aceites por versão da ERS v7.0, M12) em um banco novo. Em um banco que já existe,
     `CREATE TABLE IF NOT EXISTS` não acrescenta colunas; por isso os índices
     de e-mail e de posição e o `user_version` só são gravados quando
     `usuarios` nasce nesta chamada. Um banco v5/v6 existente permanece
-    intocado até `migrar_schema_v6()`/`migrar_schema_v7()`/`migrar_schema_v8()`
-    (com backup).
+    intocado até `migrar_schema_v6()`/`migrar_schema_v7()`/`migrar_schema_v8()`/
+    `migrar_schema_v9()` (com backup).
 
     Tudo roda em uma única transação (em modo legado, o sqlite3 do Python
     faria autocommit de cada DDL): um banco novo nunca fica com as tabelas
@@ -156,6 +156,7 @@ def _criar_tabelas_v6(cursor, banco_novo):
         cursor.execute(f"CREATE UNIQUE INDEX {INDICE_EMAIL_CI} ON usuarios(lower(email));")
         cursor.execute(f"CREATE UNIQUE INDEX {INDICE_POSICAO} ON contas(serie_id, posicao);")
         _criar_tabela_autorizacoes(cursor)
+        _criar_tabela_aceites(cursor)
         cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_ATUAL};")
 
 
@@ -504,7 +505,6 @@ COLUNAS_V7 = (
 # explícito (num TEXT PRIMARY KEY o SQLite aceitaria NULL) e canônico: 16
 # bytes em base64url, 22 caracteres, o último em A/Q/g/w (bits de sobra zero).
 VERSAO_SCHEMA_V8 = 8
-VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V8
 TABELA_AUTORIZACOES = "autorizacoes_usadas"
 INDICE_AUTORIZACOES_EXPIRA = "idx_autorizacoes_expira"
 DDL_AUTORIZACOES = """
@@ -527,9 +527,43 @@ COLUNAS_AUTORIZACOES = (
     (2, "expira_em", "INTEGER", 1, None, 0),
 )
 FINALIDADES_AUTORIZACAO = ("cadastro", "alteracao_email", "recuperacao_senha")
+# ERS v7.0, M12 (v9): registro, por usuário, de qual versão de cada documento
+# (Termos de Uso e Política de Privacidade) foi aceita ("aceite") ou apenas
+# lida depois de um ajuste menor ("ciencia"), e quando. A versão é a data do
+# texto (AAAA-MM-DD, backend/documentos.py). Usuários que aceitaram antes do
+# versionamento não têm linha nenhuma: a migração não lhes atribui uma versão
+# que não foi registrada no momento do aceite (`usuarios.termos_aceitos_em`
+# continua sendo o registro desse aceite).
+VERSAO_SCHEMA_V9 = 9
+VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V9
+TABELA_ACEITES = "aceites_documentos"
+DOCUMENTOS_VERSIONADOS = ("termos", "politica")
+TIPOS_REGISTRO_DOCUMENTO = ("aceite", "ciencia")
+DDL_ACEITES = """
+CREATE TABLE aceites_documentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    documento TEXT NOT NULL CHECK (documento IN ('termos', 'politica')),
+    versao TEXT NOT NULL
+        CHECK (length(versao) = 10
+               AND versao GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    tipo TEXT NOT NULL CHECK (tipo IN ('aceite', 'ciencia')),
+    registrado_em TEXT NOT NULL CHECK (length(registrado_em) >= 10),
+    UNIQUE (usuario_id, documento, versao, tipo)
+)
+"""
+# (cid, nome, tipo, notnull, default, pk) esperados em PRAGMA table_info.
+COLUNAS_ACEITES = (
+    (0, "id", "INTEGER", 0, None, 1),
+    (1, "usuario_id", "INTEGER", 1, None, 0),
+    (2, "documento", "TEXT", 1, None, 0),
+    (3, "versao", "TEXT", 1, None, 0),
+    (4, "tipo", "TEXT", 1, None, 0),
+    (5, "registrado_em", "TEXT", 1, None, 0),
+)
 # user_version que esta versão do app sabe tratar: 0 (bancos anteriores ao
-# controle de versão, validados estruturalmente como v5), 6, 7 e 8.
-VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8)
+# controle de versão, validados estruturalmente como v5), 6, 7, 8 e 9.
+VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9)
 
 
 class ColisaoDeEmailError(RuntimeError):
@@ -593,6 +627,23 @@ class SchemaV8IncompativelError(RuntimeError):
         self.problemas = problemas
         super().__init__(
             "Migração v8 abortada: schema incompatível ("
+            + "; ".join(problemas)
+            + "). Nenhuma alteração foi feita."
+        )
+
+
+class SchemaV9IncompativelError(RuntimeError):
+    """
+    O banco não está no estado que a migração v9 aceita: anterior à v8,
+    `aceites_documentos` com definição diferente, com dados fora do formato,
+    ou ausente/incompatível num banco já declarado v9. Nada é alterado e
+    nenhum backup é criado.
+    """
+
+    def __init__(self, problemas):
+        self.problemas = problemas
+        super().__init__(
+            "Migração v9 abortada: schema incompatível ("
             + "; ".join(problemas)
             + "). Nenhuma alteração foi feita."
         )
@@ -748,7 +799,8 @@ def _verificar_schema_v6(cursor):
     resultado["ok"] = (
         all(resultado[f"{tabela}.{coluna}"] == "valida" for tabela, coluna, _, _ in COLUNAS_V6)
         and resultado["indice_email_ci"] == "valido"
-        and resultado["user_version"] in (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8)
+        and resultado["user_version"] in (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8,
+                                          VERSAO_SCHEMA_V9)
         and resultado["integridade"] == ["ok"]
         and not resultado["violacoes_fk"]
     )
@@ -912,6 +964,7 @@ class BancoNaoPreparadoError(RuntimeError):
         self.validacao = validacao
         v7 = "indice_posicao" in validacao
         v8 = "tabela_autorizacoes" in validacao
+        v9 = "tabela_aceites" in validacao
         colunas = COLUNAS_V6 + (COLUNAS_V7 if v7 else ())
         falhas = [f"{tabela}.{coluna}" for tabela, coluna, _, _ in colunas
                   if validacao.get(f"{tabela}.{coluna}") != "valida"]
@@ -919,18 +972,20 @@ class BancoNaoPreparadoError(RuntimeError):
             falhas.append("indice_email_ci")
         if v7 and validacao.get("indice_posicao") != "valido":
             falhas.append("indice_posicao")
-        if v8:
-            versoes_aceitas = (VERSAO_SCHEMA_V8,)
-        elif v7:
+        if v7:
             versoes_aceitas = (validacao.get("versao_esperada", VERSAO_SCHEMA_V7),)
         else:
-            versoes_aceitas = (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8)
+            versoes_aceitas = (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9)
         if validacao.get("user_version") not in versoes_aceitas:
             falhas.append("user_version")
         if v8 and validacao.get("tabela_autorizacoes") != "valida":
             falhas.append("tabela_autorizacoes")
         if v8 and validacao.get("autorizacoes_invalidas"):
             falhas.append("autorizacoes_invalidas")
+        if v9 and validacao.get("tabela_aceites") != "valida":
+            falhas.append("tabela_aceites")
+        if v9 and validacao.get("aceites_invalidos"):
+            falhas.append("aceites_invalidos")
         if validacao.get("integridade") != ["ok"]:
             falhas.append("integridade")
         if validacao.get("violacoes_fk"):
@@ -1052,10 +1107,11 @@ def _autorizacoes_invalidas(cursor):
     return cursor.fetchone()[0]
 
 
-def _verificar_schema_v8(cursor):
-    """Checagens da v7 (com user_version 8) + tabela de autorizações exata e
-    com dados no formato estrito."""
-    resultado = _verificar_schema_v7(cursor, versao_esperada=VERSAO_SCHEMA_V8)
+def _verificar_schema_v8(cursor, versao_esperada=VERSAO_SCHEMA_V8):
+    """Checagens da v7 (com user_version `versao_esperada`: 8; a v9
+    reaproveita estas checagens com 9) + tabela de autorizações exata e com
+    dados no formato estrito."""
+    resultado = _verificar_schema_v7(cursor, versao_esperada=versao_esperada)
     resultado["tabela_autorizacoes"] = _estado_tabela_autorizacoes(cursor)
     resultado["autorizacoes_invalidas"] = (
         _autorizacoes_invalidas(cursor) if resultado["tabela_autorizacoes"] == "valida" else None
@@ -1068,20 +1124,91 @@ def _verificar_schema_v8(cursor):
     return resultado
 
 
+def _estado_tabela_aceites(cursor):
+    """
+    'ausente', 'valida' ou 'incompativel'. Válida = tabela com o DDL exato
+    (comparado sem diferenças de espaçamento), colunas exatas em PRAGMA
+    table_info, só o índice automático da restrição UNIQUE (nenhum índice
+    explícito) e nenhum gatilho sobre a tabela.
+    """
+    cursor.execute("SELECT type, sql FROM sqlite_master WHERE name = ?", (TABELA_ACEITES,))
+    objeto = cursor.fetchone()
+    if objeto is None:
+        return "ausente"
+    if objeto[0] != "table" or _normalizar_ddl(objeto[1]) != _normalizar_ddl(DDL_ACEITES):
+        return "incompativel"
+    cursor.execute(f"PRAGMA table_info({TABELA_ACEITES})")
+    if tuple(tuple(linha) for linha in cursor.fetchall()) != COLUNAS_ACEITES:
+        return "incompativel"
+    cursor.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ?", (TABELA_ACEITES,),
+    )
+    indices = cursor.fetchall()
+    if len(indices) != 1 or indices[0][1] is not None:
+        return "incompativel"
+    cursor.execute(f"PRAGMA index_list({TABELA_ACEITES})")
+    # (seq, name, unique, origin, partial)
+    lista = cursor.fetchall()
+    if len(lista) != 1 or lista[0][2:5] != (1, "u", 0):
+        return "incompativel"
+    cursor.execute(f"PRAGMA index_info({lista[0][1]})")
+    if [linha[2] for linha in sorted(cursor.fetchall())] != ["usuario_id", "documento", "versao", "tipo"]:
+        return "incompativel"
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?", (TABELA_ACEITES,))
+    if cursor.fetchone() is not None:
+        return "incompativel"
+    return "valida"
+
+
+def _aceites_invalidos(cursor):
+    """Linhas fora do formato estrito (tipos de armazenamento, documento,
+    versão AAAA-MM-DD, tipo e data do registro). As referências a usuários
+    inexistentes aparecem em `PRAGMA foreign_key_check`."""
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) FROM {TABELA_ACEITES}
+        WHERE typeof(usuario_id) != 'integer'
+           OR typeof(documento) != 'text' OR documento NOT IN ('termos', 'politica')
+           OR typeof(versao) != 'text' OR length(versao) != 10
+           OR versao NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+           OR typeof(tipo) != 'text' OR tipo NOT IN ('aceite', 'ciencia')
+           OR typeof(registrado_em) != 'text' OR length(registrado_em) < 10
+        """
+    )
+    return cursor.fetchone()[0]
+
+
+def _verificar_schema_v9(cursor):
+    """Checagens da v8 (com user_version 9) + tabela de aceites exata e com
+    dados no formato estrito."""
+    resultado = _verificar_schema_v8(cursor, versao_esperada=VERSAO_SCHEMA_V9)
+    resultado["tabela_aceites"] = _estado_tabela_aceites(cursor)
+    resultado["aceites_invalidos"] = (
+        _aceites_invalidos(cursor) if resultado["tabela_aceites"] == "valida" else None
+    )
+    resultado["ok"] = (
+        resultado["ok"]
+        and resultado["tabela_aceites"] == "valida"
+        and resultado["aceites_invalidos"] == 0
+    )
+    return resultado
+
+
 def validar_schema_atual(caminho_banco=None):
     """
-    Checagens do schema atual (v8): tudo o que `validar_migracao_v6()`
+    Checagens do schema atual (v9): tudo o que `validar_migracao_v6()`
     verifica, mais as colunas e o índice da posição lógica, nenhuma
     ocorrência de série sem posição/vaga, nenhuma coluna fora do schema
-    conhecido, a tabela `autorizacoes_usadas` exata e com dados válidos e
-    `user_version = 8`. Só consulta o banco (FileNotFoundError se não existir).
+    conhecido, as tabelas `autorizacoes_usadas` e `aceites_documentos`
+    exatas e com dados válidos e `user_version = 9`. Só consulta o banco
+    (FileNotFoundError se não existir).
     """
     caminho_banco = caminho_banco or NOME_DO_BANCO
     if not os.path.exists(caminho_banco):
         raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
     conexao = sqlite3.connect(caminho_banco)
     try:
-        return _verificar_schema_v8(conexao.cursor())
+        return _verificar_schema_v9(conexao.cursor())
     finally:
         conexao.close()
 
@@ -1328,12 +1455,12 @@ def migrar_schema_v8(caminho_banco=None):
         estado = _estado_tabela_autorizacoes(cursor)
         invalidas = _autorizacoes_invalidas(cursor) if estado == "valida" else 0
 
-        if versao == VERSAO_SCHEMA_V8:
+        if versao >= VERSAO_SCHEMA_V8:  # v9 também tem todos os itens da v8
             if estado != "valida":
-                raise SchemaV8IncompativelError([f"banco v8 com {TABELA_AUTORIZACOES} {estado}"])
+                raise SchemaV8IncompativelError([f"banco v{versao} com {TABELA_AUTORIZACOES} {estado}"])
             if invalidas:
                 raise SchemaV8IncompativelError([f"{invalidas} registro(s) de autorização fora do formato"])
-            verificacao = _verificar_schema_v8(cursor)
+            verificacao = _verificar_schema_v8(cursor, versao_esperada=versao)
             if not verificacao["ok"]:
                 raise BancoNaoPreparadoError(verificacao)
             cursor.execute("ROLLBACK;")
@@ -1385,6 +1512,110 @@ def _criar_tabela_autorizacoes(cursor):
     cursor.execute(DDL_INDICE_AUTORIZACOES)
 
 
+def _dados_v8(cursor):
+    """Dados v7 + autorizações usadas (RNF08 na v9)."""
+    dados = _dados_v7(cursor)
+    cursor.execute(f"SELECT jti, finalidade, expira_em FROM {TABELA_AUTORIZACOES} ORDER BY jti")
+    dados[TABELA_AUTORIZACOES] = cursor.fetchall()
+    return dados
+
+
+def migrar_schema_v9(caminho_banco=None):
+    """
+    Migração v8 -> v9 (ERS v7.0, M12): tabela `aceites_documentos`, vazia.
+    Aditiva (RNF08): nenhuma tabela ou coluna existente é alterada, e nenhum
+    aceite é criado para os usuários existentes (o aceite deles é anterior
+    ao versionamento e continua registrado em `usuarios.termos_aceitos_em`).
+
+    Tudo dentro de `BEGIN IMMEDIATE`. Antes de qualquer escrita e sem backup:
+      * `user_version` não suportada (VersaoDeBancoNaoSuportadaError) ou
+        anterior à 8 (SchemaV9IncompativelError -- a v8 vem antes);
+      * banco v9: a tabela precisa existir, exata e com dados válidos;
+        senão SchemaV9IncompativelError. Íntegro: {"executado": False,
+        "motivo": "já migrado"};
+      * banco v8: a tabela ausente é o esperado e é criada. Se já existir,
+        só é reaproveitada se o DDL e os dados estiverem exatamente no
+        formato; qualquer divergência é recusada;
+      * banco v8 que não passa na própria validação: BancoNaoPreparadoError.
+    Depois: backup com integrity_check, criação, `user_version = 9`,
+    validação (schema v9, contagens e dados v8 idênticos) e COMMIT. Qualquer
+    falha reverte tudo; o backup, se já criado, permanece no disco.
+
+    Retorna {"executado": True, "backup": caminho, "tabela_reaproveitada": bool}.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+
+    conexao = sqlite3.connect(caminho_banco)
+    caminho_backup = None
+    try:
+        conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+
+        versao = _exigir_versao_suportada(cursor)
+        if versao < VERSAO_SCHEMA_V8:
+            raise SchemaV9IncompativelError(
+                [f"user_version {versao}: o banco precisa passar pela migração v8 antes da v9"]
+            )
+        estado = _estado_tabela_aceites(cursor)
+        invalidos = _aceites_invalidos(cursor) if estado == "valida" else 0
+
+        if versao == VERSAO_SCHEMA_V9:
+            if estado != "valida":
+                raise SchemaV9IncompativelError([f"banco v9 com {TABELA_ACEITES} {estado}"])
+            if invalidos:
+                raise SchemaV9IncompativelError([f"{invalidos} registro(s) de aceite fora do formato"])
+            verificacao = _verificar_schema_v9(cursor)
+            if not verificacao["ok"]:
+                raise BancoNaoPreparadoError(verificacao)
+            cursor.execute("ROLLBACK;")
+            return {"executado": False, "motivo": "já migrado", "backup": None}
+
+        if estado == "incompativel":
+            raise SchemaV9IncompativelError([f"{TABELA_ACEITES} com definição diferente da esperada"])
+        if invalidos:
+            raise SchemaV9IncompativelError([f"{invalidos} registro(s) de aceite fora do formato"])
+        validacao_v8 = _verificar_schema_v8(cursor)
+        if not validacao_v8["ok"]:
+            raise BancoNaoPreparadoError(validacao_v8)
+
+        # Mesmo raciocínio da v8: o RESERVED lock deste BEGIN IMMEDIATE
+        # permite a leitura do backup e garante que nada muda até o COMMIT.
+        caminho_backup = criar_backup(caminho_banco, rotulo="v9")
+        if not _verificar_integridade_backup(caminho_backup):
+            raise RuntimeError(
+                f"Backup pré-migração v9 falhou no integrity_check ({caminho_backup}); "
+                "migração abortada."
+            )
+
+        contagens_antes = _contagens(cursor)
+        dados_antes = _dados_v8(cursor)
+
+        if estado == "ausente":
+            _criar_tabela_aceites(cursor)
+        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V9};")
+
+        verificacao = _verificar_schema_v9(cursor)
+        if (not verificacao["ok"] or _contagens(cursor) != contagens_antes
+                or _dados_v8(cursor) != dados_antes):
+            raise RuntimeError("Validação pós-migração v9 falhou; alterações revertidas.")
+
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+    return {"executado": True, "backup": caminho_backup, "tabela_reaproveitada": estado == "valida"}
+
+
+def _criar_tabela_aceites(cursor):
+    cursor.execute(DDL_ACEITES)
+
+
 def _banco_existente_vazio(caminho_banco):
     """
     Só leitura. Recusa `user_version` não suportada (VersaoDeBancoNaoSuportadaError)
@@ -1403,21 +1634,20 @@ def _banco_existente_vazio(caminho_banco):
 def preparar_banco():
     """
     Garante, na inicialização do app, que `NOME_DO_BANCO` está no schema
-    atual (v8), reutilizando `criar_tabelas()`, `migrar_schema_v6()`,
-    `migrar_schema_v7()`, `migrar_schema_v8()` e `validar_schema_atual()`:
+    atual (v9), reutilizando `criar_tabelas()`, `migrar_schema_v6()` a
+    `migrar_schema_v9()` e `validar_schema_atual()`:
 
       * `user_version` fora de VERSOES_SUPORTADAS (ex.: banco de uma versão
         futura): `VersaoDeBancoNaoSuportadaError` antes de qualquer escrita;
       * banco inexistente, ou arquivo sem nenhuma tabela: `criar_tabelas()`
-        gera o schema v8 direto, sem backup -> situação "criado";
+        gera o schema v9 direto, sem backup -> situação "criado";
       * banco que já passa em `validar_schema_atual()`: nada é gravado, nem
         lock de escrita é pedido -> "atual";
-      * banco v5 (ou v6 incompleto): `migrar_schema_v6()`, `migrar_schema_v7()`
-        e `migrar_schema_v8()` -- uma transação e um backup por etapa. Se uma
+      * banco v5 (ou v6 incompleto): `migrar_schema_v6()` até
+        `migrar_schema_v9()` -- uma transação e um backup por etapa. Se uma
         etapa falhar, o banco fica na última versão válida (com o backup
         dela) e a próxima inicialização retoma a partir dali;
-      * banco v6: `migrar_schema_v7()` e `migrar_schema_v8()`; banco v7: só
-        `migrar_schema_v8()` -> "migrado".
+      * banco v6, v7 ou v8: só as migrações que faltam -> "migrado".
 
     `criar_tabelas()` nunca é chamada sobre um banco existente. Ao final, o
     banco precisa passar em `validar_schema_atual()`; caso contrário,
@@ -1427,27 +1657,31 @@ def preparar_banco():
 
     Retorna {"situacao": "criado" | "migrado" | "atual",
              "migracao": dict | None (v6), "migracao_v7": dict | None,
-             "migracao_v8": dict | None}.
+             "migracao_v8": dict | None, "migracao_v9": dict | None}.
     """
     caminho_banco = NOME_DO_BANCO
-    migracao_v6 = migracao_v7 = migracao_v8 = None
+    migracao_v6 = migracao_v7 = migracao_v8 = migracao_v9 = None
     if not os.path.exists(caminho_banco) or _banco_existente_vazio(caminho_banco):
         criar_tabelas()
         situacao = "criado"
     elif validar_schema_atual(caminho_banco)["ok"]:
-        return {"situacao": "atual", "migracao": None, "migracao_v7": None, "migracao_v8": None}
+        return {"situacao": "atual", "migracao": None, "migracao_v7": None, "migracao_v8": None,
+                "migracao_v9": None}
     else:
         if not validar_migracao_v6(caminho_banco)["ok"]:
             migracao_v6 = migrar_schema_v6(caminho_banco)
         migracao_v7 = migrar_schema_v7(caminho_banco)
         migracao_v8 = migrar_schema_v8(caminho_banco)
-        executou = any(m is not None and m["executado"] for m in (migracao_v6, migracao_v7, migracao_v8))
+        migracao_v9 = migrar_schema_v9(caminho_banco)
+        executou = any(m is not None and m["executado"]
+                       for m in (migracao_v6, migracao_v7, migracao_v8, migracao_v9))
         situacao = "migrado" if executou else "atual"
 
     validacao = validar_schema_atual(caminho_banco)
     if not validacao["ok"]:
         raise BancoNaoPreparadoError(validacao)
-    return {"situacao": situacao, "migracao": migracao_v6, "migracao_v7": migracao_v7, "migracao_v8": migracao_v8}
+    return {"situacao": situacao, "migracao": migracao_v6, "migracao_v7": migracao_v7,
+            "migracao_v8": migracao_v8, "migracao_v9": migracao_v9}
 
 
 # RNF05: PBKDF2-HMAC-SHA256 (stdlib, sem dependência nova) com salt aleatório
@@ -2032,12 +2266,17 @@ def autorizacao_ja_usada(autorizacao):
     return linha is not None
 
 
-def concluir_cadastro(autorizacao, nome, email, senha, relogio=time.monotonic):
+def concluir_cadastro(autorizacao, nome, email, senha, relogio=time.monotonic, versoes_aceitas=None):
     """
     RF01/5.31 (Etapa 8): cria o usuário depois da confirmação do e-mail por
     código, com `email_verificado = 1`, `termos_aceitos_em` na data da
     conclusão (o aceite é exigido pela tela antes de pedir o código) e o
     catálogo de categorias -- tudo na transação que consome a autorização.
+
+    ERS v7.0, 5.53 (M12): `versoes_aceitas` ({documento: "AAAA-MM-DD"}, as
+    versões vigentes exibidas no cadastro) é gravado como aceite de cada
+    documento na mesma transação. A interface sempre informa as versões;
+    None (chamadas antigas e testes) não grava nenhum registro de versão.
 
     `senha` precisa ser a SenhaValidada de `hash_de_nova_senha` (hash em texto
     é recusado). Recusas: TypeError (senha), ValueError/LimiteDeCaracteresError
@@ -2052,6 +2291,7 @@ def concluir_cadastro(autorizacao, nome, email, senha, relogio=time.monotonic):
         raise ValueError("O nome é obrigatório.")
     validar_limite("nome_usuario", nome, LIMITE_NOME_USUARIO)
     email = validar_email_novo(email)
+    versoes = _validar_versoes_documentos(versoes_aceitas) if versoes_aceitas is not None else []
 
     def preparar(cursor):
         if cursor.execute("SELECT 1 FROM usuarios WHERE lower(email) = lower(?)", (email,)).fetchone():
@@ -2068,11 +2308,98 @@ def concluir_cadastro(autorizacao, nome, email, senha, relogio=time.monotonic):
                 raise EmailEmUsoError() from erro
             usuario_id = cursor.lastrowid
             _inserir_categorias_padrao(cursor, usuario_id)
+            _inserir_registros_documentos(cursor, usuario_id, versoes, "aceite")
             return usuario_id
 
         return gravar
 
     return _consumir_autorizacao(autorizacao, "cadastro", email, relogio, preparar)
+
+
+# ------------------------------------------------------------------
+#  Versões e aceite dos Termos e da Política (ERS v7.0, 5.53, RF47)
+#
+#  O banco só registra fatos: qual versão de cada documento o usuário
+#  aceitou ("aceite") ou leu depois de um ajuste menor ("ciencia"), e
+#  quando. Quais versões existem e se uma mudança é relevante ou menor fica
+#  em backend/documentos.py, que decide o que pedir no login.
+# ------------------------------------------------------------------
+def _validar_versoes_documentos(versoes):
+    """{documento: "AAAA-MM-DD"} -> [(documento, versao)]; ValueError/TypeError
+    para documento desconhecido ou versão fora do formato."""
+    if not isinstance(versoes, dict):
+        raise TypeError("as versões precisam ser um dicionário {documento: 'AAAA-MM-DD'}")
+    pares = []
+    for documento, versao in versoes.items():
+        if documento not in DOCUMENTOS_VERSIONADOS:
+            raise ValueError(f"documento desconhecido: {documento!r}")
+        if not isinstance(versao, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", versao):
+            raise ValueError(f"versão fora do formato AAAA-MM-DD: {versao!r}")
+        date.fromisoformat(versao)  # data inexistente levanta ValueError
+        pares.append((documento, versao))
+    return pares
+
+
+def _inserir_registros_documentos(cursor, usuario_id, pares, tipo):
+    """Na transação de quem chama. Um registro repetido (mesmo usuário,
+    documento, versão e tipo) é ignorado: vale o primeiro, com a data dele."""
+    if tipo not in TIPOS_REGISTRO_DOCUMENTO:
+        raise ValueError(f"tipo de registro desconhecido: {tipo!r}")
+    agora = datetime.now().isoformat(timespec="seconds")
+    for documento, versao in pares:
+        cursor.execute(
+            f"INSERT OR IGNORE INTO {TABELA_ACEITES} (usuario_id, documento, versao, tipo, registrado_em) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (usuario_id, documento, versao, tipo, agora),
+        )
+
+
+def registrar_documentos(usuario_id, aceites=None, ciencias=None):
+    """
+    5.53: grava, numa única transação, os aceites ({documento: versão}) e as
+    ciências de ajustes menores do usuário. ContaNaoEncontradaError se o
+    usuário não existir (nada é gravado); versões fora do formato levantam
+    ValueError antes de qualquer escrita.
+    """
+    pares_aceite = _validar_versoes_documentos(aceites or {})
+    pares_ciencia = _validar_versoes_documentos(ciencias or {})
+    conexao = conectar()
+    conexao.isolation_level = None  # controle explícito da transação
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+        if cursor.execute("SELECT 1 FROM usuarios WHERE id = ?", (usuario_id,)).fetchone() is None:
+            raise ContaNaoEncontradaError()
+        _inserir_registros_documentos(cursor, usuario_id, pares_aceite, "aceite")
+        _inserir_registros_documentos(cursor, usuario_id, pares_ciencia, "ciencia")
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+
+def registros_de_documentos(usuario_id):
+    """
+    Só leitura: {documento: {"aceite": [versões], "ciencia": [versões]}}, em
+    ordem crescente, para cada documento versionado (listas vazias quando
+    não houver registro -- caso dos aceites anteriores ao versionamento).
+    """
+    registros = {documento: {tipo: [] for tipo in TIPOS_REGISTRO_DOCUMENTO}
+                 for documento in DOCUMENTOS_VERSIONADOS}
+    conexao = conectar()
+    try:
+        linhas = conexao.execute(
+            f"SELECT documento, tipo, versao FROM {TABELA_ACEITES} WHERE usuario_id = ? "
+            "ORDER BY documento, tipo, versao",
+            (usuario_id,),
+        ).fetchall()
+    finally:
+        conexao.close()
+    for documento, tipo, versao in linhas:
+        registros[documento][tipo].append(versao)
+    return registros
 
 
 def alterar_email_verificado(autorizacao, pendencia, novo_email, relogio=time.monotonic):
@@ -2271,6 +2598,8 @@ def excluir_usuario(pendencia):
         for tabela, chave in _TABELAS_DO_USUARIO:
             cursor.execute(f"DELETE FROM {tabela} WHERE usuario_id = ?", (pendencia.usuario_id,))
             removidos[chave] = cursor.rowcount
+        # 5.53: os registros de aceite por versão são dados da conta de usuário.
+        cursor.execute(f"DELETE FROM {TABELA_ACEITES} WHERE usuario_id = ?", (pendencia.usuario_id,))
         cursor.execute(
             "DELETE FROM usuarios WHERE id = ? AND senha_hash = ?", (pendencia.usuario_id, senha_hash),
         )

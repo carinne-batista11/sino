@@ -4,6 +4,27 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
+## Sino 6.1 — publicada em 06/10/2026 (E2: versões e aceite dos Termos e da Política)
+
+Primeira entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.53). Suíte com 926 testes aprovados. Validação visual em cópia isolada aprovada: leitura dos documentos, novo aceite com "Sair" e "Aceitar", e aviso de ajuste menor (com uma versão fictícia, só para o teste).
+
+- **Versões dos documentos:** os Termos de Uso e a Política de Privacidade mostram a versão vigente ("Versão de 06/10/2026"). Os textos de cada versão ficam guardados em [`docs/legal/`](legal/); a de 04/10/2026 é a primeira registrada.
+- **Registro do aceite:** no cadastro, o Sino registra qual versão de cada documento foi aceita, com data e hora. Também registra a ciência de um aviso de ajuste menor ("Entendi"), que não equivale a um aceite.
+- **Mudanças futuras:**
+  - mudança relevante: no próximo login, uma tela mostra o resumo e pede o novo aceite ("Aceitar" ou "Sair"); sem aceite, não é possível entrar;
+  - ajuste menor: só um aviso, sem bloquear.
+- **Banco de dados:** na primeira abertura, o banco é atualizado para a versão 9, com uma cópia de segurança automática antes. Os dados existentes não mudam.
+- **Concluído:** E2 inteira. **Pendente para as próximas entregas:** envio real de e-mails (E3 e E4), com nova versão relevante dos textos e novo aceite; revisão jurídica.
+
+### Termos de Uso e Política de Privacidade (versão de 06/10/2026, mudança relevante)
+
+- **Termos, item 8:** cada versão é identificada pela data; o Sino registra a versão aceita no cadastro; mudanças relevantes pedem novo aceite e ajustes menores geram aviso.
+- **Política, itens 2, 3, 8, 10 e 11:** descrevem os registros de aceite e de ciência dos documentos, para que servem, que são apagados na exclusão da conta e que podem continuar nas cópias de segurança já feitas; e como funcionam as versões.
+- **Classificação da autora:** relevante, porque introduz registros de dados antes não descritos.
+  - Quem já tem conta aceita a nova versão no próximo login.
+  - O aceite original continua registrado só pela data, sem versão.
+  - As versões de 04/10/2026 ficam preservadas em `docs/legal/`.
+
 ## Licença: MIT + Commons Clause (decidida em 06/10/2026; vale a partir do commit que a introduz)
 
 Mudança só de licença: o funcionamento do aplicativo, o banco e os Termos de Uso não mudam, e não há nova versão do aplicativo.

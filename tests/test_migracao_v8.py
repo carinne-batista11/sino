@@ -70,7 +70,7 @@ class TesteMigracaoV8(AuxiliaresBancoV6):
         self.assertFalse(resultado["tabela_reaproveitada"])
         self.assertEqual(self.backups_v8(), [os.path.basename(resultado["backup"])])
         self.assert_schema_v8(self.caminho_v5)
-        self.assertTrue(db.validar_schema_atual(self.caminho_v5)["ok"])
+        self.assertTrue(self.validar_schema_v8(self.caminho_v5)["ok"])
         self.assertEqual(self.dados_v7(self.caminho_v5), dados_antes)
         self.assertEqual(self.sql(self.caminho_v5, "SELECT name, seq FROM sqlite_sequence ORDER BY name"),
                          sequencias_antes)
@@ -103,7 +103,8 @@ class TesteMigracaoV8(AuxiliaresBancoV6):
         consulta = ("SELECT type, name, sql FROM sqlite_master "
                     "WHERE tbl_name = 'autorizacoes_usadas' ORDER BY name")
         self.assertEqual(self.sql(self.caminho_v5, consulta), self.sql(self.caminho_banco, consulta))
-        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], 8)
+        # O banco novo já nasce no schema atual (v9), que contém a tabela da v8.
+        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], db.VERSAO_SCHEMA_V9)
 
     def test_migracao_v7_reconhece_banco_v8_como_migrado(self):
         self.criar_v7()

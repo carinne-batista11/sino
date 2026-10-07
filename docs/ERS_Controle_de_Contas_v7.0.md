@@ -195,7 +195,14 @@ Os 29 primeiros são o conjunto que o Python 3.11 considera espaço em branco; a
 ## 5.53 Versões e aceite dos Termos e da Política [v7 altera 5.37 e P9, M12]
 
 * Cada documento tem uma **versão** identificada pela data e exibida no texto ("Versão de dd/mm/aaaa"). As versões anteriores ficam preservadas no repositório; no app, só a vigente.
+  * **Decisão P37 (06/10/2026):**
+    * os textos aprovados em 04/10/2026 são a **primeira versão registrada** (classificação "inicial"), com a mesma data e o mesmo conteúdo;
+    * a indicação "Versão de dd/mm/aaaa" aparece na tela do documento, fora do texto aprovado;
+    * os textos históricos ficam em `docs/legal/`, um arquivo por documento e data (`termos-de-uso_AAAA-MM-DD.md`, `politica-de-privacidade_AAAA-MM-DD.md`).
 * O Sino registra, por usuário, **qual versão** de cada documento foi aceita e quando. Usuários com aceite anterior ao versionamento ficam como "versão anterior ao versionamento".
+  * **P37:** esses usuários **não recebem nenhuma versão atribuída** (a migração não cria registros; o aceite deles continua registrado só pela data em `termos_aceitos_em`) e **não precisam aceitar de novo** por causa da versão inicial.
+  * **P38 (06/10/2026, substitui a parte da P37 sobre o momento do novo aceite):** os textos ganham a **versão de 06/10/2026**, classificada como **relevante**, porque introduz registros de dados antes não descritos. Ela corrige as afirmações de que não havia versionamento (Termos item 8; Política item 11) e descreve na Política os registros de aceite e de ciência, a finalidade, a exclusão e a permanência em backups (itens 2, 3, 8 e 10). **Todos os usuários existentes aceitam a versão de 06/10** no próximo login. O aceite original continua sem versão atribuída. Os textos de 04/10 ficam preservados em `docs/legal/`. O novo aceite das mudanças do envio real continua previsto na E4.
+  * Além do aceite, o Sino registra a **ciência** de um ajuste menor ("Entendi" no aviso), para não repetir o aviso.
 * **Mudança relevante** (dados tratados, finalidades, compartilhamento com terceiros ou provedores, retenção, direitos do titular, responsabilidades ou garantias, ou funcionalidade que trate dados pessoais de forma nova): **novo aceite** no próximo login, numa tela com o resumo das mudanças, "Aceitar" e "Sair"; sem aceite, o usuário não entra.
 * **Ajuste menor** (redação, clareza, correções, links ou formatação, sem mudar o conteúdo): **aviso** com o resumo, sem bloquear.
 * A classificação é feita pela **autora**, com apoio da revisão jurídica quando houver, e registrada nas notas da versão com o motivo; **na dúvida, a mudança é relevante**.
@@ -426,6 +433,8 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 | P27 | Linhas empilhadas em janela estreita; nomes inteiros | 5.52 |
 | P28 | Versões e aceite; critério de relevância; revisão jurídica antes de terceiros; histórico no repositório | 5.53 |
 | P29 | M9 adiada; MIT mantida até pedido explícito da autora. **Reaberta em 06/10/2026** pelo pedido explícito previsto (P32) | 2.2 |
+| P38 | (06/10/2026) **Versão de 06/10/2026 dos Termos e da Política**, relevante (introduz registros de dados antes não descritos): corrige as afirmações sobre versionamento e descreve os registros de aceite e de ciência, a finalidade, a exclusão e a permanência em backups; usuários existentes aceitam a nova versão no próximo login, sem versão atribuída ao aceite original; textos de 04/10 preservados em `docs/legal/` | 5.53 |
+| P37 | (06/10/2026) **E2 — versões e aceite:** textos atuais = primeira versão registrada (mesma data e conteúdo); quem aceitou antes do versionamento não recebe versão atribuída nem precisa aceitar de novo por esta mudança técnica; novo aceite obrigatório só com as mudanças relevantes do envio real; textos históricos em `docs/legal/` | 5.53 |
 | P36 | (06/10/2026) **Licença: MIT + Commons Clause v1.0**, textos oficiais sem alteração, para usar um texto pronto. Substitui a P35 (caminho A e licença própria, mantidos só no histórico). A autora aceita as permissões de modificação e redistribuição gratuita da MIT, sujeitas à Commons Clause, e o alcance da restrição sobre produtos e serviços pagos. Alcance: código, documentos e imagens da autora; terceiros com as próprias licenças; histórico MIT até `a8302c2` preservado; não é open source | 2.5 |
 | P35 | ~~(06/10/2026) **Licença, bloco 2 — caminho A:** uso pessoal, acadêmico e interno em empresas, estudo, compilação e modificação para uso próprio permitidos (compilar para si sem comprar a distribuição oficial é aceito); redistribuir cópias, distribuir versões modificadas e publicar em lojas exigem autorização prévia e por escrito, mesmo sem cobrança; comercialização por terceiros exige autorização; código público; licença própria separada das condições da distribuição oficial. Serviços pagos de suporte, instalação, consultoria e aulas pendentes~~ (substituída pela P36) | 2.5 |
 | P34 | (06/10/2026) **Licença, bloco 1 — opção 1A:** uso livre (pessoal, acadêmico e em empresas, sem autorização individual, conforme a distribuição oficial gratuita ou paga) e estudo do código permitidos; proibido a terceiros vender, revender ou comercializar o aplicativo ou versões derivadas sem autorização; a autora preserva a cobrança pela distribuição oficial. Texto não escolhido (T1 ou T2); modificação e redistribuição gratuita no bloco 2 | 2.5 |
@@ -529,8 +538,9 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 
 | Entrega | Situação | Versão do app |
 |---|---|---|
-| E1 | **Commit local, não publicado** (06/10/2026): `LICENSE`, README, metadados do serviço e notas da versão, consolidados com o planejamento; aguardando publicação | — (sem código) |
-| E2 a E18, F1 | **Pendente** | — |
+| E1 | **Concluída** (publicada em 06/10/2026, commit 58b4382): licença MIT + Commons Clause | — (sem código) |
+| E2 | **Concluída** (publicada em 06/10/2026): versões dos documentos (04/10 inicial; 06/10 relevante, P38), registro dos aceites e da ciência, tela de novo aceite e aviso, migração v9. 926 testes aprovados (bancos temporários); validação visual em cópia isolada aprovada (leitura dos documentos; novo aceite com "Sair" e "Aceitar"; aviso de ajuste menor com versão fictícia). Banco principal na v9 desde 06/10 21:25 (abertura de origem não confirmada; mantido pela autora; ref7) | Sino 6.1 |
+| E3 a E18, F1 | **Pendente** | — |
 
 Legenda:
 
@@ -545,6 +555,9 @@ Legenda:
 | Versão | Data | Descrição |
 |---|---|---|
 | 6.0 | 23/09/2026 – 04/10/2026 | Ver a [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) (preservada sem alterações). |
+| 7.0 (revisão) | 06/10/2026 | E2 concluída e publicada como Sino 6.1 (926 testes; validação visual aprovada); banco principal na v9 (ref7). |
+| 7.0 (revisão) | 06/10/2026 | P38: versão de 06/10/2026 dos Termos e da Política, relevante; usuários existentes aceitam a nova versão. |
+| 7.0 (revisão) | 06/10/2026 | P37: decisões da E2 (versão inicial, aceites anteriores sem versão atribuída, `docs/legal/`); E1 concluída; E2 implementada, não publicada. |
 | 7.0 (revisão) | 06/10/2026 | P36: licença MIT + Commons Clause v1.0 (textos oficiais), substituindo a P35; alcance sobre código, documentos e imagens da autora; histórico MIT até a8302c2; planejamento e licença consolidados num só commit (o commit local 33b8db2, não publicado, foi refeito). |
 | 7.0 (revisão) | 06/10/2026 | P35: licença, bloco 2 = caminho A (redistribuição, versões modificadas e lojas só com autorização; compilar e modificar para uso próprio permitidos); rascunho de licença própria e das condições da distribuição oficial. |
 | 7.0 (revisão) | 06/10/2026 | P34: licença, bloco 1 = 1A (uso livre; terceiros não podem vender nem comercializar o app ou derivados sem autorização); textos candidatos T1 e T2 em análise. |

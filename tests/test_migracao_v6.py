@@ -148,12 +148,29 @@ class AuxiliaresBancoV6(TesteComBancoTemporario):
         indices = {linha[1]: linha[2] for linha in self.sql(caminho, "PRAGMA index_list(contas)")}
         self.assertEqual(indices.get(db.INDICE_POSICAO), 1)
 
-    def assert_schema_v8(self, caminho):
-        """Schema atual: tudo da v7 + autorizacoes_usadas (Etapa 8), user_version 8."""
-        self.assert_schema_v7(caminho, versao=8)
+    def assert_schema_v8(self, caminho, versao=8):
+        """Tudo da v7 + autorizacoes_usadas (Etapa 8), com a user_version indicada."""
+        self.assert_schema_v7(caminho, versao=versao)
         conexao = sqlite3.connect(caminho)
         try:
             self.assertEqual(db._estado_tabela_autorizacoes(conexao.cursor()), "valida")
+        finally:
+            conexao.close()
+
+    def assert_schema_v9(self, caminho):
+        """Schema atual: tudo da v8 + aceites_documentos (ERS v7.0, M12), user_version 9."""
+        self.assert_schema_v8(caminho, versao=9)
+        conexao = sqlite3.connect(caminho)
+        try:
+            self.assertEqual(db._estado_tabela_aceites(conexao.cursor()), "valida")
+        finally:
+            conexao.close()
+
+    def validar_schema_v8(self, caminho):
+        """Validação da v8 como versão final (antes da migração v9)."""
+        conexao = sqlite3.connect(caminho)
+        try:
+            return db._verificar_schema_v8(conexao.cursor())
         finally:
             conexao.close()
 
@@ -257,9 +274,9 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
     # ------------------------------------------------------------------
     #  Banco novo e criar_tabelas()
     # ------------------------------------------------------------------
-    def test_banco_novo_ja_nasce_v8_e_migracao_v6_nao_faz_nada(self):
-        # Etapa 8: criar_tabelas() cria o schema atual (v8), que contém a v6 e a v7.
-        self.assert_schema_v8(self.caminho_banco)
+    def test_banco_novo_ja_nasce_v9_e_migracao_v6_nao_faz_nada(self):
+        # ERS v7.0, M12: criar_tabelas() cria o schema atual (v9), que contém a v6, a v7 e a v8.
+        self.assert_schema_v9(self.caminho_banco)
         self.assertTrue(db.validar_migracao_v6(self.caminho_banco)["ok"])
         self.assertTrue(db.validar_schema_atual(self.caminho_banco)["ok"])
 

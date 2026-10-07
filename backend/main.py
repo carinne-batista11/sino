@@ -768,9 +768,10 @@ def parse_valor(texto):
 
 def preparar_banco_ou_exibir_erro(page, cores=modulo_cores):
     """
-    ERS v6.0, Etapas 1, 2b e 8: garante o banco no schema atual (v8) antes de
-    qualquer tela que dependa dele (database.preparar_banco: cria, migra
-    v5 -> v6 -> v7 -> v8 com backup ou reconhece que já está atualizado). Em caso de falha, o traceback
+    ERS v6.0, Etapas 1, 2b e 8, e ERS v7.0, M12: garante o banco no schema
+    atual (v9) antes de qualquer tela que dependa dele (database.preparar_banco:
+    cria, migra v5 -> v6 -> v7 -> v8 -> v9 com backup ou reconhece que já está
+    atualizado). Em caso de falha, o traceback
     completo vai para o terminal, a usuária vê só uma mensagem genérica e o
     retorno False impede que o app siga para o login.
 
@@ -809,7 +810,8 @@ def preparar_banco_ou_exibir_erro(page, cores=modulo_cores):
         return False
 
     if resultado["situacao"] == "migrado":
-        for versao, chave in (("v6", "migracao"), ("v7", "migracao_v7"), ("v8", "migracao_v8")):
+        for versao, chave in (("v6", "migracao"), ("v7", "migracao_v7"), ("v8", "migracao_v8"),
+                              ("v9", "migracao_v9")):
             migracao = resultado.get(chave)
             if migracao and migracao.get("executado"):
                 print(f"Sino: banco migrado para a {versao}. Backup pré-migração: {migracao['backup']}")
@@ -1268,6 +1270,7 @@ def main(page: ft.Page):
         Paleta da sessão (no cadastro, sempre o Claro).
         """
         _, texto = documentos.DOCUMENTOS[chave]
+        versao = documentos.versao_atual(chave)["versao"]
         page.controls.clear()
         page.padding = 0
 
@@ -1297,14 +1300,151 @@ def main(page: ft.Page):
         conteudo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[
             ft.Container(padding=ft.Padding(16, 4, 16, 24), content=ft.ResponsiveRow(
                 alignment=ft.MainAxisAlignment.CENTER,
-                controls=[ft.Container(
-                    data=f"documento_{chave}", col={"xs": 12, "md": 10, "xl": 8},
-                    bgcolor=cores.fundo_card, border_radius=16, padding=20,
-                    border=ft.Border.all(1, cores.borda_suave), content=documento,
-                )],
+                controls=[
+                    # 5.53: versão vigente identificada pela data, fora do texto aprovado.
+                    ft.Container(
+                        col={"xs": 12, "md": 10, "xl": 8}, padding=ft.Padding(4, 0, 4, 8),
+                        content=ft.Text(documentos.rotulo_versao(versao), data=f"versao_{chave}", size=13,
+                                        color=cores.texto_secundario),
+                    ),
+                    ft.Container(
+                        data=f"documento_{chave}", col={"xs": 12, "md": 10, "xl": 8},
+                        bgcolor=cores.fundo_card, border_radius=16, padding=20,
+                        border=ft.Border.all(1, cores.borda_suave), content=documento,
+                    ),
+                ],
             )),
         ])
         page.add(ft.Column(expand=True, controls=[barra_topo, conteudo]))
+        page.update()
+
+    # ======================================================
+    #  VERSÕES DOS DOCUMENTOS NO LOGIN (ERS v7.0, 5.53)
+    # ======================================================
+    def entrar_conferindo_documentos(usuario):
+        """
+        Depois de `verificar_login`: com versão relevante pendente, a sessão
+        só abre depois do novo aceite; com ajuste menor ainda não lido, entra
+        e mostra o aviso, sem bloquear. Quem aceitou antes do versionamento
+        não precisa aceitar de novo só por causa da versão inicial.
+        """
+        pendentes = documentos.pendencias(database.registros_de_documentos(usuario["id"]))
+        if pendentes["aceite"]:
+            mostrar_tela_novo_aceite(usuario, pendentes)
+            return
+        sessao.autenticar(usuario)  # tema do usuário (5.36) + sessão
+        mostrar_tela_principal()
+        if pendentes["aviso"]:
+            mostrar_aviso_documentos(pendentes["aviso"])
+
+    def linhas_de_mudancas(item):
+        """Resumo das versões novas de um documento, com a data de cada uma."""
+        linhas = [ft.Text(f"{item['rotulo']} — {documentos.rotulo_versao(item['versao'])}", size=14,
+                          weight=ft.FontWeight.BOLD, color=cores.texto_principal)]
+        for mudanca in item["mudancas"]:
+            if mudanca.get("resumo"):
+                linhas.append(ft.Text(f"• {documentos.rotulo_versao(mudanca['versao'])}: {mudanca['resumo']}",
+                                      size=13, color=cores.texto_principal))
+        return linhas
+
+    def mostrar_tela_novo_aceite(usuario, pendentes):
+        """
+        5.53: tela de novo aceite no login (tema Claro, P8), com o resumo das
+        mudanças, a leitura dos documentos, "Aceitar" e "Sair". Sem aceite, a
+        sessão não abre. Aceitar grava o aceite das versões pendentes (e a
+        ciência dos ajustes menores mostrados junto) numa única transação.
+        """
+        encerrar_operacoes()
+        aplicar_tema(modulo_cores.TEMA_PADRAO)
+        page.controls.clear()
+        page.padding = 24
+        itens = pendentes["aceite"] + pendentes["aviso"]
+        mensagem = ft.Text("", width=330, text_align=ft.TextAlign.CENTER, color=cores.texto_erro, visible=False)
+
+        def voltar_a_esta_tela():
+            page.controls.clear()
+            page.padding = 24
+            page.add(tela)
+            page.update()
+
+        def link_documento(chave, rotulo):
+            return ft.TextButton(
+                content=f"Ler {rotulo}", data=f"ler_{chave}",
+                on_click=lambda e: mostrar_documento(chave, voltar_a_esta_tela),
+                style=ft.ButtonStyle(color=cores.acao_primaria),
+            )
+
+        def aceitar(e):
+            try:
+                database.registrar_documentos(
+                    usuario["id"],
+                    aceites={i["documento"]: i["versao"] for i in pendentes["aceite"]},
+                    ciencias={i["documento"]: i["versao"] for i in pendentes["aviso"]},
+                )
+            except database.ContaNaoEncontradaError:
+                mostrar_tela_login(("Não foi possível entrar: a conta não foi encontrada.", True))
+                return
+            except Exception as erro:
+                fluxos_codigo.registrar_falha("registro do novo aceite", erro)
+                mostrar_mensagem(mensagem, ("Não foi possível registrar o aceite. Tente novamente.", True))
+                page.update()
+                return
+            sessao.autenticar(usuario)
+            mostrar_tela_principal()
+
+        botao_aceitar = ft.Button(content="Aceitar", width=330, data="aceitar_documentos", on_click=aceitar)
+        estilo_botao_primario(botao_aceitar, True)
+        botao_sair = ft.TextButton(content="Sair", data="sair_novo_aceite", on_click=lambda e: mostrar_tela_login(),
+                                   style=ft.ButtonStyle(color=cores.texto_principal))
+
+        blocos = []
+        for item in itens:
+            blocos.append(ft.Container(
+                width=330, bgcolor=cores.fundo_card, border_radius=12, padding=14,
+                border=ft.Border.all(1, cores.borda_suave),
+                content=ft.Column(spacing=6, controls=[
+                    *linhas_de_mudancas(item), link_documento(item["documento"], item["rotulo"]),
+                ]),
+            ))
+        tela = ft.Column(
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER, **ROLAGEM_DE_TELA,
+            controls=[
+                *aviso_demonstracao(), ft.Container(height=20),
+                ft.Text("Os documentos do Sino mudaram", size=20, weight=ft.FontWeight.BOLD,
+                        color=cores.texto_principal, data="titulo_novo_aceite"),
+                ft.Text("Para continuar, leia o resumo das mudanças e aceite as novas versões. "
+                        "Sem o aceite, não é possível entrar.", size=13, width=330,
+                        text_align=ft.TextAlign.CENTER, color=cores.texto_secundario),
+                ft.Container(height=12), *blocos, ft.Container(height=12),
+                botao_aceitar, mensagem, botao_sair,
+            ],
+        )
+        page.add(tela)
+        page.update()
+
+    def mostrar_aviso_documentos(itens):
+        """5.53: ajuste menor -- aviso com o resumo, sem bloquear. "Entendi"
+        grava a ciência; se a gravação falhar, o aviso volta no próximo login."""
+        def entendi(e):
+            try:
+                database.registrar_documentos(usuario_atual["id"],
+                                              ciencias={i["documento"]: i["versao"] for i in itens})
+            except Exception as erro:
+                fluxos_codigo.registrar_falha("registro da ciência dos documentos", erro)
+            page.pop_dialog()
+            page.update()
+
+        conteudo = [linha for item in itens for linha in linhas_de_mudancas(item)]
+        conteudo.append(ft.Text("Os textos completos estão em Ajustes > Sobre e privacidade.", size=13,
+                                color=cores.texto_secundario))
+        page.show_dialog(ft.AlertDialog(
+            modal=True, data="aviso_documentos",
+            title=ft.Text("Documentos atualizados", color=cores.texto_principal),
+            content=ft.Column(tight=True, spacing=8, controls=conteudo),
+            actions=[ft.TextButton(content="Entendi", data="entendi_documentos", on_click=entendi,
+                                   style=ft.ButtonStyle(color=cores.acao_primaria))],
+            bgcolor=cores.fundo_dialogo,
+        ))
         page.update()
 
     # ======================================================
@@ -1448,8 +1588,7 @@ def main(page: ft.Page):
                 else:
                     usuario = database.verificar_login(email, senha)
                     if usuario:
-                        sessao.autenticar(usuario)  # tema do usuário (5.36) + sessão
-                        mostrar_tela_principal()
+                        entrar_conferindo_documentos(usuario)
                         return
                     else:
                         mensagem.value = "E-mail ou senha incorretos."
@@ -1538,8 +1677,10 @@ def main(page: ft.Page):
                     etapa.terminar(fluxos_codigo.mensagem_da_validacao(resultado))
                     return
                 etapa.ocupar("Salvando…", permitir_voltar=False)
+                # 5.53: o aceite do cadastro vale para as versões vigentes exibidas.
                 await concluir(controle.gravar_com_nova_tentativa(
-                    database.concluir_cadastro, resultado, nome, email, senha_validada, servico.relogio))
+                    database.concluir_cadastro, resultado, nome, email, senha_validada, servico.relogio,
+                    documentos.versoes_atuais()))
 
             async def tentar_novamente():
                 await concluir(controle.repetir_gravacao(autorizacao_ja_usada))

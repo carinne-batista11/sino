@@ -39,7 +39,7 @@ class TestConteudoAprovado(unittest.TestCase):
         for chave, (_, texto) in documentos.DOCUMENTOS.items():
             with self.subTest(chave):
                 self.assertIn(AUTORIA, texto)
-                self.assertIn("Última atualização: 04/10/2026", texto)
+                self.assertIn("Última atualização: 06/10/2026", texto)
                 self.assertIn(CONTATO, texto)
                 self.assertNotIn("PENDENTE", texto)
 
@@ -61,7 +61,8 @@ class TestConteudoAprovado(unittest.TestCase):
         self.assertIn("**não pode ser desfeita** pelo aplicativo", termos)
         self.assertIn("A exclusão **não apaga** as cópias de segurança (backups) já existentes", termos)
         # O que a exclusão não alcança e o limite do secure_delete, sem prometer apagamento completo.
-        self.assertIn("(nome, e-mail e sua confirmação, senha protegida, data do aceite e tema)", politica)
+        self.assertIn("(nome, e-mail e sua confirmação, senha protegida, data do aceite, registros de aceite e de "
+                      "ciência dos documentos e tema)", politica)
         self.assertIn("Se algo falhar no meio, nada é apagado.", politica)
         self.assertIn("Os dados dos outros usuários da mesma instalação não são alterados.", politica)
         self.assertIn("A exclusão da conta de usuário **não alcança**:", politica)
