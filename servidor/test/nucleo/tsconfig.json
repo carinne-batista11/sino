@@ -11,5 +11,5 @@
     "isolatedModules": true,
     "noUnusedLocals": true
   },
-  "include": ["./**/*.ts", "../../src/nucleo/**/*.ts", "../../src/envio/**/*.ts", "../../src/config.ts", "../../src/fluxos.ts", "../../src/http.ts"]
+  "include": ["./**/*.ts", "../../src/nucleo/**/*.ts", "../../src/envio/**/*.ts", "../../src/config.ts", "../../src/fluxos.ts", "../../src/http.ts", "../../src/acesso_teste.ts"]
 }

@@ -1,0 +1,47 @@
+// Configuração do AMBIENTE REMOTO DE TESTES do serviço de códigos (ERS v7.0,
+// E4): Worker separado, entrada src/teste.ts, SEM envio real (mensagens
+// descartadas, sem Resend) e com token obrigatório. Use sempre com
+// `-c wrangler.teste.jsonc`; um comando sem `-c` usaria a configuração de
+// produção (wrangler.jsonc), que não faz parte deste teste.
+// Não contém account_id nem segredos. Os segredos exclusivos deste ambiente
+// (CHAVE_HMAC, CHAVE_ASSINATURA, DESTINATARIOS_PERMITIDOS, TOKEN_TESTE) vão
+// no deploy com --secrets-file, a partir de um arquivo fora do Git; nunca
+// reaproveitados em produção. Duração máxima: 7 dias após o deploy.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sino-servico-codigos-teste",
+  "main": "src/teste.ts",
+  "compatibility_date": "2026-08-01",
+  "send_metrics": false,
+  // Só o endereço <name>.<subdomínio>.workers.dev; sem rotas no domínio e
+  // sem URLs de prévia por versão.
+  "workers_dev": true,
+  "preview_urls": false,
+  // Registros do Worker desligados (Workers Logs, registros de invocação e
+  // traces). Além de "enabled": false, amostragem 0 (nenhuma requisição
+  // registrada) e "persist": false (nada guardado no painel), como reforço.
+  "observability": {
+    "enabled": false,
+    "head_sampling_rate": 0,
+    "logs": { "enabled": false, "invocation_logs": false, "head_sampling_rate": 0, "persist": false },
+    "traces": { "enabled": false, "head_sampling_rate": 0, "persist": false }
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "DESTINO", "class_name": "DestinoDO" },
+      { "name": "LIMITE_IP", "class_name": "LimiteIpDO" },
+      { "name": "TETO_GLOBAL", "class_name": "TetoGlobalDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DestinoDO", "LimiteIpDO", "TetoGlobalDO"] }
+  ],
+  "vars": {
+    "KID_ASSINATURA": "teste-1"
+  },
+  "dev": {
+    "ip": "127.0.0.1",
+    "port": 8787,
+    "local_protocol": "http"
+  }
+}

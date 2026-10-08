@@ -3,12 +3,15 @@
 // falhas parciais, alarmes de envio abandonado e de retenção, e a entrada
 // publicada do Worker sem rede externa.
 
-import { createExecutionContext, env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
+import {
+  createExecutionContext, env, runDurableObjectAlarm, runInDurableObject, waitOnExecutionContext,
+} from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { HORA_MS, TETO_GLOBAL_DIA } from "../../src/config";
 import { EnviadorSimulado } from "../../src/envio/simulado";
 import worker_dev from "../../src/dev";
+import worker_teste from "../../src/teste";
 import { pedirDesafio, validarDesafio, type Dependencias, type EntradaPedido, type PortaDestino } from "../../src/fluxos";
 import { dependenciasDoAmbiente, segredosDoAmbiente } from "../../src/index";
 import { resumoDoEmail } from "../../src/nucleo/destinatarios";
@@ -387,6 +390,66 @@ describe("restrição de destinatários com objetos reais (contrato v1.1)", () =
     );
     expect(semLista.status).toBe(503);
     const fora = await worker_dev.fetch(pedidoDev("pedido-dev-000000002", "fora@exemplo.com"), envDev, createExecutionContext());
+    expect(fora.status).toBe(403);
+  });
+});
+
+describe("entrada do ambiente remoto de testes (src/teste.ts)", () => {
+  // Só para os testes; não vale fora do simulador.
+  const TOKEN = "TokenDoSimulador_sem-valor-real-01234567890";
+  // Sem RESEND_API_KEY: a entrada de teste não depende dela.
+  const envTeste = { ...env, TOKEN_TESTE: TOKEN, RESEND_API_KEY: undefined };
+  const req = (caminho: string, corpo: unknown, chave: string, ip: string, autorizacao: string | null = `Bearer ${TOKEN}`) =>
+    new Request(`https://servico.teste${caminho}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": chave,
+        "CF-Connecting-IP": ip,
+        ...(autorizacao === null ? {} : { Authorization: autorizacao }),
+      },
+      body: JSON.stringify(corpo),
+    });
+  const cadastro = (email: string, chave: string, ip: string, autorizacao?: string | null) =>
+    req("/v1/desafios", { finalidade: "cadastro", email, contexto: CTX, segredo: SEGREDO }, chave, ip, autorizacao);
+
+  it("sem token, com token errado ou sem o segredo: 404 sem consumir o limite do IP", async () => {
+    const ip = "192.0.2.40";
+    const respostas = [
+      await worker_teste.fetch(cadastro("x@exemplo.com", "pedido-teste-0000001", ip, null), envTeste, createExecutionContext()),
+      await worker_teste.fetch(cadastro("x@exemplo.com", "pedido-teste-0000002", ip, "Bearer errado"), envTeste, createExecutionContext()),
+      await worker_teste.fetch(
+        cadastro("x@exemplo.com", "pedido-teste-0000003", ip), { ...envTeste, TOKEN_TESTE: undefined }, createExecutionContext(),
+      ),
+    ];
+    for (const r of respostas) {
+      expect(r.status).toBe(404);
+      expect(await r.json()).toEqual({ erro: "rota_nao_encontrada" });
+    }
+    // Os 404 não consumiram o limite do IP: os 10 pedidos autorizados da hora
+    // ainda estão disponíveis (fora da lista -> 403), e só o seguinte é 429.
+    for (let i = 0; i < 10; i++) {
+      const r = await worker_teste.fetch(cadastro("fora@exemplo.com", `pedido-teste-limite-${i}`, ip), envTeste, createExecutionContext());
+      expect(r.status).toBe(403);
+    }
+    const excedido = await worker_teste.fetch(cadastro("fora@exemplo.com", "pedido-teste-limite-x", ip), envTeste, createExecutionContext());
+    expect(excedido.status).toBe(429);
+  });
+
+  it("com token: cadastro na lista 201 sem rede externa; código errado 422; fora da lista 403", async () => {
+    const ip = "192.0.2.41";
+    const ctx = createExecutionContext();
+    const r = await worker_teste.fetch(cadastro("x@exemplo.com", "pedido-teste-0000004", ip), envTeste, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(r.status).toBe(201);
+    const { desafio_id } = (await r.json()) as { desafio_id: string };
+    const errado = await worker_teste.fetch(
+      req(`/v1/desafios/${desafio_id}/validacao`, { email: "x@exemplo.com", segredo: SEGREDO, codigo: "000000" }, "valida-teste-0000001", ip),
+      envTeste, createExecutionContext(),
+    );
+    // Com probabilidade 1e-6 o código sorteado é 000000; nesse caso, 200.
+    expect([422, 200]).toContain(errado.status);
+    const fora = await worker_teste.fetch(cadastro("fora@exemplo.com", "pedido-teste-0000005", ip), envTeste, createExecutionContext());
     expect(fora.status).toBe(403);
   });
 });

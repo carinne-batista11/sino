@@ -552,10 +552,196 @@ Implementação e contrato v1.1 aprovados a partir do plano revisado. **Concluí
 * **Estado local antigo:** os objetos do destinatário ganharam uma marca de versão do esquema (v2); estado local de versão anterior não é reaproveitado (503). Aceitável sem migração porque o serviço nunca foi publicado.
 * **Versão do app:** Sino 6.2 como candidata para a conclusão da E3, separada da publicação do serviço.
 
+### E4 — preparação (07/10/2026; nada habilitado)
+
+Registro do que a autora já fez e proposta técnica da E4. **Nenhum envio real, chave, segredo, deploy ou alteração de código** nesta fase. Nada aqui é decisão aprovada, salvo o que a autora fez por conta própria (marcado como "fato").
+
+**Fatos (autora, 07/10/2026)**
+
+* Domínio **`appsino.com.br`** registrado no Registro.br, R$ 40 por um ano (válido até 07/10/2027). Equivale à alternativa C; o gasto foi feito e assumido pela autora.
+* Conta na **Resend** criada (login pelo GitHub). Domínio de envio **`envios.appsino.com.br`** adicionado, região **São Paulo (sa-east-1)**.
+* Registros de DNS **fornecidos pelo painel da Resend** e adicionados pela autora no Registro.br (nomes relativos a `appsino.com.br`):
+  * `TXT` `resend._domainkey.envios` — conteúdo DKIM fornecido pela Resend;
+  * `CNAME` `rsend.envios` → `rsend-sae1.forge.rmta.net`;
+  * `CNAME` `send.envios` → `send.forge.rmta.net`.
+
+  Na Resend, o status continua **"Pending"**. Rastreamento de cliques e de abertura ainda a conferir.
+* Contato já publicado nos Termos (item 9) e na Política (item 12): `sino.lembrete.contas@gmail.com`.
+
+**Conferência técnica (somente leitura, 07/10/2026)**
+
+* O estado do projeto é o do encerramento da E3: `main` = `origin/main` = 5b43a60, árvore limpa; banco principal e cinco backups iguais à ref7.
+* DNS público (consulta de 07/10/2026, 22:19): os servidores do domínio são os do Registro.br (`a.auto.dns.br`, `b.auto.dns.br`).
+  * **Solicitados** (os três acima): `TXT resend._domainkey.envios.appsino.com.br`, `CNAME rsend.envios.appsino.com.br`, `CNAME send.envios.appsino.com.br`.
+  * **Encontrados:** nenhum. Os dois servidores do Registro.br respondem com autoridade `NXDOMAIN` para os três nomes (e também para `envios.appsino.com.br`); o resolvedor local também não os encontra. O número de série da zona (SOA) mudou entre as consultas (2026281040 → 2026281050), mas os registros ainda não aparecem.
+  * Isso é coerente com o "Pending" da Resend. Não se conclui daqui que falte algum registro nem que os tipos devam mudar: os registros a usar são os do painel da Resend. Conferir de novo depois da publicação da zona.
+* Já existe `_dmarc.appsino.com.br` com `v=DMARC1; p=reject;` (sem `sp=`, por isso a política vale também para os subdomínios). O DMARC é uma **orientação publicada para os servidores que recebem** as mensagens: pede que mensagens que falham na autenticação alinhada (SPF ou DKIM) sejam rejeitadas. **Não é uma trava de envio** do Sino nem da Resend. São condições separadas:
+  * a **verificação do domínio na Resend**, que a Resend exige para enviar com remetente desse domínio;
+  * os **controles do serviço** (lista de destinatários, camadas A e B, configuração do ambiente);
+  * o DMARC, que só afeta como o destinatário trata a mensagem que receber.
+* Segundo a Resend, a região escolhida define **de onde** os e-mails saem, não onde os dados ficam: os dados da conta (conteúdo, registros) ficam **nos EUA**. Retenção fixa de 30 dias nos planos Free e Pro; remoção até 90 dias após o encerramento da conta (backups por 7 dias).
+* Rastreamento de abertura (pixel) e de cliques (troca dos links) vem **desligado por padrão** na Resend; os e-mails do Sino são só texto, sem links nem imagens.
+
+**Integração existente (sem mudança necessária no envio)**
+
+* `servidor/src/envio/resend.ts`: `POST https://api.resend.com/emails` com `from`, `to`, `subject` e `text` (só texto), `Idempotency-Key` = `sino/<finalidade>/<id>`, até 3 tentativas (10 s cada), classificação incerto/falha documentada no contrato.
+* Camada B (`EnviadorRestrito`) e lista de destinatários da E3: com domínio verificado, a Resend aceita **qualquer** destinatário; a lista do serviço passa a ser a **única** restrição.
+* Configuração: `REMETENTE` (variável) e `RESEND_API_KEY` (segredo); hoje `wrangler.jsonc` usa `Sino <onboarding@resend.dev>`.
+
+**Proposta técnica**
+
+* **Remetente:** `Sino <nao-responda@envios.appsino.com.br>`, coerente com "não é necessário respondê-la". Opcional (exige mudança no adaptador): `reply_to` para o contato público.
+* **Chave da API:** criada pela autora no painel, com permissão **só de envio** e restrita ao domínio `envios.appsino.com.br`; **uma por ambiente** (teste e produção). Aparece uma única vez: a autora a digita diretamente em `wrangler secret put RESEND_API_KEY` (com o ambiente certo), sem colar no chat, em arquivos, no `.dev.vars` ou no repositório. Apagar a de teste ao fim da validação, se não for mais usada.
+* **Ambiente isolado:** um Worker de teste separado (por exemplo, `sino-servico-codigos-teste` no `workers.dev`), com segredos próprios (`CHAVE_HMAC`, `CHAVE_ASSINATURA`, `KID_ASSINATURA` próprio, `DESTINATARIOS_PERMITIDOS`, `RESEND_API_KEY` de teste), registros do Worker desligados, sem rotas no domínio. O app só o usa numa **cópia isolada** em `~/.local/share/sino-validacao/` com `SINO_SERVICO_URL` e `SINO_SERVICO_CHAVES` próprios. Produção é outro Worker, depois. Exige conta na Cloudflare (ainda não criada) e uma configuração `teste` no `wrangler.jsonc` (mudança de configuração na implementação).
+* **Destinatários:** lista gerada com `servidor/ferramentas/destinatarios.py` a partir da `CHAVE_HMAC` do ambiente de teste, com endereços **digitados pela autora**; nenhum endereço é escolhido ou preenchido pelo planejamento.
+* **Textos dos e-mails:** manter os aprovados na Etapa 8 (só texto, sem links, sem o nome do usuário, código fora do assunto). Opcional: uma linha de contato no rodapé.
+* **Termos e Política (nova versão relevante, novo aceite, antes do primeiro envio real pelo app):** Política item 7 — substituir o parágrafo "ainda não foi publicado" por: hospedagem do serviço (Cloudflare: IP do pedido e resumos, prazos do contrato; registros do Worker desligados ou prazo real); provedor de envio (Resend: recebe o endereço e a mensagem com o código; dados nos EUA; 30 dias; remoção após encerramento da conta); envio a partir de `envios.appsino.com.br`; fase restrita (só endereços autorizados recebem código); transferência internacional (ponto de revisão jurídica); responsável pela operação e canal para titulares (item 12); Política item 1 e Termos item 4 — tirar "quando o serviço estiver publicado"/"ainda não foi publicado" na medida do que for verdade na versão do app que apontar para o serviço; Política item 10 — prazos dos provedores. A versão do app que habilita o envio real só sai depois disso.
+
+**Testes**
+
+* **T0** (local, fictício): mudanças de configuração e adaptador com o enviador simulado.
+* **T1** (serviço real na Cloudflare, endereços e conteúdo fictícios; nenhuma chamada à Resend esperada): rotas inválidas, 503 sem configuração, cadastro fora da lista (403), recuperação para endereço fora da lista (202 sem envio), medição de CPU.
+  * **Não é um teste sem dados pessoais.** A Cloudflare trata, no mínimo: o **endereço IP real** da conexão de quem testa (a autora), os cabeçalhos e metadados da requisição (horário, país, agente do cliente) nos sistemas próprios da Cloudflare; no serviço, o resumo HMAC do IP (IPv4 inteiro ou prefixo /64) nos contadores, pelos prazos do contrato (2 h e 48 h); os registros do Worker, se ligados (3 dias); e os dados da conta da autora na Cloudflare. Os e-mails usados são fictícios e só entram como resumo.
+  * **Decisões a fechar antes do T1:** conta e plano da Cloudflare (sem cartão nem cobrança, a confirmar no cadastro); registros do Worker desligados ou ligados por 3 dias; aceitar o tratamento do próprio IP pela Cloudflare no teste (e registrar os prazos da Cloudflare que forem conferidos); lista do ambiente de teste só com endereços fictícios (por exemplo, `.invalid`) para o T1; e se o Worker de teste recebe já a chave da Resend de teste ou um valor sem uso durante o T1 (sem chave, o serviço responde 503 em tudo). Nenhuma dessas decisões está aprovada.
+* **T2** (dados reais aos provedores): só depois do novo aceite, só com endereços autorizados pela autora, pela cópia isolada do app.
+
+### E4 — preparação, continuação (08/10/2026; nada habilitado)
+
+Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo Wrangler, configuração remota, chave da Resend, envio real, alteração de DNS, contratação, commit ou push.** Banco principal e backups não foram alterados.
+
+**Conferência do estado (somente leitura, 08/10/2026)**
+
+* `main`; HEAD = `origin/main` = 5b43a60 (Sino 6.2). Alterados só os dois documentos de planejamento (registro de 07/10, não commitado).
+* Nenhum processo do aplicativo, da demonstração ou do serviço; portas 8787, 8025 e 9229 livres.
+* Banco principal: `quick_check` ok, `user_version` 9, 0 usuários, 0 contas, 0 aceites, sem violações de chave estrangeira, sem `-wal`/`-journal`. Banco e cinco backups com SHA-256, tamanho e mtime iguais à ref7.
+* Wrangler: nenhuma sessão de login no computador (sem `~/.config/.wrangler/config`); nenhuma variável `CLOUDFLARE_*` ou `RESEND_*` no ambiente.
+
+**Fatos (autora, 08/10/2026)**
+
+* `envios.appsino.com.br` **verificado** na Resend; "TLS obrigatório" aparece como **"Aplicado"**.
+* **Remetente aprovado:** `Sino <nao-responda@envios.appsino.com.br>`.
+* **Reply-To aprovado:** `sino.lembrete.contas@gmail.com`. Esse Gmail é o **contato de suporte e de solicitações sobre dados pessoais**; Carinne acompanha a caixa. (Resolve M8-B e M8-C para o uso restrito; a redação nos Termos e na Política continua pendente.)
+* **Textos dos e-mails:** manter os atuais (Etapa 8) e acrescentar a linha "Precisa de ajuda? Entre em contato: sino.lembrete.contas@gmail.com".
+* **Cloudflare:** conta criada; painel sem projetos; subdomínio da conta `carinnebatista11.workers.dev`. O DNS de `appsino.com.br` **permanece no Registro.br** (nenhuma rota ou domínio próprio na Cloudflare).
+* **Rastreamento de abertura e de cliques: NÃO confirmado como desligado.** A tela que estava aberta era o **formulário de criação de subdomínio de rastreamento**, com "cliques" marcado e "abertura" desmarcada; um formulário não mostra o estado salvo do domínio. Nenhuma criação foi confirmada.
+  * Segundo a documentação da Resend (conferida em 08/10/2026), o rastreamento é configurado por domínio, vem desligado por padrão e só fica ativo com uma opção ligada **e** um subdomínio de rastreamento verificado. **Um subdomínio de rastreamento, depois de criado, pode ser trocado, mas não removido.** Por isso: **não enviar esse formulário**.
+  * Como confirmar: Resend → Domains → `envios.appsino.com.br` → aba **Configuration** → "Enable tracking metrics": abertura e cliques desligados e nenhum subdomínio de rastreamento listado. Conferência obrigatória antes do T2.
+
+**Mudanças necessárias para o envio real (T2; não feitas)**
+
+* `servidor/src/envio/mensagens.ts`: acrescentar ao rodapé a linha de ajuda (o resto dos textos inalterado). Atualizar `test/nucleo/resend.test.ts` e as transcrições de conformidade afetadas.
+* `servidor/src/envio/resend.ts`: campo `reply_to` (nome e tipo conferidos na API da Resend: `string | string[]`) a partir de uma variável `RESPONDER_PARA`; ausente = sem `reply_to`. Atualizar a tabela de configuração do contrato (sem mudança nos endpoints; contrato continua v1.1).
+* Variáveis: `REMETENTE = Sino <nao-responda@envios.appsino.com.br>`, `RESPONDER_PARA = sino.lembrete.contas@gmail.com`.
+
+**Compatibilidade com a Cloudflare (documentação oficial, conferida em 08/10/2026)**
+
+* **Durable Objects no Workers Free:** disponíveis, **só com SQLite** (o serviço já usa `new_sqlite_classes`). Limites diários (zeram 00:00 UTC; acima deles a operação falha com erro): 100.000 requisições, 13.000 GB-s, 5 milhões de linhas lidas, 100.000 linhas gravadas; 5 GB armazenados no total (a página cita 10 GB e 1 GB por objeto no Free sem conciliar; o serviço guarda poucos KB por objeto). 100 classes por conta (usa 3). Alarmes sem limite específico do Free.
+* **Workers Free:** 100.000 requisições/dia; **10 ms de CPU por requisição**; 50 subrequisições; 128 MB; 64 variáveis/segredos de até 5 KB cada (a lista de 50 resumos tem cerca de 3,3 KB). Acima do limite diário: erro 1027.
+* **Configuração (Wrangler 4.146.0, o fixado no projeto):** `durable_objects` não é herdado por ambientes; `migrations`, `main`, `observability`, `workers_dev` e `preview_urls` são herdáveis; `send_metrics` só no nível superior. Existe o campo novo `exports`, que substitui o `migrations`; os dois são aceitos, mas um Worker publicado com `exports` não volta ao `migrations`. **Decisão técnica do planejamento:** manter `migrations` (o mesmo usado nos testes e no desenvolvimento).
+* **Workers Logs:** ligados por padrão em Workers novos; retenção de 3 dias no Free; o registro de invocação inclui a requisição e metadados. Desligar com `observability.enabled = false` e `observability.logs.invocation_logs = false` (o desligamento completo por `enabled = false` não está descrito explicitamente; conferir no painel depois do deploy).
+* **`workers.dev`:** ligado por padrão sem rotas; `preview_urls` deve ser desligado explicitamente. O endereço do Worker de teste seria `sino-servico-codigos-teste.carinnebatista11.workers.dev`; o subdomínio da conta contém o nome da autora e pode ser trocado no painel (decisão da autora; não é necessário para o teste).
+* **IP da conexão:** o serviço lê `CF-Connecting-IP` (`src/http.ts`); a Cloudflare o envia a partir da borda. A documentação não diz expressamente se um valor enviado pelo cliente é sobrescrito em `workers.dev`: **conferir no T1** (caso 9 abaixo). O valor `0.0.0.0` usado quando o cabeçalho falta só ocorre fora da Cloudflare (testes locais). IPv6 é agrupado por /64 (`prefixoIp`).
+
+**Revisão do serviço existente**
+
+* `wrangler.jsonc` (produção, nunca publicado): entrada `src/index.ts` (só Resend), remetente `onboarding@resend.dev`, sem `observability`, `workers_dev` nem `preview_urls` explícitos. **Não serve para o ambiente de teste** e não deve ser publicado nesta fase.
+* `wrangler.dev.jsonc` (só local): entrada `src/dev.ts`, caixa local em `127.0.0.1`; `urlDaCaixaLocal` recusa outro endereço. Não pode ser publicado (o receptor local não existe na Cloudflare, e o serviço responderia 503 em tudo).
+* Bindings: `DESTINO`, `LIMITE_IP`, `TETO_GLOBAL`; migração `v1` com as três classes SQLite. Segredos: `CHAVE_HMAC`, `CHAVE_ASSINATURA`, `DESTINATARIOS_PERMITIDOS`, `RESEND_API_KEY`; variáveis `REMETENTE`, `KID_ASSINATURA`.
+* `EnviadorSimulado` (testes) não é usado por nenhuma entrada publicada. `EnviadorRestrito` (camada B) envolve qualquer enviador; a camada A está em `fluxos.executarEnvio`.
+* Respostas HTTP nunca trazem código, e-mail ou segredo; `registro.ts` só escreve contexto e tipo do erro. A demonstração do app só vale com o serviço em `127.0.0.1` (`backend/fluxos_codigo.py`), então não se aplica ao ambiente remoto.
+
+**Proposta do ambiente remoto de testes (T1; não aprovada)**
+
+* **Worker separado** `sino-servico-codigos-teste`, em configuração própria `servidor/wrangler.teste.jsonc` (mesmo padrão do `wrangler.dev.jsonc`; o `wrangler.jsonc` de produção fica intocado). Todo comando leva `-c wrangler.teste.jsonc`; um `wrangler deploy` sem `-c` publicaria a produção, por isso nenhum comando sem `-c` faz parte do plano.
+* **Entrada própria `src/teste.ts`, sem envio real por construção:** usa um `EnviadorDescarte` (sem rede, sem registro do conteúdo; devolve "aceito"), envolvido pelo `EnviadorRestrito`. Não importa `resend.ts` nem `caixa_local.ts`, e `RESEND_API_KEY` não é lida (`segredosDoAmbiente(env, false)`). O código gerado não sai do serviço: **ninguém consegue obtê-lo**, então o caminho do código correto continua coberto só pelos testes locais.
+* **Autenticação do teste:** segredo `TOKEN_TESTE` (32 bytes aleatórios, base64url) exigido em `Authorization: Bearer …`, comparado em tempo constante **antes** de ler o corpo e de tocar nos Durable Objects. Falta ou erro → `404 rota_nao_encontrada` (não revela o serviço nem consome objetos). O app não envia esse cabeçalho; o T1 é feito por um roteiro local, não pelo app.
+* **Configuração `wrangler.teste.jsonc` proposta:** `name` `sino-servico-codigos-teste`; `main` `src/teste.ts`; mesma `compatibility_date`; `send_metrics: false`; `workers_dev: true`; `preview_urls: false`; `observability: { enabled: false, logs: { enabled: false, invocation_logs: false } }`; os mesmos bindings e a migração `v1`; `vars`: `KID_ASSINATURA = "teste-1"`; sem `REMETENTE`, sem rotas.
+* **Segredos exclusivos do teste:** `CHAVE_HMAC`, `CHAVE_ASSINATURA`, `TOKEN_TESTE` gerados localmente (nunca reaproveitados em produção) e `DESTINATARIOS_PERMITIDOS` gerado com `destinatarios.py` a partir dessa `CHAVE_HMAC`, só com endereços fictícios `.invalid` (por exemplo `pessoa1@teste.invalid`, `pessoa2@teste.invalid`). Ficam numa pasta nova `~/.local/share/sino-validacao/e4-teste-<data>/` (permissão 700, arquivos 600), fora do repositório; vão à Cloudflare com `--secrets-file` no próprio deploy (sem janela sem segredos). Nenhum segredo no chat, no `.dev.vars` ou no Git. **Sem `RESEND_API_KEY`** no T1.
+* **Limites:** os do contrato (5/h e 10/dia por destino; 10/h e 30/dia de pedidos por IP; 30 validações/h por IP; teto global 80/dia), mais os do Free. Pedidos sem token param no 404 antes de qualquer objeto, o que limita o custo de varreduras ao Worker.
+* **Retenção e descarte:** dados dos objetos pelos prazos do contrato (desafios 24 h, contadores 2 h e 48 h, totais globais 35 dias); Workers Logs desligados; nenhum `wrangler tail` gravado em arquivo (se usado, só na tela). Duração do ambiente: até o fim do T1 e **no máximo 7 dias** depois do deploy; então é removido (procedimento abaixo).
+* **Dados pessoais no T1:** os e-mails são fictícios e só entram como resumo; o IP real da autora é tratado pela Cloudflare (borda e metadados da requisição) e, no serviço, como resumo HMAC por até 48 h; os dados da conta da autora ficam na Cloudflare. Aceitar esse tratamento é decisão da autora (já listada em 07/10).
+
+**Testes e critérios de aprovação**
+
+* **T0 (local, sem rede, antes do deploy):** testes novos de `src/teste.ts` (sem token e token errado → 404 sem tocar nos objetos; token certo → contrato normal; `EnviadorDescarte` nunca chama `fetch`); suítes atuais aprovadas (app 950, serviço 215 mais os novos; typecheck); `wrangler deploy --dry-run --outdir` com o pacote gerado **sem** `api.resend.com`, `127.0.0.1` e `RESEND_API_KEY`; `wrangler dev -c wrangler.teste.jsonc` local respondendo ao roteiro do T1.
+* **T1 (remoto; roteiro local `servidor/ferramentas/teste_remoto.py`, só biblioteca padrão, que lê URL e token de arquivo 600 e mostra só status e nomes de erro):**
+  1. sem token e com token errado → 404;
+  2. rota inexistente → 404; `GET /v1/desafios` → 405; corpo acima de 4096 bytes → 413; JSON inválido → 400;
+  3. cadastro para endereço da lista → 201; repetição com a mesma chave → mesma resposta;
+  4. validação com código errado → 422 com `tentativas_restantes` decrescendo; esgotar → desafio encerrado conforme o contrato;
+  5. cadastro e alteração para endereço fora da lista → 403 `destinatario_nao_permitido`;
+  6. recuperação para endereço fora da lista → 202 neutro;
+  7. pedido para o mesmo destino antes de 60 s → 429 `aguarde`; sexto pedido para o mesmo destino na hora (com intervalos de 60 s) → 429 `limite_excedido`;
+  8. painel: nenhum erro de CPU (1102) e tempo de CPU por requisição abaixo de 10 ms nas métricas;
+  9. IP: pedidos para endereços fora da lista com `CF-Connecting-IP` forjado e variado ainda contam no mesmo limite por IP (o limite é consumido antes da conferência da lista: os 10 primeiros pedidos da hora → 403, o seguinte → 429 `limite_excedido`), provando que o valor do cliente não é usado. Como os casos 3 a 7 também consomem os 10 pedidos/hora do IP, o roteiro conta os pedidos e faz o caso 9 numa hora cheia separada;
+  10. painel: Workers Logs desligados, só `workers.dev` (sem Preview URLs), segredos listados só por nome, três namespaces de Durable Objects, nenhuma chamada de saída à Resend.
+  * **Aprovação:** todos os casos com o resultado esperado, nenhum código, e-mail ou segredo em respostas, terminal ou registros, e nenhum gasto.
+* **T2 (envio real):** fora desta proposta; só depois do novo aceite dos Termos e da Política e de autorização própria.
+
+**Comandos propostos (não executados; ordem; todos em `servidor/`, com o Node do projeto)**
+
+1. `npx wrangler login` — abre o navegador para autorizar o Wrangler na conta da autora; grava um token OAuth em `~/.config/.wrangler/config/default.toml`. Não cria recursos.
+2. `npx wrangler whoami` — mostra a conta conectada (conferir que é a da autora). Não altera nada.
+3. `python3 ferramentas/teste_remoto.py preparar --pasta ~/.local/share/sino-validacao/e4-teste-<data> --url https://sino-servico-codigos-teste.carinnebatista11.workers.dev` — cria só a pasta local (700) com `segredos.json`, `segredos.env` e `teste_remoto.json` (600, nunca sobrescritos), com a lista dos três endereços fictícios `.invalid`; não mostra segredos.
+4. `npx wrangler deploy -c wrangler.teste.jsonc --dry-run --outdir <pasta>/pacote` — compila sem enviar nada; o pacote é inspecionado (T0).
+5. `npx wrangler deploy -c wrangler.teste.jsonc --secrets-file <pasta>/segredos.json` — **cria** o Worker `sino-servico-codigos-teste`, os três namespaces de Durable Objects (migração `v1`), a rota `workers.dev` e os quatro segredos; não toca em DNS nem no `appsino.com.br`.
+6. `npx wrangler secret list -c wrangler.teste.jsonc` — lista só os nomes dos segredos. Não altera nada.
+7. `python3 ferramentas/teste_remoto.py basico --config <pasta>/teste_remoto.json`; numa hora UTC seguinte, `… limite-destino …`; noutra, `… ip …` — executam o T1 (casos 1–7 e 9). Gravam só nos objetos do Worker de teste e em `<pasta>/janelas.json`.
+8. Conferência no painel (sem comando): Logs, domínios e rotas, métricas de CPU, Durable Objects.
+
+**Encerramento e remoção (até 7 dias depois do deploy)**
+
+1. `npx wrangler delete -c wrangler.teste.jsonc --dry-run` e depois sem `--dry-run` — remove o Worker de teste, seus segredos, a rota `workers.dev` e os recursos associados. A documentação não diz expressamente o que acontece com os dados dos Durable Objects: conferir no painel (Workers & Pages e Durable Objects) que os três namespaces sumiram; se restarem, removê-los pelo painel.
+2. Apagar a pasta local `e4-teste-<data>` (segredos, token, pacote) com `shred -u` nos arquivos de segredo.
+3. `npx wrangler logout` — revoga o token OAuth e apaga a credencial local.
+4. Registrar a remoção nestes documentos (data, conferência no painel).
+
+**P40 — decisões da autora (08/10/2026)**
+
+* **Aprovado** o desenho do ambiente remoto de testes separado (Worker `sino-servico-codigos-teste`, `wrangler.teste.jsonc`, entrada `src/teste.ts` com envio fictício sem acesso à Resend, autenticação por `TOKEN_TESTE`, proteção dos códigos e dados sensíveis), com **duração máxima de 7 dias após o deploy**.
+* A autora está **ciente e concorda** que a Cloudflare processe o seu IP real durante os testes.
+* **Mantido** o subdomínio `carinnebatista11.workers.dev`.
+* **Autorizada só a implementação e a validação locais** (código, testes, roteiro, compilação de verificação, documentos). **Não autorizados:** deploy, login pelo Wrangler, configuração remota, envio real, commit e push.
+* Continua pendente: rastreamento da Resend (conferir na aba Configuration antes do T2); Termos e Política novos (redação, revisão e aprovação).
+
+**T0 — implementação e validação locais (08/10/2026; commit local depois da revisão, sem push)**
+
+* **Arquivos novos:** `servidor/src/teste.ts` (entrada), `servidor/src/acesso_teste.ts` (token; 404 antes de qualquer objeto; comparação em tempo constante), `servidor/src/envio/descarte.ts` (`EnviadorDescarte`), `servidor/src/ambiente.ts`, `servidor/wrangler.teste.jsonc`, `servidor/ferramentas/teste_remoto.py`, `servidor/test/nucleo/ambiente_teste.test.ts`, `tests/test_teste_remoto.py`.
+* **Arquivos alterados:** `servidor/src/index.ts` (só reorganização, sem mudança de comportamento: a leitura dos segredos e a montagem das dependências passaram para `src/ambiente.ts`, que não importa nenhum enviador, para que o pacote de teste não leve o adaptador da Resend), `servidor/test/workers/objetos.test.ts` (2 testes da entrada de teste no simulador), `servidor/test/nucleo/tsconfig.json`, `servidor/README.md`. `wrangler.jsonc` de produção **inalterado**.
+* **Decisões técnicas do planejamento:** `observability.traces` também desligado; roteiro dividido em três comandos (`basico`, `limite-destino`, `ip`), cada um numa hora UTC diferente, porque os casos consomem o limite de 10 pedidos/hora do IP (7 + 6 + 11 = 24 dos 30 diários); o roteiro registra as horas usadas e recusa repetir a mesma; o caso 8 (CPU) e o 10 (painel) ficam como conferência visual no painel. O token errado ou ausente gera um aviso genérico no registro do Worker (sem o token), que fica desligado no ambiente remoto.
+* **Resultados:**
+  * serviço: **224 testes aprovados** (215 + 9 novos), typecheck ok (225 depois da revisão pré-commit, abaixo); os testes conferem que a entrada de teste não alcança `resend.ts`, `caixa_local.ts`, `simulado.ts`, `index.ts` nem `dev.ts`;
+  * aplicativo: **960 testes aprovados** (950 + 10 do roteiro), sem rede (964 depois da revisão pré-commit);
+  * compilação de verificação `wrangler deploy -c wrangler.teste.jsonc --dry-run --outdir …` (nada enviado): pacote de 127 KiB **sem** `api.resend.com`, `resend`, `RESEND_API_KEY`, `127.0.0.1`, caixa local nem `onboarding`, e **sem nenhuma chamada `fetch` de saída** (só os manipuladores de entrada); bindings: os três Durable Objects e `KID_ASSINATURA`. A configuração de produção continua compilando igual (`--dry-run`);
+  * ensaio local com `wrangler dev -c wrangler.teste.jsonc` (127.0.0.1, segredos descartáveis, estado novo por comando): `basico` 20/20 aprovado; `limite-destino` 6/6 aprovado; `ip` com o 11.º pedido **403** em vez de 429 — esperado fora da Cloudflare, porque o simulador local usa o `CF-Connecting-IP` enviado pelo cliente; isso mostra que o caso 9 distingue as duas situações e só o resultado remoto vale. Nenhum token, e-mail ou evento do serviço nos registros do ensaio. Segredos do ensaio apagados com `shred`; portas livres ao fim;
+  * banco principal e cinco backups iguais à ref7 depois de tudo.
+* **O que o T1 remoto consegue validar:** token (1), rotas e formato (2), cadastro e repetição (3), código errado até esgotar e segredo que não confere (4), fora da lista no cadastro e na alteração (5), recuperação neutra (6), intervalo de 60 s e limite por destino (7), CPU no painel (8), tratamento do `CF-Connecting-IP` forjado pela borda (9) e configuração no painel (10).
+* **O que não consegue validar:** a validação com o **código correto** (200 e autorização assinada), porque o código é descartado e ninguém o conhece; a autorização, a verificação pelo app e o fluxo completo pelo app ficam com os testes locais e com o T2. Também não testa a Resend, o remetente, o Reply-To nem os textos dos e-mails. (O `wrangler dev` local expõe ferramentas de inspeção em `127.0.0.1/cdn-cgi/local/…`; isso só existe no simulador local, não no Worker publicado.)
+
+**Revisão pré-commit do T0 (08/10/2026)**
+
+* **Escopo:** só os arquivos da implementação do T0 e a documentação; nenhum banco, backup, segredo ou arquivo temporário. Varredura sem chaves hexadecimais de 64 caracteres, tokens, `account_id` ou chaves da Resend; os únicos e-mails são fictícios (`.invalid`, `exemplo.com`), o remetente aprovado e o contato público já publicado nos Termos.
+* **Produção preservada:** `wrangler.jsonc` inalterado. Comparação dos pacotes de produção (`--dry-run`) do HEAD 5b43a60 e da árvore atual, módulo a módulo: 26 de 28 módulos idênticos; só `src/index.ts` e o novo `src/ambiente.ts` diferem, com o mesmo código redistribuído (mesmas condições, mesmos avisos na mesma ordem, mesmo relógio padrão, mesmas exportações).
+* **Isolamento do envio fictício:** a entrada de teste não alcança `resend.ts`, `caixa_local.ts`, `simulado.ts`, `index.ts` nem `dev.ts` (teste automático); o pacote de teste não tem `api.resend.com`, `RESEND_API_KEY`, `127.0.0.1`, caixa local nem `onboarding`, e não tem nenhuma chamada `fetch` de saída.
+* **Logs e traces:** desligados em `wrangler.teste.jsonc` (`enabled: false` no geral, nos logs e nos traces; `invocation_logs: false`). **Correção da revisão:** acrescentados `head_sampling_rate: 0` (geral, logs e traces) e `persist: false` (logs e traces), porque a documentação não descreve expressamente que `enabled: false` basta; novo teste automático fixa toda a configuração de teste (Worker separado, entrada, só `workers.dev`, sem rotas, registros desligados, sem `account_id`, só `KID_ASSINATURA` nas variáveis, objetos e migração iguais aos da produção). A conferência no painel depois do deploy continua no caso 10.
+* **Limites (sem alteração; o roteiro se planeja por eles):** janelas fixas em UTC (hora cheia; dia de 00:00 a 23:59 UTC = 21:00 a 20:59 em Brasília, UTC−3). Só contam requisições ao Worker de teste; recusas pelo token (404) não contam.
+
+  | Comando | Pedidos do IP | Pedidos por destino | Validações do IP | Reservas do teto | Duração |
+  |---|---|---|---|---|---|
+  | `basico` | 7 (de 10/h) | pessoa1 1, pessoa2 1 (de 5/h) | 7 (de 30/h) | 2 (de 80/dia) | < 1 min |
+  | `limite-destino` | 6 (de 10/h) | pessoa3 5 aceitos + 1 recusado | 0 | 5 | ~5 min |
+  | `ip` | 11 (10 + 1 que deve ser recusado) | nenhum (fora da lista) | 0 | 0 | < 1 min |
+
+  **Correção da revisão:** o registro de janelas só impedia dois comandos na mesma hora; uma repetição no mesmo dia UTC passaria dos 30 pedidos diários do IP (24 + 7 = 31) e uma terceira execução de `limite-destino` bateria no limite diário de 10 do destino, gerando falhas que não seriam do serviço. O roteiro agora recusa, antes de enviar qualquer pedido: dois comandos na mesma hora UTC; passar de 30 pedidos do IP no dia UTC; `limite-destino` mais de 2 vezes no dia UTC; `limite-destino` depois do minuto 51. Testes novos conferem essas regras e que os valores usados pelo roteiro são os de `servidor/src/config.ts`.
+* **Horários possíveis:** cada comando numa hora UTC diferente, no mesmo dia UTC ou em dias diferentes, dentro dos 7 dias do ambiente. Exemplo em Brasília, num só dia UTC: `basico` às 10:05; `limite-destino` entre 11:00 e 11:51; `ip` às 12:05. Repetir qualquer comando: depois das 21:00 em Brasília (novo dia UTC). Se um comando falhar por conexão, a hora fica registrada: repetir na hora seguinte, respeitando o limite diário.
+* **Caso de IP (9): continua pendente de validação remota.** No ensaio local o 11.º pedido deu 403 (o simulador usa o cabeçalho do cliente), o que mostra que o caso distingue as duas situações. No remoto, um 403 no 11.º pode indicar que a borda usou o valor do cliente **ou** que a conexão alternou entre IPv4 e IPv6 (limites separados); repetir noutra hora antes de concluir.
+* **Checks depois das correções:** serviço **225** testes aprovados e typecheck ok; aplicativo **964** aprovados (950 + 14 do roteiro); compilação de verificação da configuração de teste igual (127 KiB, mesmas ausências); ensaio local `basico` 20/20 aprovado com a configuração final (sem token ou e-mails no registro; segredos do ensaio apagados com `shred`; portas livres); banco principal e backups iguais à ref7.
+
 ### Pendências da M8 (não resolvidas)
 
-* Domínio e remetente (M8-B).
-* Responsável pela operação e contato para titulares (M8-C).
+* ~~Domínio e remetente (M8-B).~~ Resolvido para o uso restrito em 08/10/2026 (remetente e Reply-To aprovados).
+* ~~Responsável pela operação e contato para titulares (M8-C).~~ Resolvido para o uso restrito em 08/10/2026 (Carinne; `sino.lembrete.contas@gmail.com`); falta a redação nos Termos e na Política.
+* Rastreamento de abertura e de cliques na Resend: confirmar desligado (08/10/2026: não confirmado).
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).

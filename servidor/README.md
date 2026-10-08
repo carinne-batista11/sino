@@ -7,20 +7,21 @@ a autorização que o aplicativo confere localmente. O contrato está em
 
 **Estado:** contrato v1.1 (restrição de destinatários da E3, ERS v7.0 5.49),
 validado localmente e publicado no repositório com a Sino 6.2. O serviço **não
-foi publicado** (sem deploy), não há conta na Cloudflare nem na Resend, e
-nenhum e-mail real é enviado.
+foi publicado** (sem deploy) e nenhum e-mail real é enviado. O ambiente remoto
+de testes da E4 está preparado localmente, sem deploy (ver abaixo).
 
 ## Organização
 
 | Pasta | Conteúdo |
 |---|---|
 | `src/nucleo/` | Regras (5.32, limites, reserva global, envio incerto, retenção), criptografia e autorização assinada; sem nada da Cloudflare |
-| `src/envio/` | Fronteira com o provedor (`Enviador`), adaptador da Resend, textos dos e-mails e enviador simulado para os testes |
+| `src/envio/` | Fronteira com o provedor (`Enviador`), adaptador da Resend, textos dos e-mails, enviador simulado para os testes e enviador de descarte do ambiente de teste |
 | `src/fluxos.ts`, `src/http.ts` | Orquestração entre os objetos e rotas HTTP do contrato |
-| `src/objetos.ts`, `src/index.ts` | Durable Objects com SQLite e entrada do Worker |
+| `src/objetos.ts`, `src/ambiente.ts` | Durable Objects com SQLite; segredos e dependências comuns às entradas |
+| `src/index.ts`, `src/dev.ts`, `src/teste.ts` | Entradas do Worker: produção (Resend), desenvolvimento (caixa local) e ambiente remoto de testes (descarte e token, `src/acesso_teste.ts`) |
 | `test/nucleo/` | Testes das regras com o SQLite do Node (mesmos comandos SQL dos objetos) |
 | `test/workers/` | Testes no simulador local dos Durable Objects (concorrência, falhas parciais, alarmes) |
-| `ferramentas/` | Ferramentas locais: caixa de mensagens e modo de demonstração (desenvolvimento) e `destinatarios.py` (gera a lista de destinatários) |
+| `ferramentas/` | Ferramentas locais: caixa de mensagens e modo de demonstração (desenvolvimento), `destinatarios.py` (gera a lista de destinatários) e `teste_remoto.py` (roteiro do ambiente remoto de testes) |
 
 ## Testes
 
@@ -58,6 +59,37 @@ Os e-mails são digitados sem eco (vazio termina). O arquivo de saída (600, nun
 sobrescrito) tem o valor do segredo. Trocar a `CHAVE_HMAC` exige gerar a lista
 de novo. A publicação do segredo só acontece com autorização (E4). Regras,
 respostas e limites (a revogação não é instantânea) estão no contrato.
+
+## Ambiente remoto de testes (E4; preparado, sem deploy)
+
+`wrangler.teste.jsonc` descreve um Worker **separado**
+(`sino-servico-codigos-teste`, só em `workers.dev`, sem URLs de prévia e com os
+registros do Worker desligados), com a entrada `src/teste.ts`:
+
+- **sem envio real por construção:** as mensagens são descartadas
+  (`EnviadorDescarte`: sem rede e sem registro); a entrada não importa o
+  adaptador da Resend nem a caixa local, e não lê `RESEND_API_KEY`;
+- **token obrigatório:** toda requisição precisa de
+  `Authorization: Bearer <TOKEN_TESTE>`; sem ele, a resposta é a mesma 404 de
+  uma rota inexistente, antes de ler o corpo e de tocar nos objetos;
+- regras, limites, lista de destinatários e retenção iguais aos da produção.
+
+Como o código é descartado, o ambiente remoto **não** testa a validação com o
+código correto (esse caminho fica com os testes locais). Segredos exclusivos,
+só com destinatários fictícios (`.invalid`), numa pasta nova fora do
+repositório:
+
+```bash
+python3 ferramentas/teste_remoto.py preparar --pasta <pasta nova> --url <URL do Worker de teste>
+python3 ferramentas/teste_remoto.py basico --config <pasta>/teste_remoto.json   # e, em outras horas UTC: limite-destino, ip
+```
+
+Cada comando do roteiro roda numa hora UTC diferente; o roteiro recusa os
+horários que passariam dos limites do contrato (que ele não altera).
+
+Todo comando do Wrangler deste ambiente leva `-c wrangler.teste.jsonc` (sem
+ele, a configuração seria a de produção). Deploy, segredos remotos e remoção
+só com autorização (plano e comandos em `docs/ERS_v7.0_propostas.md`, "E4").
 
 ## Modo de demonstração (desenvolvimento)
 
