@@ -81,9 +81,9 @@ class TestMontar(unittest.TestCase):
 
 class TestGerar(unittest.TestCase):
     def setUp(self):
-        self.pasta = tempfile.mkdtemp(prefix="sino_destinatarios_")
-        self.addCleanup(lambda: [os.remove(os.path.join(self.pasta, n)) for n in os.listdir(self.pasta)]
-                        or os.rmdir(self.pasta))
+        pasta = tempfile.TemporaryDirectory(prefix="sino_destinatarios_")
+        self.addCleanup(pasta.cleanup)
+        self.pasta = pasta.name
         self.chave = os.path.join(self.pasta, "segredos.env")
         with open(self.chave, "w") as arquivo:
             arquivo.write(f"CHAVE_HMAC={CHAVE.hex()}\nCHAVE_ASSINATURA={'22' * 32}\n")
