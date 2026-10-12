@@ -7,6 +7,7 @@ src/teste.ts), com envio descartado e token obrigatório. Só biblioteca padrão
     python3 teste_remoto.py basico          --config PASTA/teste_remoto.json
     python3 teste_remoto.py limite-destino  --config PASTA/teste_remoto.json
     python3 teste_remoto.py ip              --config PASTA/teste_remoto.json
+    python3 teste_remoto.py ip-real         --config PASTA/teste_remoto.json
 
 preparar  cria PASTA (nova, permissão 700, fora do repositório) com os
           segredos EXCLUSIVOS deste ambiente, em arquivos 600 que nunca são
@@ -20,6 +21,13 @@ preparar  cria PASTA (nova, permissão 700, fora do repositório) com os
 basico          casos 1 a 6 e o intervalo de 60 s (7 pedidos do IP);
 limite-destino  limite por destino na hora (6 pedidos do IP; cerca de 5 min);
 ip              limite por IP com CF-Connecting-IP forjado (11 pedidos do IP).
+                Executado em 08/10/2026: inconclusivo (a borda da Cloudflare
+                recusou os pedidos com o cabeçalho forjado).
+ip-real         limite por IP real, SEM cabeçalho de IP forjado (11 pedidos
+                do IP), numa hora UTC sem nenhum outro pedido e num dia UTC
+                novo; família de endereço (IPv4/IPv6) fixa; para no primeiro
+                sinal de recusa fora do serviço. Executado em 12/10/2026:
+                aprovado (10 x 403 e 429 no 11.º, IPv6).
 
 Limites do serviço (contrato; o roteiro não os altera, só se planeja por
 eles). As janelas são fixas em UTC: hora cheia e dia de 00:00 a 23:59 UTC, ou
@@ -31,18 +39,22 @@ não contam.
   basico           7 (de 10/h)    pessoa1 1, pessoa2 1 (de 5/h)  < 1 min
   limite-destino   6 (de 10/h)    pessoa3 5 + 1 recusado         ~5 min
   ip               11 (de 10/h)   nenhum (fora da lista)         < 1 min
+  ip-real          11 (de 10/h)   nenhum (fora da lista)         < 1 min
 
 Por isso o roteiro (registro em PASTA/janelas.json) recusa:
-  * dois comandos na mesma hora UTC (o caso "ip" precisa da hora sem nenhum
-    outro pedido, e os outros dois juntos passariam de 10 na hora);
-  * passar de 30 pedidos do IP no dia UTC (os três uma vez = 24; uma
-    repetição de qualquer um no mesmo dia passaria de 30 ou chegaria perto);
+  * dois comandos na mesma hora UTC ("ip" e "ip-real" precisam da hora sem
+    nenhum outro pedido, e "basico" e "limite-destino" juntos passariam de
+    10 na hora);
+  * passar de 30 pedidos do IP no dia UTC (basico, limite-destino e ip uma
+    vez = 24; com ip-real seriam 35, por isso ip-real fica num dia UTC sem o
+    ip; uma repetição no mesmo dia passaria de 30 ou chegaria perto);
   * "limite-destino" mais de 2 vezes no dia UTC (pessoa3 tem 10 pedidos/dia);
   * "limite-destino" depois do minuto 51 da hora (os 6 pedidos com 61 s de
     intervalo precisam caber na mesma hora).
-Horários possíveis: três horas UTC diferentes no mesmo dia UTC (por exemplo,
-em Brasília, basico às 10:05, limite-destino entre 11:00 e 11:51, ip às 12:05)
-ou em dias diferentes; o ambiente dura no máximo 7 dias após o deploy.
+Horários possíveis: horas UTC diferentes no mesmo dia UTC (por exemplo, em
+Brasília, basico às 10:05, limite-destino entre 11:00 e 11:51, ip ou ip-real
+às 12:05) ou em dias diferentes; o ambiente dura no máximo 7 dias após o
+deploy.
 
 Nada sensível é mostrado: nem o token, nem segredos, nem e-mails; das
 respostas, só o status e o nome do erro. O envio é descartado pelo serviço, por
@@ -54,7 +66,9 @@ import argparse
 import datetime
 import json
 import os
+import contextlib
 import secrets
+import socket
 import sys
 import urllib.error
 import urllib.parse
@@ -78,7 +92,7 @@ CAMPOS_PEDIDO = {"desafio_id", "expira_em", "reenvio_permitido_em", "agora"}
 LIMITE_IP_DIA = 30
 EXECUCOES_LIMITE_DESTINO_DIA = 2  # 5 pedidos aceitos por execução; 10 por dia
 ULTIMO_MINUTO_LIMITE_DESTINO = 51
-PEDIDOS_DO_IP = {"basico": 7, "limite-destino": 6, "ip": 11}
+PEDIDOS_DO_IP = {"basico": 7, "limite-destino": 6, "ip": 11, "ip-real": 11}
 RAIZ_REPOSITORIO = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 
@@ -363,6 +377,54 @@ def caso_ip(c, r):
     r.conferir("9 pedido 11 com IP forjado (limite do IP real)", s, b, 429, "limite_excedido")
 
 
+@contextlib.contextmanager
+def familia_fixa(url):
+    """
+    Todas as conexões ao host do ambiente usam a mesma família de endereço
+    (a primeira que o sistema oferece). O serviço agrupa IPv4 inteiro e IPv6
+    por /64: se a conexão alternasse entre IPv4 e IPv6, seriam dois limites
+    separados e o 11.º pedido não seria recusado. Devolve "IPv4" ou "IPv6"
+    (nunca o endereço).
+    """
+    host = urllib.parse.urlsplit(url).hostname
+    original = socket.getaddrinfo
+    opcoes = original(host, 443, 0, socket.SOCK_STREAM)
+    familia = opcoes[0][0]
+
+    def filtrado(h, *args, **kwargs):
+        resultado = original(h, *args, **kwargs)
+        if h == host:
+            resultado = [r for r in resultado if r[0] == familia]
+            if not resultado:
+                raise OSError("família de endereço indisponível para o host do ambiente")
+        return resultado
+
+    socket.getaddrinfo = filtrado
+    try:
+        yield "IPv6" if familia == socket.AF_INET6 else "IPv4"
+    finally:
+        socket.getaddrinfo = original
+
+
+def caso_ip_real(c, r):
+    # Sem nenhum cabeçalho de IP: o serviço usa o CF-Connecting-IP que a
+    # própria Cloudflare põe. Fora da lista, o limite do IP é consumido antes
+    # da conferência da lista e o destinatário nunca é tocado (sem limite por
+    # destino, intervalo de 60 s ou teto global). Numa hora e num dia UTC sem
+    # outros pedidos: os 10 primeiros -> 403 do serviço (JSON), o 11.º -> 429.
+    for i in range(1, 11):
+        s, b = c.pedido("cadastro", FORA_DA_LISTA)
+        ok = r.conferir(f"9r pedido {i} com o IP real", s, b, 403, "destinatario_nao_permitido")
+        if not ok:
+            # Resposta sem JSON vem da borda, não do serviço; outro status do
+            # serviço indica pedidos anteriores na hora/dia. Em ambos os casos,
+            # parar para não gastar a cota.
+            print("PARADO  9r resposta inesperada; os pedidos restantes não foram enviados")
+            return
+    s, b = c.pedido("cadastro", FORA_DA_LISTA)
+    r.conferir("9r pedido 11 com o IP real (limite do IP)", s, b, 429, "limite_excedido")
+
+
 def main(argv=None, esperar=None):
     import time
 
@@ -371,7 +433,7 @@ def main(argv=None, esperar=None):
     p = sub.add_parser("preparar")
     p.add_argument("--pasta", required=True)
     p.add_argument("--url", required=True)
-    for nome in ("basico", "limite-destino", "ip"):
+    for nome in ("basico", "limite-destino", "ip", "ip-real"):
         sub.add_parser(nome).add_argument("--config", required=True)
     args = analisador.parse_args(argv)
     try:
@@ -390,8 +452,12 @@ def main(argv=None, esperar=None):
             caso_basico(cliente, relatorio)
         elif args.comando == "limite-destino":
             caso_limite_destino(cliente, relatorio, esperar or time.sleep)
-        else:
+        elif args.comando == "ip":
             caso_ip(cliente, relatorio)
+        else:
+            with familia_fixa(url) as familia:
+                print(f"família de endereço fixa: {familia}")
+                caso_ip_real(cliente, relatorio)
         return relatorio.fim()
     except Falha as erro:
         print(f"recusado: {erro}", file=sys.stderr)

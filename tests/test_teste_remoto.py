@@ -156,11 +156,37 @@ class TestLimitesDiarios(unittest.TestCase):
         self.assertLessEqual(tr.PEDIDOS_DO_IP["basico"], valor("LIMITE_IP_PEDIDOS_HORA"))
         self.assertEqual(tr.PEDIDOS_DO_IP["limite-destino"], valor("LIMITE_DESTINO_HORA") + 1)
 
+    def test_ip_real_so_num_dia_utc_novo_depois_do_08_10(self):
+        # Registro real de 08/10/2026: basico 17h, limite-destino 18h, ip 19h.
+        self.rodar("basico", 17)
+        self.rodar("limite-destino", 18)
+        self.rodar("ip", 19)
+        with self.assertRaises(tr.Falha):
+            self.rodar("ip-real", 22)  # 24 + 11 > 30 no mesmo dia UTC
+        tr.reservar_janela(self.pasta, URL, "ip-real", self.dia + datetime.timedelta(days=1))
+
     def test_registro_ilegivel_recusa(self):
         with open(os.path.join(self.pasta, "janelas.json"), "w", encoding="utf-8") as arquivo:
             arquivo.write("{quebrado")
         with self.assertRaises(tr.Falha):
             self.rodar("basico", 1)
+
+
+class TestFamiliaFixa(unittest.TestCase):
+    def test_filtra_so_o_host_do_ambiente_e_restaura(self):
+        import socket
+        from unittest import mock
+
+        v6 = (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:db8::1", 443, 0, 0))
+        v4 = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 443))
+        falso = mock.Mock(side_effect=lambda h, *a, **k: [v6, v4])
+        with mock.patch.object(socket, "getaddrinfo", falso):
+            with tr.familia_fixa(URL) as familia:
+                self.assertEqual(familia, "IPv6")
+                host = "sino-servico-codigos-teste.carinnebatista11.workers.dev"
+                self.assertEqual(socket.getaddrinfo(host, 443), [v6])
+                self.assertEqual(socket.getaddrinfo("outro.exemplo", 443), [v6, v4])
+            self.assertIs(socket.getaddrinfo, falso)
 
 
 class ServicoFalso(tr.Cliente):
@@ -174,10 +200,15 @@ class ServicoFalso(tr.Cliente):
         self.pedidos_ip = 0
         self.ultimo = {}
         self.vistos = []
+        self.extras = []
+        self.resposta_da_borda = False
 
     def enviar(self, caminho, corpo=None, metodo="POST", chave=None, autorizacao=True, extra=None, bruto=None):
         token_ok = autorizacao is True
         self.vistos.append((caminho, metodo))
+        self.extras.append(dict(extra or {}))
+        if self.resposta_da_borda:
+            return 403, None
         if not token_ok:
             return 404, {"erro": "rota_nao_encontrada"}
         if bruto is not None:
@@ -239,6 +270,28 @@ class TestCasos(unittest.TestCase):
         relatorio, saida = self.rodar(tr.caso_ip, servico)
         self.assertEqual(relatorio.falhas, 0, saida)
         self.assertEqual(servico.pedidos_ip, 11)
+
+    def test_ip_real_sem_cabecalho_forjado(self):
+        servico = ServicoFalso(self.TOKEN)
+        relatorio, saida = self.rodar(tr.caso_ip_real, servico)
+        self.assertEqual(relatorio.falhas, 0, saida)
+        self.assertEqual(servico.pedidos_ip, 11)
+        self.assertTrue(all(not any("ip" in k.lower() for k in e) for e in servico.extras))
+
+    def test_ip_real_para_na_primeira_resposta_da_borda(self):
+        servico = ServicoFalso(self.TOKEN)
+        servico.resposta_da_borda = True
+        relatorio, saida = self.rodar(tr.caso_ip_real, servico)
+        self.assertEqual(len(servico.vistos), 1)  # nenhum pedido depois da recusa
+        self.assertEqual(relatorio.falhas, 1)
+        self.assertIn("PARADO", saida)
+
+    def test_ip_real_para_se_a_hora_ja_tinha_pedidos(self):
+        servico = ServicoFalso(self.TOKEN)
+        servico.pedidos_ip = 9
+        relatorio, saida = self.rodar(tr.caso_ip_real, servico)
+        self.assertEqual(servico.pedidos_ip, 11)  # o 2.º já foi 429 e o roteiro parou
+        self.assertIn("PARADO", saida)
 
     def test_relatorio_recusa_codigo_de_6_digitos_na_resposta(self):
         relatorio = tr.Relatorio()
