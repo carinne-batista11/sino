@@ -744,7 +744,7 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
 * **Segredos:** gerados localmente por `teste_remoto.py preparar` em `~/.local/share/sino-validacao/e4-teste-20261008/` (pasta 700, arquivos 600), lista só com `pessoa1/2/3@teste.invalid`; enviados no próprio deploy (`--secrets-file`); `wrangler secret list` mostra só os nomes (`CHAVE_ASSINATURA`, `CHAVE_HMAC`, `DESTINATARIOS_PERMITIDOS`, `TOKEN_TESTE`, todos `secret_text`). Nenhum valor exibido. Sem `RESEND_API_KEY`.
 * **Compilação de verificação antes do deploy:** igual à do T0 (127 KiB; sem Resend, caixa local ou `fetch` de saída); o Worker ainda não existia na conta.
 * **Deploy:** 08/10/2026, 14:34 (Brasília; 17:34 UTC), `wrangler deploy -c wrangler.teste.jsonc --secrets-file …`; versão `54c9dd66-4cf6-4034-9c19-3f932a8afcf9`; endereço **https://sino-servico-codigos-teste.carinnebatista11.workers.dev**; bindings: os três Durable Objects (SQLite, migração `v1`) e `KID_ASSINATURA`. Nenhuma rota no domínio; DNS inalterado.
-* **Remoção: até 15/10/2026, 14:34 (Brasília)** — 7 dias após o deploy (procedimento de encerramento acima).
+* **Remoção: até 15/10/2026, 14:34 (Brasília)** — 7 dias após o deploy (procedimento de encerramento acima). **Cumprida em 12/10/2026** (ver "T1 — encerramento" abaixo).
 * **Resultados remotos:**
   * sondagem sem token (`GET /` e `POST /v1/desafios`): 404 `rota_nao_encontrada`;
   * `basico` (08/10, 14:34, hora 17 UTC): **20/20 aprovado** — casos 1 a 6 e 7a;
@@ -777,6 +777,27 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
   * taxa de erros: 0%; erros registrados: 0;
   * Workers Observability desativado, conforme a configuração planejada (nada foi ligado para esta conferência).
   * **Continuam pendentes:** o **p99** de CPU não está disponível nas telas consultadas, e erros **1102** não são identificáveis individualmente sem Logs/Observability (desligados por decisão do ambiente). O total de erros registrados é 0 nas duas conferências, o que é compatível com a ausência de 1102, mas não a comprova especificamente. **O caso 8 não é declarado aprovado integralmente.**
+
+**T1 — encerramento (12/10/2026; dentro do prazo de 15/10, 14:34)**
+
+* **Conferência antes da exclusão (só leitura):** `main` = `origin/main` = e5e8d66, árvore limpa; banco principal e cinco backups iguais à ref7; nenhum processo local do T1; `wrangler delete -c wrangler.teste.jsonc --dry-run` encerrado antes de autenticar (nome resolvido pela configuração de teste); `wrangler deployments list -c wrangler.teste.jsonc` com uma única implantação, a versão `54c9dd66…` em 100%.
+* **Exclusão:** o Worker `sino-servico-codigos-teste` foi **excluído manualmente pela autora no painel da Cloudflare**, em vez de `wrangler delete`. Motivo: fora de um terminal interativo, o Wrangler 4.146.0 responde "sim" automaticamente às confirmações, inclusive ao aviso de dependência entre Workers. Nenhum pedido HTTP foi feito ao Worker para conferir a exclusão.
+* **Conferência depois da exclusão:**
+  * `wrangler deployments list -c wrangler.teste.jsonc`, autenticado: **código 10007** ("This Worker does not exist on your account"). É a resposta de Worker inexistente, não um erro de autenticação ou de rede;
+  * a página Durable Objects do painel mostra **"No Durable Objects found"**: os três namespaces do T1 (`DestinoDO`, `LimiteIpDO`, `TetoGlobalDO`) **desapareceram do painel** (confirmação visual da autora). A eliminação física dos dados de teste armazenados neles não foi verificada de forma independente; o registro se apoia no que o painel mostra;
+  * não foram alterados: o subdomínio `carinnebatista11.workers.dev` da conta, o DNS de `appsino.com.br`, o domínio de envio `envios.appsino.com.br` e a conta da Resend (o T1 nunca usou a Resend).
+* **Limpeza local:**
+  * segredos do T1 (`segredos.json`, `segredos.env`, `teste_remoto.json`) destruídos com `shred -u`, sem exibir valores; compilação de verificação (`pacote/`) removida; pasta `e4-teste-20261008/` removida;
+  * **evidências preservadas** em `~/.local/share/sino-validacao/e4-t1-evidencias-20261012/` (pasta 700, arquivos 600): `deploy.log`, `janelas.json`, `t1_basico.log`, `t1_limite_destino.log`, `t1_ip.log`, `t1_ip_real.log`. Hashes SHA-256 iguais antes e depois da movimentação. Sem token, segredo, e-mail real ou endereço IP (conferido por busca de padrões, sem imprimir o conteúdo);
+  * em `/tmp`, removidas **12 pastas** com segredos **fictícios** (gerados pelos testes do roteiro e nunca implantados; 36 arquivos com `shred -u`) e **20 pastas** só com `janelas.json`, todas sobras dos testes Python do roteiro;
+  * `wrangler logout` concluído: credencial local removida, `wrangler whoami` responde "não autenticado" (o próprio logout também limpa o cache local da conta); os 79 registros locais do Wrangler foram removidos (continham só os nomes dos segredos, com valor oculto).
+* **Estado final:** banco principal e cinco backups iguais à ref7; `main` = `origin/main` = e5e8d66 antes deste registro.
+* **Resultado do T1:**
+  * aprovados: casos 1 a 6 e 7a (`basico`, 20/20), limite por destino (`limite-destino`, 6/6), **caso 9** (limite por IP real, `ip-real`, 12/10) e **caso 10** (painel);
+  * inconclusivo e substituído pelo `ip-real`: a execução `ip` com cabeçalho forjado (08/10);
+  * **caso 8 (CPU): encerrado como parcialmente validado.** Mediana de 3,49 ms (08/10) e 2,22 ms (12/10) e 0 erros, mas o **p99** e a ausência específica de erros **1102** **não foram comprovados**. Com o Worker excluído, essa conferência não pode mais ser feita neste ambiente; fica para um próximo ambiente de teste, se a autora decidir.
+* **Pendência técnica (separada, não corrigida):** os testes Python do roteiro (`tests/test_teste_remoto.py`: `TestPreparar`, `TestJanelas`, `TestLimitesDiarios`) criam pastas com `tempfile.mkdtemp()` sem removê-las. Cada execução da suíte deixa 8 pastas em `/tmp`, 3 delas com segredos fictícios. Correção proposta: `addCleanup` com remoção da pasta temporária em cada teste.
+* **T2 (envio real): não iniciado.** Continua dependendo do novo aceite dos Termos e da Política, da conferência do rastreamento da Resend e de autorização própria.
 
 ### Pendências da M8 (não resolvidas)
 
