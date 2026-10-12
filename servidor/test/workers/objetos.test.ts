@@ -8,7 +8,7 @@ import {
 } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { HORA_MS, TETO_GLOBAL_DIA } from "../../src/config";
+import { HORA_MS, PRAZO_RESERVA_MS, TETO_GLOBAL_DIA } from "../../src/config";
 import { EnviadorSimulado } from "../../src/envio/simulado";
 import worker_dev from "../../src/dev";
 import worker_teste from "../../src/teste";
@@ -141,13 +141,28 @@ describe("concorrência dentro de um objeto", () => {
 describe("limites entre objetos", () => {
   it("100 fluxos simultâneos (e-mails e IPs distintos): nunca passa de 80 envios", async () => {
     const { deps, enviador, teto } = depsReais();
+    const inicio = performance.now();
     const rs = await Promise.all(
       Array.from({ length: 100 }, (_, i) => pedirDesafio(deps, entrada(`p${i}@exemplo.com`, `198.51.100.${i}`))),
     );
+    const duracaoMs = performance.now() - inicio;
+    // Diagnóstico (só status, nomes de erro e tempo): num simulador lento, um
+    // fluxo que passa de PRAZO_RESERVA_MS entre criar o desafio e registrar a
+    // reserva é encerrado com 502 falha_envio, que continua sendo falha.
+    const contagem: Record<string, number> = {};
+    for (const r of rs) {
+      const nome = `${r.status} ${(r.corpo as { erro?: string }).erro ?? "-"}`;
+      contagem[nome] = (contagem[nome] ?? 0) + 1;
+    }
+    const diagnostico = `status recebidos: ${JSON.stringify(contagem)}; duração: ${(duracaoMs / 1000).toFixed(1)} s` +
+      (duracaoMs > PRAZO_RESERVA_MS
+        ? ` — acima do prazo de reserva (${PRAZO_RESERVA_MS / 1000} s): o simulador está lento e o prazo pode ter encerrado fluxos (502 falha_envio)`
+        : "");
+    console.log(`100 fluxos simultâneos: ${diagnostico}`);
     const enviados = rs.filter((r) => r.status === 201).length;
-    expect(enviados).toBeLessThanOrEqual(TETO_GLOBAL_DIA);
-    expect(enviados).toBe(enviador.enviadas.length);
-    expect(rs.every((r) => r.status === 201 || r.status === 503)).toBe(true);
+    expect(enviados, diagnostico).toBeLessThanOrEqual(TETO_GLOBAL_DIA);
+    expect(enviados, diagnostico).toBe(enviador.enviadas.length);
+    expect(rs.every((r) => r.status === 201 || r.status === 503), diagnostico).toBe(true);
     const total = await linhas(teto(), "SELECT envios FROM totais_diarios");
     expect(total).toEqual([{ envios: TETO_GLOBAL_DIA }]);
   }, 60_000); // 100 fluxos criam 200 objetos novos no simulador
@@ -198,7 +213,7 @@ describe("falhas parciais com objetos reais", () => {
       codigo: capturado.codigo!, ip: "198.51.100.200",
     });
     expect(v).toEqual({ status: 422, corpo: { erro: "codigo_invalido", tentativas_restantes: 4 } });
-  });
+  }, 60_000); // 80 reservas no teto antes do fluxo; a duração varia muito no simulador
 
   it("reserva obtida mas não gravada no destino: nenhum envio e nenhuma autorização", async () => {
     const { deps, enviador } = depsReais();
