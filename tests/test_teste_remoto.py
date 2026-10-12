@@ -25,6 +25,13 @@ import teste_remoto as tr  # noqa: E402
 URL = "https://sino-servico-codigos-teste.carinnebatista11.workers.dev"
 
 
+def pasta_temporaria(teste):
+    """Pasta temporária do teste, removida ao final mesmo se ele falhar."""
+    pasta = tempfile.TemporaryDirectory(prefix="sino_teste_remoto_")
+    teste.addCleanup(pasta.cleanup)
+    return pasta.name
+
+
 class TestUrl(unittest.TestCase):
     def test_aceitas(self):
         self.assertEqual(tr.validar_url(URL), URL)
@@ -53,7 +60,7 @@ class TestUrl(unittest.TestCase):
 
 class TestPreparar(unittest.TestCase):
     def setUp(self):
-        self.base = tempfile.mkdtemp()
+        self.base = pasta_temporaria(self)
         self.pasta = os.path.join(self.base, "e4-teste")
 
     def preparar(self):
@@ -112,7 +119,7 @@ class TestPreparar(unittest.TestCase):
 
 class TestJanelas(unittest.TestCase):
     def test_uma_hora_por_comando(self):
-        pasta = tempfile.mkdtemp()
+        pasta = pasta_temporaria(self)
         h10 = datetime.datetime(2026, 10, 9, 10, 5, tzinfo=datetime.timezone.utc)
         tr.reservar_janela(pasta, URL, "basico", h10)
         with self.assertRaises(tr.Falha):
@@ -126,7 +133,7 @@ class TestLimitesDiarios(unittest.TestCase):
     """O roteiro se planeja pelos limites diários do contrato, sem alterá-los."""
 
     def setUp(self):
-        self.pasta = tempfile.mkdtemp()
+        self.pasta = pasta_temporaria(self)
         self.dia = datetime.datetime(2026, 10, 9, 0, 5, tzinfo=datetime.timezone.utc)
 
     def rodar(self, comando, hora):
