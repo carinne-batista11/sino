@@ -9,6 +9,7 @@ import {
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { HORA_MS, PRAZO_RESERVA_MS, TETO_GLOBAL_DIA } from "../../src/config";
+import { montarMensagem } from "../../src/envio/mensagens";
 import { EnviadorSimulado } from "../../src/envio/simulado";
 import worker_dev from "../../src/dev";
 import worker_teste from "../../src/teste";
@@ -320,6 +321,32 @@ describe("entrada publicada do Worker (sem rede externa)", () => {
     const deps = dependenciasDoAmbiente({ ...env, CHAVE_HMAC: undefined }, () => {}, { enviador: new EnviadorSimulado() });
     const r = await pedirDesafio(deps, entrada("x@exemplo.com", "192.0.2.11"));
     expect(r).toEqual({ status: 503, corpo: { erro: "servico_indisponivel" } });
+  });
+
+  it("produção sem REMETENTE ou RESPONDER_PARA válidos: 503, sem valor de reserva e sem chamar a Resend", async () => {
+    expect(segredosDoAmbiente(env)).not.toBeNull();
+    const invalidos: Partial<typeof env>[] = [
+      { REMETENTE: undefined }, { RESPONDER_PARA: undefined }, { REMETENTE: "" }, { RESPONDER_PARA: "" },
+      { REMETENTE: "Sino <nao-responda@exemplo.com>\r\nBcc: x@exemplo.com" }, { RESPONDER_PARA: "Sino <a@exemplo.com>" },
+    ];
+    for (const extra of invalidos) {
+      const ambiente = { ...env, ...extra };
+      expect(segredosDoAmbiente(ambiente), JSON.stringify(extra)).toBeNull();
+      // Sem enviador substituído: a entrada real responde indisponível antes de qualquer envio.
+      const r = await pedirDesafio(dependenciasDoAmbiente(ambiente, () => {}), entrada("x@exemplo.com", "192.0.2.12"));
+      expect(r).toEqual({ status: 503, corpo: { erro: "servico_indisponivel" } });
+    }
+    // A entrada de desenvolvimento (caixa local) não exige os endereços da Resend.
+    expect(segredosDoAmbiente({ ...env, REMETENTE: undefined, RESPONDER_PARA: undefined }, false)).not.toBeNull();
+  });
+
+  it("endereços inválidos com segredos válidos: o envio é desativado sem rede (falha, não incerto)", async () => {
+    // Com a Resend de verdade, a rede bloqueada do simulador (599) daria "incerto".
+    const segredos = segredosDoAmbiente(env)!;
+    const deps = dependenciasDoAmbiente({ ...env, RESPONDER_PARA: undefined }, () => {}, { segredos });
+    expect(await deps.enviador.enviar(montarMensagem("cadastro", "x@exemplo.com", "123456"), "chave-1")).toEqual({
+      tipo: "falha",
+    });
   });
 });
 

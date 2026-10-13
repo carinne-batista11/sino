@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { RESEND_URL } from "../../src/config";
-import { montarMensagem } from "../../src/envio/mensagens";
+import { CONTATO_AJUDA, montarMensagem } from "../../src/envio/mensagens";
 import { EnviadorResend } from "../../src/envio/resend";
 import { capturarRegistros } from "./apoio";
 
@@ -12,6 +12,8 @@ const API_KEY = "re_chave_que_nao_pode_vazar";
 const PARA = "Pessoa.Teste@exemplo.com";
 const CODIGO = "042137";
 const CHAVE = "sino/cadastro/desafio-1";
+const REMETENTE = "Sino <nao-responda@envios.exemplo.com>";
+const RESPONDER_PARA = "contato.sino@exemplo.com";
 
 type Passo =
   | "aceitar"
@@ -59,7 +61,8 @@ class ResendSimulada {
 function enviador(api: ResendSimulada, esperas: number[] = []) {
   return new EnviadorResend({
     apiKey: API_KEY,
-    remetente: "Sino <onboarding@resend.dev>",
+    remetente: REMETENTE,
+    responderPara: RESPONDER_PARA,
     fetch: api.fetch,
     esperar: async (ms) => void esperas.push(ms),
   });
@@ -70,13 +73,15 @@ const mensagem = montarMensagem("cadastro", PARA, CODIGO);
 let registros = capturarRegistros();
 afterEach(() => {
   const juntos = registros.linhas.join("\n");
-  for (const proibido of [API_KEY, PARA, PARA.toLowerCase(), CODIGO, "detalhe"]) expect(juntos).not.toContain(proibido);
+  for (const proibido of [API_KEY, PARA, PARA.toLowerCase(), CODIGO, "detalhe", RESPONDER_PARA, REMETENTE]) {
+    expect(juntos).not.toContain(proibido);
+  }
   registros.restaurar();
   registros = capturarRegistros();
 });
 
 describe("EnviadorResend", () => {
-  it("envia uma vez, só texto, com a chave de idempotência e o remetente Sino", async () => {
+  it("envia uma vez, só texto, com a chave de idempotência, o remetente e o Reply-To configurados", async () => {
     const api = new ResendSimulada(["aceitar"]);
     expect(await enviador(api).enviar(mensagem, CHAVE)).toEqual({ tipo: "aceito" });
     expect(api.chamadas).toHaveLength(1);
@@ -85,8 +90,10 @@ describe("EnviadorResend", () => {
     expect(c.chave).toBe(CHAVE);
     expect(c.autorizacao).toBe(`Bearer ${API_KEY}`);
     const corpo = JSON.parse(c.corpo);
-    expect(Object.keys(corpo).sort()).toEqual(["from", "subject", "text", "to"]);
-    expect(corpo.from).toBe("Sino <onboarding@resend.dev>");
+    expect(Object.keys(corpo).sort()).toEqual(["from", "reply_to", "subject", "text", "to"]);
+    expect(corpo.from).toBe(REMETENTE);
+    expect(corpo.reply_to).toBe(RESPONDER_PARA);
+    expect(corpo).not.toHaveProperty("html");
     expect(corpo.to).toEqual([PARA]);
     expect(corpo.subject).toBe("Código para confirmar seu e-mail no Sino");
     expect(corpo.subject).not.toContain(CODIGO);
@@ -103,6 +110,16 @@ describe("EnviadorResend", () => {
     expect(api.chamadas[1].corpo).toBe(api.chamadas[0].corpo);
     expect(api.chamadas.map((c) => c.chave)).toEqual([CHAVE, CHAVE]);
     expect(esperas).toEqual([500]);
+  });
+
+  it("três tentativas levam o mesmo corpo byte a byte, com o mesmo Reply-To e a mesma chave", async () => {
+    const api = new ResendSimulada(["falha_rede", { status: 503, name: "service_unavailable" }, "aceitar"]);
+    expect(await enviador(api).enviar(mensagem, CHAVE)).toEqual({ tipo: "aceito" });
+    expect(api.chamadas).toHaveLength(3);
+    expect(new Set(api.chamadas.map((c) => c.corpo)).size).toBe(1);
+    expect(new Set(api.chamadas.map((c) => c.chave))).toEqual(new Set([CHAVE]));
+    for (const c of api.chamadas) expect(JSON.parse(c.corpo).reply_to).toBe(RESPONDER_PARA);
+    expect(api.entregas).toHaveLength(1);
   });
 
   it("todas as respostas perdidas: resultado incerto, nunca com outra chave", async () => {
@@ -206,7 +223,7 @@ describe("EnviadorResend", () => {
 });
 
 describe("textos aprovados", () => {
-  it("três finalidades, sem código no assunto, sem links, com rodapé", () => {
+  it("três finalidades, sem código no assunto, sem links nem imagens, com rodapé e contato de ajuda", () => {
     const assuntos = {
       cadastro: "Código para confirmar seu e-mail no Sino",
       alteracao_email: "Código para confirmar seu novo e-mail no Sino",
@@ -215,10 +232,18 @@ describe("textos aprovados", () => {
     for (const [finalidade, assunto] of Object.entries(assuntos)) {
       const m = montarMensagem(finalidade as keyof typeof assuntos, PARA, CODIGO);
       expect(m.assunto).toBe(assunto);
-      expect(m.texto).toContain("O código vale por 10 minutos e só pode ser usado uma vez.");
-      expect(m.texto).toContain("Esta é uma mensagem automática do Sino; não é necessário respondê-la.");
-      expect(m.texto).not.toMatch(/https?:|www\./);
+      expect(m.assunto).not.toContain(CODIGO);
+      expect(m.texto).toContain(`\n\n${CODIGO}\n\n`);
+      expect(m.texto).toContain(
+        "O código vale por 10 minutos e só pode ser usado uma vez. Não compartilhe este código com ninguém.\n" +
+          "Esta é uma mensagem automática do Sino. Precisa de ajuda? Entre em contato: " +
+          "sino.lembrete.contas@gmail.com\n",
+      );
+      expect(m.texto).not.toContain("não é necessário respondê-la");
+      expect(m.texto).not.toMatch(/https?:|www\.|<img|<a\s|\.(png|jpe?g|gif|svg)\b|<\/?[a-z]+[\s>]/i);
+      expect(m.texto).not.toMatch(/Olá, |Prezad/);  // sem nome do usuário
     }
+    expect(CONTATO_AJUDA).toBe("sino.lembrete.contas@gmail.com");
     expect(montarMensagem("recuperacao_senha", PARA, CODIGO).texto).toContain("Sua senha continua a mesma.");
   });
 });

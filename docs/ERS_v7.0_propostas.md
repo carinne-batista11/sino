@@ -835,11 +835,74 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
 * **Antes do primeiro envio real:** reconferir rastreamento e TLS no painel da Resend; conferir Workers Logs e Traces desligados no painel da Cloudflare depois do deploy do T2; reconferir as fontes oficiais acima.
 * **Pendências jurídicas (M12, antes de terceiros):** papel da desenvolvedora como agente de tratamento (o texto diz só "opera" e "define como funciona"); papéis da Cloudflare e da Resend; encarregado e enquadramento como agente de pequeno porte; pedidos de titulares (prazo e procedimento não prometidos); base legal da transferência internacional (o texto informa só o fato).
 
+### E4 — T2: preparação técnica (13/10/2026; sem deploy, sem envio real)
+
+**Situação:** código, configuração e ferramentas do T2 preparados e revisados localmente (P42). Nada foi publicado na Cloudflare nem na Resend: sem deploy, sem chave da Resend, sem segredos operacionais e sem envio real. O T2 operacional não começou.
+
+* **Objetivo:** um Worker **temporário**, `sino-servico-codigos-t2`, para o primeiro envio real de e-mail pela Resend, só para os endereços autorizados pela autora. Duração máxima: **7 dias** depois do deploy, com exclusão do Worker ao encerrar.
+* **Diferença em relação à produção:** a entrada `servidor/src/t2.ts` é a de produção (`src/index.ts`: Resend, lista de destinatários, limites, idempotência, retenção, `REMETENTE` e `RESPONDER_PARA` obrigatórios) envolvida por um **token exclusivo** (`TOKEN_ACESSO`). Sem `Authorization: Bearer <token>` correto, ou com o segredo ausente, a resposta é a mesma 404 de uma rota inexistente, antes de ler o corpo e de tocar nos Durable Objects. O token nunca é registrado; é uma barreira adicional, não substitui a lista. A produção continua sem token e nunca foi publicada.
+* **Decisões da autora (13/10/2026):**
+  * D1: token exclusivo do T2, nunca incorporado ao app, ao Git, a registros ou relatórios;
+  * D2: rodapé dos e-mails "Esta é uma mensagem automática do Sino. Precisa de ajuda? Entre em contato: sino.lembrete.contas@gmail.com", no lugar de "não é necessário respondê-la";
+  * D3: duração máxima de 7 dias, com exclusão ao encerrar;
+  * D4: CPU (p99) e erros 1102 consultados sem ligar Workers Logs ou Traces; se o p99 não estiver disponível, fica inconclusivo;
+  * D5: Reply-To pelo campo `reply_to` da API da Resend (documentação consultada em 13/10/2026);
+  * remetente confirmado: `Sino <nao-responda@envios.appsino.com.br>`; Reply-To `sino.lembrete.contas@gmail.com`.
+* **Implementado (13/10/2026):**
+  * T2-A: `reply_to` no adaptador da Resend (corpo idêntico entre tentativas); rodapé novo nos três e-mails; `REMETENTE` e `RESPONDER_PARA` obrigatórios e validados (`src/envio/enderecos.ts`), sem o antigo valor de reserva `onboarding@resend.dev` (ausentes ou inválidos: 503, sem chamar a Resend); entrada `src/t2.ts`; no app, `SINO_SERVICO_TOKEN` opcional, lido só junto com `SINO_SERVICO_URL` do ambiente e enviado só no cabeçalho `Authorization`;
+  * T2-B: `servidor/wrangler.t2.jsonc` — só `workers.dev`, sem rotas, domínio personalizado nem **Preview URLs**; **Workers Logs, registros de invocação, Traces e Issues desligados** (amostragem 0, sem persistência); três **Durable Objects do próprio Worker** (sem `script_name`; migração `v1`; nada do T1 nem da produção); variáveis só não secretas (KID `t2-1`, remetente e Reply-To). Compilação local `--dry-run` sem autenticação: 132,64 KiB, com a Resend e o token, sem caixa local nem descarte;
+  * T2-C1: ferramentas `servidor/ferramentas/t2_segredos.py` e `t2_app.py`, seguidas de auditoria de segurança (4 achados importantes e 9 menores, todos corrigidos).
+  * Testes: serviço 246, Python 1034 (54 das ferramentas do T2), typecheck aprovado; tudo com dados fictícios, sem rede e sem abrir o app.
+* **Lista de destinatários:** só os endereços da autora, digitados sem eco em `t2_segredos.py preparar`; o segredo `DESTINATARIOS_PERMITIDOS` guarda só resumos HMAC (até 50), no formato do contrato v1.1. Fora da lista: 403 no cadastro e na alteração e resposta neutra na recuperação, sem envio.
+* **`t2_segredos.py`** (Linux; `.venv` do projeto):
+  * `preparar --pasta <caminho absoluto> --url https://sino-servico-codigos-t2.<subdomínio>.workers.dev`: pasta nova ou vazia, fora do repositório e de qualquer repositório Git, permissão 700; segredos novos (gerador criptográfico): `CHAVE_HMAC`, `CHAVE_ASSINATURA` (semente Ed25519), `TOKEN_ACESSO` (43 caracteres base64url) e a lista; arquivos 600, nunca sobrescritos: `segredos.json` (para `--secrets-file`) e `app_t2.json` (URL, chave pública `t2-1` e token, para a cópia do app); a chave da Resend **não** é preenchida;
+  * estado: `.t2_segredos_estado` fica `incompleto` durante a gravação e `concluido` no fim (troca atômica); uma falha durante a execução apaga só o que ela criou (e a pasta, se foi criada agora);
+  * `chave-resend --pasta <pasta>`: só num **terminal interativo** (entrada redirecionada ou por pipe é recusada antes de ler), sem eco; a chave entra em `segredos.json` por troca atômica (600) e nunca é mostrada; exige a preparação concluída e recusa se a chave já estiver lá; um `segredos.json.novo` remanescente é apontado sem mostrar valores;
+  * `descartar --pasta <pasta>`: recuperação de uma preparação **incompleta** (por exemplo, interrompida): apaga só os arquivos da ferramenta e a pasta, se criada por ela; recusa pastas concluídas ou com outros arquivos.
+* **`t2_app.py`** (Linux; `.venv` do projeto):
+  * `preparar --destino <caminho absoluto> --revisao <SHA completo>`: a revisão precisa estar **publicada** (ancestral da referência local `refs/remotes/origin/main`, sem acesso à rede), sem links simbólicos nem submódulos, com o cliente com token (conferido pela análise do código), `servidor/src/t2.ts` e `servidor/wrangler.t2.jsonc`. Por isso a cópia só é possível **depois do commit e do push** do código do T2. A revisão é extraída com `git archive`; `db.py`, banco e backups da cópia precisam ficar dentro dela (o banco real nunca é usado nem aberto). A marca `.sino_t2_copia` (600, ligada à pasta por dispositivo e inode) fica `incompleta` até o fim e `concluida` depois; o app não é aberto;
+  * `abrir --destino <pasta> --segredos <pasta dos segredos> [--python <interpretador>]`: ação explícita; confere a cópia, a configuração (`app_t2.json` de uma preparação concluída) e o interpretador (Flet, httpx e cryptography com `-E -s`, sem importar nem abrir o app); abre `python -E -s backend/main.py` da cópia com um **ambiente fechado** (só as variáveis do sistema necessárias para a janela, cada uma com o motivo registrado em `VARIAVEIS_DO_SISTEMA`, e `SINO_SERVICO_URL`, `SINO_SERVICO_CHAVES` e `SINO_SERVICO_TOKEN`, nunca na linha de comando); credenciais e variáveis do Python ou do carregador não passam; a cópia fica travada enquanto o app roda; saída em `app.log` (600);
+  * `remover --destino <pasta> [--confirmar]`: recusa se a cópia estiver em uso (trava; processo com a cópia como diretório de trabalho ou nos argumentos, por `/proc`; arquivos temporários do SQLite); sem `--confirmar`, só mostra contagens; com `--confirmar`, apaga pelo descritor de cada pasta, sem seguir links nem atravessar montagens, parando se uma pasta for trocada; a marca é apagada por último; a pasta só é removida se tiver sido criada pela ferramenta.
+* **Permissões e isolamento:** pastas 700 e arquivos 600 criados com criação exclusiva, sem seguir links, gravados por inteiro e sincronizados; leituras conferem tipo, dono e permissão no descritor aberto; consultas Git sem `GIT_DIR`, `GIT_WORK_TREE`, configuração do usuário ou do sistema e com `GIT_NO_REPLACE_OBJECTS`.
+* **Fontes oficiais consultadas em 13/10/2026 (leitura):** Resend, [Send Email](https://resend.com/docs/api-reference/emails/send-email) (`reply_to`: texto ou lista); [Create API key](https://resend.com/docs/api-reference/api-keys/create-api-key) (permissão `sending_access` com restrição a um domínio; o formato da chave não é definido, só exemplos `re_...` — por isso a ferramenta só exige caracteres válidos para o cabeçalho).
+
+**Procedimento operacional futuro (não executado; cada passo com autorização da autora):**
+
+1. **Revisão final e commit:** revisão do diff e autorização; commit só dos arquivos revisados.
+2. **Push** para `origin/main`, sem `--force` e sem tags, com autorização.
+3. **Revisão publicada:** `git fetch origin`; conferir que `origin/main` é o commit revisado e anotar o **SHA completo** (é o que `t2_app.py preparar` aceita); árvore limpa.
+4. **Resend (painel, autora):** domínio `envios.appsino.com.br` verificado; TLS "Enforced"; rastreamento de abertura e cliques desligado, sem subdomínio de rastreamento; reconferir as fontes oficiais da Política (retenção, região, painel, amostra, suboperadores).
+5. **Chave restrita:** criar no painel uma chave **exclusiva do T2**, com permissão `sending_access` e restrita ao domínio `envios.appsino.com.br`. A chave só é digitada no passo 6; **nunca** colada em conversas, notas, registros, arquivos versionados ou na linha de comando.
+6. **Segredos locais:** `t2_segredos.py preparar` (pasta nova fora do projeto, com caminho absoluto; e-mails autorizados digitados sem eco) e, no mesmo terminal, `t2_segredos.py chave-resend`. Se algo for interrompido, `descartar` e preparar de novo.
+7. **Deploy temporário (autorização):** na pasta `servidor/`, `npx wrangler login` e `npx wrangler deploy -c wrangler.t2.jsonc --secrets-file <pasta>/segredos.json` (só o caminho do arquivo na linha de comando; nenhum valor). Anotar data e hora: o prazo de 7 dias conta daí.
+8. **Painel da Cloudflare (autora):** Workers Logs, Traces e Issues desligados; Preview URLs desligadas; só `workers.dev`, sem rotas nem domínio; variáveis `KID_ASSINATURA`, `REMETENTE` e `RESPONDER_PARA`; cinco segredos com valores ocultos; três namespaces de Durable Objects. Sem o token, a URL deve responder 404.
+9. **Cópia isolada:** `t2_app.py preparar --destino <pasta nova> --revisao <SHA do passo 3>`.
+10. **Abertura controlada:** `t2_app.py abrir --destino <pasta> --segredos <pasta dos segredos>`. Abrir não envia nada: o banco da cópia nasce vazio, e o primeiro e-mail sai no cadastro.
+11. **Primeiro envio real (autorização específica):** cadastro com um endereço autorizado; conferir recebimento, remetente, Reply-To, texto aprovado e autenticação do domínio; validar o código. Depois, os casos da E4 (código errado, reenvio, expiração, tentativas, recuperação neutra, endereço fora da lista), respeitando os limites (5 pedidos por hora e 10 por dia por destino). Caso 8: CPU e erros 1102 no painel de métricas, sem ligar Logs nem Traces (inconclusivo se o p99 não aparecer).
+12. **Encerramento (até 7 dias depois do deploy):**
+    * fechar o app; `t2_app.py remover --destino <pasta>` e, conferidas as contagens, `--confirmar`;
+    * excluir o Worker (pelo painel, como no T1; `wrangler delete` só num terminal interativo, porque fora dele o Wrangler confirma sozinho) e conferir que ele não existe mais (`npx wrangler deployments list -c wrangler.t2.jsonc` responde que o Worker não existe; os namespaces somem do painel);
+    * **revogar a chave da Resend no painel (obrigatório):** é a revogação que invalida a chave;
+    * apagar a pasta dos segredos com as travas de remoção segura (caminhos absolutos, um arquivo por vez, sem recursão, conferindo antes o que será apagado). Apagar não garante a eliminação física em SSDs, instantâneos ou armazenamento com cópia na escrita;
+    * `npx wrangler logout`; registros locais do Wrangler só com autorização; registrar o encerramento.
+
+**Limitações e riscos residuais:**
+
+* As conferências evitam acidentes; outro processo do mesmo usuário ainda pode ler as pastas 700 e alterar a cópia.
+* As ferramentas dependem de Linux: a detecção de processos usa `/proc` (sem `/proc`, a remoção é recusada).
+* A revisão "publicada" é a da referência local `origin/main`; o `git fetch` do passo 3 é da autora.
+* Bind mounts: são recusadas a raiz do projeto, `database`, `database/backups`, `backend` e `servidor` vistas por outro caminho; uma montagem de outra subpasta não é detectada.
+* A lista fechada de variáveis do app foi conferida só nos testes; se a janela não abrir no passo 10, a falha é segura (nenhuma credencial passa), mas a lista pode precisar de ajuste.
+* Um app aberto fora da ferramenta, com outro diretório de trabalho e sem o caminho da cópia nos argumentos, não é detectado por `remover`; os arquivos temporários do SQLite cobrem parte desse caso.
+* Os e-mails autorizados ainda podem ser lidos de uma entrada que não é terminal (comportamento herdado de `destinatarios.py`); a chave da Resend, não.
+* `t2_segredos.py` não tem comando para apagar uma pasta **concluída**: o encerramento dela é manual (passo 12).
+
 ### Pendências da M8 (não resolvidas)
 
 * ~~Domínio e remetente (M8-B).~~ Resolvido para o uso restrito em 08/10/2026 (remetente e Reply-To aprovados).
 * ~~Responsável pela operação e contato para titulares (M8-C).~~ Resolvido para o uso restrito em 08/10/2026 (Carinne; `sino.lembrete.contas@gmail.com`); redação nos Termos e na Política feita na versão de 13/10/2026 (P41).
-* Rastreamento de abertura e de cliques na Resend: conferido visualmente como desligado em 12/10/2026 (B1); **reconfirmar antes do primeiro envio real**.
+* Rastreamento de abertura e de cliques na Resend: conferido visualmente como desligado em 12/10/2026 (B1); **reconfirmar antes do primeiro envio real** (passo 4 do T2).
+* T2 operacional (passos 1 a 12 de "E4 — T2: preparação técnica"): commit e publicação do código, chave restrita, segredos, deploy temporário, conferência no painel, primeiro envio e encerramento; tudo com autorização.
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).

@@ -5,6 +5,10 @@
 // O corpo é serializado uma única vez e repetido byte a byte, só dentro desta
 // execução. A chave nunca é trocada para forçar um envio.
 //
+// Reply-To: campo `reply_to` do corpo (string ou lista de strings; aqui um
+// único endereço), conforme https://resend.com/docs/api-reference/emails/send-email
+// (consultada em 13/10/2026).
+//
 // Classificação (https://resend.com/docs/api-reference/errors):
 //   repetir  - falha de rede/tempo esgotado; 409 concurrent_idempotent_requests
 //              e resource_locked; 429 rate_limit_exceeded; 500 application_error
@@ -23,6 +27,8 @@ import type { Enviador, Mensagem, ResultadoEnviador } from "./enviador";
 export interface OpcoesResend {
   apiKey: string;
   remetente: string;
+  /** Endereço de resposta (Reply-To), validado em src/envio/enderecos.ts. */
+  responderPara: string;
   fetch?: typeof fetch;
   /** Espera entre tentativas; injetável para os testes não dormirem. */
   esperar?: (ms: number) => Promise<void>;
@@ -96,6 +102,7 @@ export class EnviadorResend implements Enviador {
     const corpo = JSON.stringify({
       from: this.opcoes.remetente,
       to: [mensagem.para],
+      reply_to: this.opcoes.responderPara,
       subject: mensagem.assunto,
       text: mensagem.texto,
     });

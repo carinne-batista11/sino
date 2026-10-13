@@ -18,6 +18,9 @@ const VARIAVEIS_DE_TESTE = {
   CHAVE_ASSINATURA: "22".repeat(32),
   KID_ASSINATURA: "teste-1",
   RESEND_API_KEY: "re_teste_nao_e_credencial",
+  // Endereços de exemplo (domínio reservado), exigidos pela entrada de produção.
+  REMETENTE: "Sino <nao-responda@exemplo.com>",
+  RESPONDER_PARA: "contato@exemplo.com",
 };
 
 export default defineConfig({

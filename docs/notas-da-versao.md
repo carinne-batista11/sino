@@ -4,9 +4,13 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
-## Em preparação (E4): Termos de Uso e Política de Privacidade, versão de 13/10/2026 (mudança relevante; não publicada)
+## E4 em andamento (13/10/2026): Termos e Política publicados; T2 preparado, sem deploy
 
-Textos atualizados **em preparação para o T2** da E4 (primeiro envio real de e-mail pela Resend), aprovados pela autora (P41). Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026); o **T2 ainda não começou**; o **envio real de e-mails continua desativado**. Os textos descrevem o funcionamento planejado do serviço real e não afirmam que ele já está em uso.
+Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026). O **T2** (primeiro envio real de e-mail pela Resend) está **preparado no código**, mas **não foi implantado**: não há Worker T2 na Cloudflare, nenhuma chave da Resend foi criada e **nenhum e-mail real foi enviado**. Nenhuma versão nova do aplicativo foi lançada.
+
+### Publicado no GitHub em 13/10/2026 (commit `65a6b9d`): Termos de Uso e Política de Privacidade, versão de 13/10/2026 (mudança relevante)
+
+Textos atualizados em preparação para o T2, aprovados pela autora (P41). Eles descrevem o funcionamento planejado do serviço real e não afirmam que ele já está em uso.
 
 - **Termos, itens 1, 2, 4 e 9:** a exceção da confirmação por código passa a citar o serviço real, operado pela desenvolvedora, e o provedor de envio; o item 2 registra a versão aceita nas contas criadas a partir de 06/10/2026; o item 4 descreve a fase restrita de testes (só endereços autorizados recebem códigos), o remetente `nao-responda@envios.appsino.com.br` e que os e-mails nunca pedirão a senha; o item 9 inclui pedidos sobre dados pessoais e as respostas aos e-mails de código.
 - **Política, itens 1, 2, 7, 8, 10 e 12:**
@@ -16,6 +20,17 @@ Textos atualizados **em preparação para o T2** da E4 (primeiro envio real de e
 - **Classificação da autora:** relevante nos dois documentos, porque muda o compartilhamento com provedores, a retenção, a localização e a transferência internacional dos dados e identifica quem opera o serviço. Todos os usuários existentes aceitam a nova versão no próximo login; novos cadastros registram a versão de 13/10/2026.
 - As versões de 04/10/2026 e de 06/10/2026 ficam preservadas em [`docs/legal/`](legal/).
 - **Pendentes:** revisão jurídica antes de terceiros; reconfirmar, antes do primeiro envio real, o rastreamento e o TLS no painel da Resend e os Logs e Traces desligados no painel da Cloudflare.
+
+### Preparação técnica do T2 (código e documentação; sem deploy e sem envio real)
+
+Preparada e revisada localmente em 13/10/2026 (P42), com auditoria de segurança e correções; entra no GitHub com o commit que traz esta nota. Nada disso foi implantado nem usado com a Resend.
+
+- **E-mails de código** (quando houver envio real): o rodapé passa a ser "Esta é uma mensagem automática do Sino. Precisa de ajuda? Entre em contato: sino.lembrete.contas@gmail.com", e as respostas vão para esse endereço (Reply-To). Remetente aprovado: `Sino <nao-responda@envios.appsino.com.br>`.
+- **Serviço:** remetente e Reply-To obrigatórios, sem valor padrão (sem eles, o serviço responde indisponível e não chama a Resend); entrada temporária do T2 com um token exclusivo, além da lista de destinatários; configuração própria (`servidor/wrangler.t2.jsonc`) com registros, rastreamento e URLs de prévia desligados e armazenamento separado. O serviço de produção continua sem publicação.
+- **Aplicativo:** só uma cópia isolada, aberta por ferramenta própria, recebe o token, pelo ambiente do processo. A instalação normal do Sino não muda: sem a variável, as requisições são as mesmas de antes.
+- **Ferramentas locais:** `servidor/ferramentas/t2_segredos.py` (segredos exclusivos do T2, em pasta privada, com a chave da Resend só digitada num terminal) e `servidor/ferramentas/t2_app.py` (cópia isolada de uma revisão publicada, com banco próprio, e remoção controlada).
+- **Testes:** 1034 do aplicativo e 246 do serviço aprovados, com dados fictícios, sem rede e sem abrir o aplicativo.
+- **Próximos passos, só com autorização:** commit e publicação deste código, chave restrita da Resend, segredos, deploy temporário (até 7 dias), conferência no painel e primeiro envio real; no encerramento, exclusão do Worker e revogação da chave.
 
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 

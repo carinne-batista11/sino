@@ -43,7 +43,8 @@ export const RESEND_URL = "https://api.resend.com/emails";
 export const RESEND_TENTATIVAS = 3;
 export const RESEND_TEMPO_LIMITE_MS = 10_000;
 export const RESEND_ESPERAS_MS = [500, 1_000];
-export const REMETENTE_PADRAO = "Sino <onboarding@resend.dev>";
+// Remetente e Reply-To não têm valor padrão: vêm de REMETENTE e RESPONDER_PARA
+// (src/envio/enderecos.ts), obrigatórios na entrada de produção.
 
 export const FINALIDADES = ["cadastro", "alteracao_email", "recuperacao_senha"] as const;
 export type Finalidade = (typeof FINALIDADES)[number];

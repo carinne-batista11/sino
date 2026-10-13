@@ -1,12 +1,16 @@
 // Textos aprovados dos e-mails (Etapa 8): só texto, sem links, sem o nome do
-// usuário e sem o código no assunto.
+// usuário e sem o código no assunto. Rodapé com o contato de ajuda aprovado
+// pela autora em 13/10/2026 (E4, T2; decisão D2), no lugar de "não é
+// necessário respondê-la": as respostas chegam ao contato (Reply-To).
 
 import type { Finalidade } from "../config";
 import type { Mensagem } from "./enviador";
 
+export const CONTATO_AJUDA = "sino.lembrete.contas@gmail.com";
+
 const RODAPE =
   "O código vale por 10 minutos e só pode ser usado uma vez. Não compartilhe este código com ninguém.\n" +
-  "Esta é uma mensagem automática do Sino; não é necessário respondê-la.";
+  `Esta é uma mensagem automática do Sino. Precisa de ajuda? Entre em contato: ${CONTATO_AJUDA}`;
 
 const TEXTOS: Record<Finalidade, { assunto: string; abertura: string; aviso: string }> = {
   cadastro: {

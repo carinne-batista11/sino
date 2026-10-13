@@ -1,6 +1,8 @@
 // Configuração local do serviço de códigos do Sino. Não contém account_id
 // nem segredos; os segredos ficam em .dev.vars (ignorado pelo Git) no
-// desenvolvimento local. Este serviço ainda não foi publicado.
+// desenvolvimento local. Este serviço ainda não foi publicado. REMETENTE e
+// RESPONDER_PARA não têm valor aqui nem padrão no código: sem eles, o serviço
+// responde indisponível e não chama a Resend.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sino-servico-codigos",
@@ -18,7 +20,6 @@
     { "tag": "v1", "new_sqlite_classes": ["DestinoDO", "LimiteIpDO", "TetoGlobalDO"] }
   ],
   "vars": {
-    "REMETENTE": "Sino <onboarding@resend.dev>",
     "KID_ASSINATURA": "dev-1"
   }
 }

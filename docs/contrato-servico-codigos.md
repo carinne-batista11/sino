@@ -316,11 +316,14 @@ segredos ou corpos de mensagem em logs.
 | `CHAVE_ASSINATURA` | 64 hex (semente Ed25519 de 32 bytes) |
 | `KID_ASSINATURA` | identificador da chave de assinatura |
 | `RESEND_API_KEY` | chave da API da Resend |
-| `REMETENTE` | `Sino <endereço>`; na fase de teste, `Sino <onboarding@resend.dev>` |
+| `REMETENTE` | `Sino <endereço>` (ou só o endereço); obrigatório, sem valor padrão |
+| `RESPONDER_PARA` | endereço de resposta dos e-mails (Reply-To, campo `reply_to` da Resend); obrigatório, sem valor padrão |
 | `DESTINATARIOS_PERMITIDOS` | v1.1: lista de resumos dos destinatários permitidos (ver "Restrição de destinatários") |
 
 Sem `CHAVE_HMAC`, `CHAVE_ASSINATURA`, `KID_ASSINATURA` ou `DESTINATARIOS_PERMITIDOS`
-válidos, o serviço responde `503 servico_indisponivel`. Nenhum segredo fica no aplicativo nem no repositório.
+válidos, o serviço responde `503 servico_indisponivel`. Na entrada de produção,
+o mesmo vale para `RESEND_API_KEY`, `REMETENTE` e `RESPONDER_PARA`: sem eles, a
+Resend nunca é chamada. Nenhum segredo fica no aplicativo nem no repositório.
 
 ## Comportamento esperado do cliente
 
@@ -395,6 +398,34 @@ tecnicamente um `wrangler deploy -c wrangler.dev.jsonc`: essa configuração
 **não deve ser publicada**. O modo de demonstração do aplicativo
 (`servidor/ferramentas/demonstracao.py`) usa esta entrada; um e-mail
 confirmado por ela não comprova acesso ao endereço.
+
+## Ambiente T2 com token (E4; fora do contrato de produção)
+
+Para o primeiro envio real, existe uma entrada temporária
+(`servidor/src/t2.ts`) igual à de produção — Resend, `REMETENTE` e
+`RESPONDER_PARA` obrigatórios, lista de destinatários, limites, idempotência e
+retenção —, com um cabeçalho a mais, obrigatório em toda requisição:
+
+* `Authorization: Bearer <token>`, com o token exclusivo do ambiente (segredo
+  `TOKEN_ACESSO` do Worker; 32 bytes em base64url, 43 caracteres). Sem ele,
+  com outro valor ou com o segredo ausente ou malformado, a resposta é a mesma
+  `404 {erro: "rota_nao_encontrada"}` de uma rota inexistente, antes de ler o
+  corpo e de acessar os Durable Objects. O token nunca é registrado.
+
+No aplicativo, o cabeçalho só é enviado quando `SINO_SERVICO_TOKEN` está no
+ambiente **junto com** `SINO_SERVICO_URL` (cópia isolada do T2); nunca na URL.
+Formato inválido deixa o serviço indisponível. Sem a variável, as requisições
+são exatamente as da produção. A produção (`servidor/src/index.ts`) não exige
+o cabeçalho.
+
+Configuração do T2: `servidor/wrangler.t2.jsonc` (Worker
+`sino-servico-codigos-t2`, só `workers.dev`, sem URLs de prévia, Workers Logs,
+Traces e Issues desligados, Durable Objects próprios, KID `t2-1`, `REMETENTE`
+e `RESPONDER_PARA` aprovados). Os segredos (`CHAVE_HMAC`, `CHAVE_ASSINATURA`,
+`DESTINATARIOS_PERMITIDOS`, `TOKEN_ACESSO`, `RESEND_API_KEY`) são exclusivos do
+T2, gerados por `servidor/ferramentas/t2_segredos.py` fora do repositório e
+enviados só no deploy. O ambiente é temporário (no máximo 7 dias) e o
+encerramento inclui excluir o Worker e revogar a chave da Resend.
 
 ## Conformidade
 

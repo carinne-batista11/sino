@@ -29,7 +29,10 @@ export interface Env {
   CHAVE_ASSINATURA?: string;
   KID_ASSINATURA?: string;
   RESEND_API_KEY?: string;
+  /** Remetente do envio real ("Nome <email>"); obrigatório na produção. */
   REMETENTE?: string;
+  /** Reply-To do envio real (só o e-mail); obrigatório na produção. */
+  RESPONDER_PARA?: string;
   /** Lista de destinatários permitidos (ver src/nucleo/destinatarios.ts). */
   DESTINATARIOS_PERMITIDOS?: string;
 }

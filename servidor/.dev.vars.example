@@ -13,3 +13,10 @@ CHAVE_ASSINATURA=
 DESTINATARIOS_PERMITIDOS=
 # Chave da API da Resend (somente quando o envio real for autorizado).
 RESEND_API_KEY=
+# Remetente ("Nome <e-mail>") e endereço de resposta (Reply-To) do envio real.
+# Obrigatórios na entrada de produção (src/index.ts), sem valor padrão: sem
+# eles o serviço responde indisponível (503) e não chama a Resend.
+REMETENTE=
+RESPONDER_PARA=
+# O token do ambiente T2 (TOKEN_ACESSO) não entra aqui: os segredos do T2 são
+# gerados por ferramentas/t2_segredos.py numa pasta fora do repositório.

@@ -22,9 +22,13 @@ from apoio_servico import (
     VALIDADE_MS,
     Aleatorio,
     Atraso,
+    Esperas,
+    Relogio,
+    TransporteFalso,
     assinar,
     cabecalho,
     capturar_stderr,
+    configuracao,
     conteudo_autorizacao,
     corpo_desafio,
     iso,
@@ -79,6 +83,105 @@ class TestConfiguracao(unittest.TestCase):
             ))
         self.assertIn("(ValueError)", saida.getvalue())
         self.assertNotIn("servidor.exemplo", saida.getvalue())
+
+
+# Token fictício, só para os testes (formato de 32 bytes em base64url).
+TOKEN_FICTICIO = "TokenFicticioDoTesteT2_sem-valor-real-01234"
+URL_T2 = "https://servico-t2.exemplo.invalid"
+CHAVES_T2 = f"t2-1:{'22' * 32}"
+
+
+def cliente_com_token(roteiro, token=TOKEN_FICTICIO):
+    from dataclasses import replace
+
+    relogio = Relogio()
+    transporte = TransporteFalso(roteiro, relogio)
+    cliente = sc.ClienteServicoCodigos(
+        replace(configuracao(), token_acesso=token), transporte, relogio=relogio, esperar=Esperas(relogio),
+        aleatorio=Aleatorio(),
+    )
+    return cliente, transporte
+
+
+class TestTokenDeAcesso(unittest.IsolatedAsyncioTestCase):
+    """E4, T2: SINO_SERVICO_TOKEN opcional, só com SINO_SERVICO_URL do ambiente."""
+
+    def test_formato(self):
+        self.assertEqual(len(TOKEN_FICTICIO), 43)
+        self.assertEqual(sc.ler_token_de_acesso(TOKEN_FICTICIO), TOKEN_FICTICIO)
+        for ausente in (None, ""):
+            self.assertIsNone(sc.ler_token_de_acesso(ausente))
+        for ruim in ("curto", TOKEN_FICTICIO + "x", TOKEN_FICTICIO[:-1] + "=", TOKEN_FICTICIO[:-1] + "+",
+                     " " + TOKEN_FICTICIO[1:], TOKEN_FICTICIO[:-1] + "\n", f"Bearer {TOKEN_FICTICIO}"):
+            with self.subTest(ruim=ruim):
+                with self.assertRaises(ValueError) as erro:
+                    sc.ler_token_de_acesso(ruim)
+                self.assertNotIn(ruim, str(erro.exception))
+
+    def test_sem_variavel_a_configuracao_nao_tem_token(self):
+        config = sc.configuracao_do_ambiente({"SINO_SERVICO_URL": URL_T2, "SINO_SERVICO_CHAVES": CHAVES_T2})
+        self.assertIsNone(config.token_acesso)
+        self.assertIsNone(sc.configuracao_do_ambiente({}))
+
+    def test_com_url_do_ambiente_le_o_token(self):
+        config = sc.configuracao_do_ambiente(
+            {"SINO_SERVICO_URL": URL_T2, "SINO_SERVICO_CHAVES": CHAVES_T2, "SINO_SERVICO_TOKEN": TOKEN_FICTICIO},
+        )
+        self.assertEqual((config.url_base, config.token_acesso), (URL_T2, TOKEN_FICTICIO))
+        self.assertNotIn(TOKEN_FICTICIO, repr(config))
+        self.assertNotIn(TOKEN_FICTICIO, config.url_base)
+
+    def test_token_sem_url_do_ambiente_e_ignorado(self):
+        # Simula a configuração de produção (constantes): o token do ambiente não é usado.
+        with mock.patch.object(sc, "URL_PRODUCAO", "https://producao.exemplo.invalid"), \
+                mock.patch.object(sc, "CHAVES_PUBLICAS_PRODUCAO", sc.ler_chaves_publicas(CHAVES_T2)):
+            config = sc.configuracao_do_ambiente({"SINO_SERVICO_TOKEN": TOKEN_FICTICIO})
+        self.assertEqual(config.url_base, "https://producao.exemplo.invalid")
+        self.assertIsNone(config.token_acesso)
+
+    def test_token_invalido_deixa_o_servico_indisponivel_sem_mostrar_o_valor(self):
+        ruim = "TokenInvalido+com/caracteres=errados"
+        with capturar_stderr() as saida:
+            self.assertIsNone(sc.configuracao_do_ambiente(
+                {"SINO_SERVICO_URL": URL_T2, "SINO_SERVICO_CHAVES": CHAVES_T2, "SINO_SERVICO_TOKEN": ruim},
+            ))
+        self.assertIn("(ValueError)", saida.getvalue())
+        self.assertNotIn(ruim, saida.getvalue())
+
+    def test_https_continua_obrigatorio_com_token(self):
+        with capturar_stderr():
+            self.assertIsNone(sc.configuracao_do_ambiente({
+                "SINO_SERVICO_URL": "http://servico-t2.exemplo.invalid", "SINO_SERVICO_CHAVES": CHAVES_T2,
+                "SINO_SERVICO_TOKEN": TOKEN_FICTICIO,
+            }))
+
+    async def test_sem_token_os_cabecalhos_sao_os_de_antes(self):
+        cliente, transporte, *_ = novo_cliente([resposta(201, corpo_desafio())])
+        await cliente.pedir_codigo(cliente.nova_operacao("cadastro", "Pessoa@Exemplo.com"))
+        nomes = [nome for nome, _ in transporte.requisicoes[0].cabecalhos]
+        self.assertEqual(nomes, ["Content-Type", "Accept", "Accept-Encoding", "Idempotency-Key"])
+
+    async def test_com_token_envia_authorization_bearer_em_todas_as_repeticoes(self):
+        erro = sc.ErroDeConexao("ConnectError")
+        cliente, transporte = cliente_com_token([erro, erro, resposta(201, corpo_desafio())])
+        op = cliente.nova_operacao("cadastro", "Pessoa@Exemplo.com")
+        with capturar_stderr() as saida:
+            self.assertEqual(await cliente.pedir_codigo(op), sc.CodigoSolicitado())
+            transporte.roteiro.extend([erro, erro, erro])
+            await cliente.validar_codigo(op, "424242")
+        self.assertEqual(len(transporte.requisicoes), 6)
+        for req in transporte.requisicoes:
+            self.assertEqual(cabecalho(req, "Authorization"), f"Bearer {TOKEN_FICTICIO}")
+            self.assertEqual([n for n, _ in req.cabecalhos][-1], "Authorization")
+            self.assertNotIn(TOKEN_FICTICIO, req.url)
+            self.assertNotIn(TOKEN_FICTICIO, req.corpo.decode("utf-8"))
+            self.assertNotIn(TOKEN_FICTICIO, repr(req))
+        # As repetições do pedido usam a mesma chave e o mesmo cabeçalho.
+        pedidos = transporte.requisicoes[:3]
+        self.assertEqual(len({cabecalho(r, "Idempotency-Key") for r in pedidos}), 1)
+        self.assertEqual(len({r.cabecalhos for r in pedidos}), 1)
+        self.assertNotIn(TOKEN_FICTICIO, saida.getvalue())
+        self.assertNotIn(TOKEN_FICTICIO, repr(cliente._configuracao))
 
 
 class TestOperacao(unittest.TestCase):

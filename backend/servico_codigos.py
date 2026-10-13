@@ -38,7 +38,7 @@ import re
 import secrets
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from urllib.parse import urlsplit
@@ -68,6 +68,7 @@ _RE_DESAFIO = re.compile(r"[A-Za-z0-9_-]{22}")
 _RE_INSTANTE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z")
 _RE_CODIGO = re.compile(r"[0-9]{6}")
 _RE_DIGITOS = re.compile(r"[0-9]{1,6}")
+_RE_TOKEN_ACESSO = re.compile(r"[A-Za-z0-9_-]{43}")
 _HOSTS_LOCAIS = ("localhost", "127.0.0.1", "::1")
 _EPOCA = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -85,6 +86,9 @@ def registrar_falha(contexto, erro=None):
 class ConfiguracaoServico:
     url_base: str
     chaves_publicas: dict  # kid -> Ed25519PublicKey
+    # Só ambientes de teste com token (E4, T2): vai no cabeçalho Authorization,
+    # nunca na URL nem no repr. None = sem o cabeçalho (comportamento normal).
+    token_acesso: str | None = field(default=None, repr=False)
 
 
 def validar_url_base(url):
@@ -115,22 +119,41 @@ def ler_chaves_publicas(texto):
     return chaves
 
 
+def ler_token_de_acesso(texto):
+    """
+    Token de acesso de um ambiente de teste (SINO_SERVICO_TOKEN): 32 bytes em
+    base64url (43 caracteres). Ausente ou vazio -> None. Formato inválido ->
+    ValueError, sem o valor na mensagem.
+    """
+    if not texto:
+        return None
+    if not isinstance(texto, str) or not _RE_TOKEN_ACESSO.fullmatch(texto):
+        raise ValueError("token de acesso do serviço inválido")
+    return texto
+
+
 def configuracao_do_ambiente(ambiente=None):
     """
     Configuração do serviço: SINO_SERVICO_URL e SINO_SERVICO_CHAVES no
     desenvolvimento; os valores de produção quando existirem. Devolve None se
     o serviço não estiver configurado (as telas mostram indisponível).
+
+    SINO_SERVICO_TOKEN (opcional, só ambientes de teste como o T2 da E4) só é
+    lido quando SINO_SERVICO_URL vem do ambiente; com a URL de produção, é
+    ignorado. Formato inválido deixa o serviço indisponível.
     """
     ambiente = os.environ if ambiente is None else ambiente
     try:
-        url = ambiente.get("SINO_SERVICO_URL") or URL_PRODUCAO
+        url_do_ambiente = ambiente.get("SINO_SERVICO_URL")
+        url = url_do_ambiente or URL_PRODUCAO
         if not url:
             return None
         chaves_texto = ambiente.get("SINO_SERVICO_CHAVES")
         chaves = ler_chaves_publicas(chaves_texto) if chaves_texto else dict(CHAVES_PUBLICAS_PRODUCAO)
         if not chaves:
             return None
-        return ConfiguracaoServico(url_base=validar_url_base(url), chaves_publicas=chaves)
+        token = ler_token_de_acesso(ambiente.get("SINO_SERVICO_TOKEN")) if url_do_ambiente else None
+        return ConfiguracaoServico(url_base=validar_url_base(url), chaves_publicas=chaves, token_acesso=token)
     except ValueError as erro:
         registrar_falha("configuração do serviço de códigos", erro)
         return None
@@ -144,7 +167,7 @@ def configuracao_do_ambiente(ambiente=None):
 class RequisicaoHttp:
     metodo: str
     url: str
-    cabecalhos: tuple
+    cabecalhos: tuple = field(repr=False)  # pode conter o token de acesso
     corpo: bytes
     tempo_limite: float
 
@@ -505,15 +528,18 @@ class ClienteServicoCodigos:
         OperacaoCancelada). Confere o cancelamento antes de cada espera e envio
         e depois da resposta.
         """
+        cabecalhos = (
+            ("Content-Type", "application/json"),
+            ("Accept", "application/json"),
+            ("Accept-Encoding", "identity"),
+            ("Idempotency-Key", chave),
+        )
+        if self._configuracao.token_acesso is not None:
+            cabecalhos += (("Authorization", f"Bearer {self._configuracao.token_acesso}"),)
         requisicao = RequisicaoHttp(
             metodo="POST",
             url=self._configuracao.url_base + caminho,
-            cabecalhos=(
-                ("Content-Type", "application/json"),
-                ("Accept", "application/json"),
-                ("Accept-Encoding", "identity"),
-                ("Idempotency-Key", chave),
-            ),
+            cabecalhos=cabecalhos,
             corpo=json.dumps(corpo, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
             tempo_limite=tempo_limite,
         )

@@ -1,0 +1,53 @@
+// Configuração do AMBIENTE T2 do serviço de códigos (ERS v7.0, E4): Worker
+// temporário e separado para o primeiro envio real pela Resend, entrada
+// src/t2.ts (fluxo da produção + token exclusivo TOKEN_ACESSO). Use sempre com
+// `-c wrangler.t2.jsonc`; um comando sem `-c` usaria a configuração de
+// produção (wrangler.jsonc). Duração máxima planejada: 7 dias após o deploy,
+// com exclusão do Worker ao encerrar.
+//
+// Não contém account_id nem segredos. Os segredos exclusivos deste ambiente
+// (CHAVE_HMAC, CHAVE_ASSINATURA, DESTINATARIOS_PERMITIDOS, RESEND_API_KEY,
+// TOKEN_ACESSO) vão no deploy com --secrets-file, a partir de um arquivo fora
+// do Git; nunca reaproveitados do T1 nem da produção.
+//
+// REMETENTE e RESPONDER_PARA: valores aprovados pela autora (08/10/2026,
+// confirmados em 13/10/2026).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sino-servico-codigos-t2",
+  "main": "src/t2.ts",
+  "compatibility_date": "2026-08-01",
+  "send_metrics": false,
+  // Só o endereço <name>.<subdomínio>.workers.dev; sem rotas nem domínio
+  // personalizado e sem URLs de prévia por versão.
+  "workers_dev": true,
+  "preview_urls": false,
+  // Registros do Worker desligados (Workers Logs, registros de invocação,
+  // traces e Issues em tempo real), com amostragem 0 e "persist": false como
+  // reforço, como no T1. A Política de Privacidade (13/10/2026) descreve
+  // Logs e Traces desligados na configuração prevista.
+  "observability": {
+    "enabled": false,
+    "head_sampling_rate": 0,
+    "logs": { "enabled": false, "invocation_logs": false, "head_sampling_rate": 0, "persist": false },
+    "traces": { "enabled": false, "head_sampling_rate": 0, "persist": false },
+    "issues": { "enabled": false }
+  },
+  // Classes deste próprio Worker (sem script_name): os namespaces nascem com
+  // o Worker novo, sem armazenamento do T1 nem da produção.
+  "durable_objects": {
+    "bindings": [
+      { "name": "DESTINO", "class_name": "DestinoDO" },
+      { "name": "LIMITE_IP", "class_name": "LimiteIpDO" },
+      { "name": "TETO_GLOBAL", "class_name": "TetoGlobalDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DestinoDO", "LimiteIpDO", "TetoGlobalDO"] }
+  ],
+  "vars": {
+    "KID_ASSINATURA": "t2-1",
+    "REMETENTE": "Sino <nao-responda@envios.appsino.com.br>",
+    "RESPONDER_PARA": "sino.lembrete.contas@gmail.com"
+  }
+}
