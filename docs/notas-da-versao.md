@@ -4,6 +4,19 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
+## Em preparação (E4): Termos de Uso e Política de Privacidade, versão de 13/10/2026 (mudança relevante; não publicada)
+
+Textos atualizados **em preparação para o T2** da E4 (primeiro envio real de e-mail pela Resend), aprovados pela autora (P41). Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026); o **T2 ainda não começou**; o **envio real de e-mails continua desativado**. Os textos descrevem o funcionamento planejado do serviço real e não afirmam que ele já está em uso.
+
+- **Termos, itens 1, 2, 4 e 9:** a exceção da confirmação por código passa a citar o serviço real, operado pela desenvolvedora, e o provedor de envio; o item 2 registra a versão aceita nas contas criadas a partir de 06/10/2026; o item 4 descreve a fase restrita de testes (só endereços autorizados recebem códigos), o remetente `nao-responda@envios.appsino.com.br` e que os e-mails nunca pedirão a senha; o item 9 inclui pedidos sobre dados pessoais e as respostas aos e-mails de código.
+- **Política, itens 1, 2, 7, 8, 10 e 12:**
+  - item 2: o Sino não pede a localização do dispositivo; o IP recebido pelo serviço pode permitir inferir uma localização aproximada, e o serviço o usa só para limitar abusos, guardando apenas um resumo;
+  - item 7: quem opera o serviço; fase restrita; hospedagem na Cloudflare (Durable Objects, que podem ficar fora do Brasil; restauração possível dentro de 30 dias; Workers Logs e Traces desligados na configuração prevista); envio pela Resend (sem rastreamento de abertura e de cliques; região de envio São Paulo, dados guardados nos Estados Unidos; 30 dias de retenção e cópias de segurança por 7 dias; conteúdo visível no painel, inclusive os códigos; amostra analisada para segurança; lista oficial de suboperadores); transferência internacional;
+  - itens 8, 10 e 12: canal para pedidos sobre os dados do serviço e dos provedores; prazos dos provedores; contato acompanhado pela desenvolvedora, com mensagens tratadas pelo Google (Gmail).
+- **Classificação da autora:** relevante nos dois documentos, porque muda o compartilhamento com provedores, a retenção, a localização e a transferência internacional dos dados e identifica quem opera o serviço. Todos os usuários existentes aceitam a nova versão no próximo login; novos cadastros registram a versão de 13/10/2026.
+- As versões de 04/10/2026 e de 06/10/2026 ficam preservadas em [`docs/legal/`](legal/).
+- **Pendentes:** revisão jurídica antes de terceiros; reconfirmar, antes do primeiro envio real, o rastreamento e o TLS no painel da Resend e os Logs e Traces desligados no painel da Cloudflare.
+
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 
 Segunda entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.49, P39, contrato v1.1). A publicação é **do código no GitHub**: o serviço de códigos continua sem deploy, não há envio real de e-mails e o Sino não foi liberado para terceiros (E4 e seção 11.3 da ERS). Suítes: 950 testes do aplicativo e 215 do serviço aprovados, em bancos temporários e ambientes isolados. Validação manual no modo de demonstração, só com endereços fictícios e a caixa local: as mensagens foram observadas pela autora, e os efeitos (duas mensagens na caixa, a conta criada e o e-mail alterado, nenhuma conta dos pedidos recusados) foram conferidos nos arquivos da demonstração.

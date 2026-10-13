@@ -802,11 +802,44 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
   * As **8 pastas vazias** remanescentes das 4 execuções de 12/10 foram removidas uma a uma com `rmdir`, depois de conferir caminho, dono, tipo (diretório real, sem link simbólico) e que estavam vazias.
 * **T2 (envio real): não iniciado.** Continua dependendo do novo aceite dos Termos e da Política, da conferência do rastreamento da Resend e de autorização própria.
 
+### E4 — T2: Termos e Política (12 e 13/10/2026; envio real desativado)
+
+**Situação:** T1 encerrado (12/10/2026); textos novos dos Termos de Uso e da Política de Privacidade **aprovados pela autora** (12/10/2026) e implementados localmente em 13/10/2026 como **versão de 13/10/2026, relevante nos dois documentos** (P41), sem commit nem publicação. **T2 (primeiro envio real pela Resend) não iniciado; envio real desativado.**
+
+* **Conferência B1 no painel da Resend (12/10/2026, visual, pela autora):** na aba Configuration do domínio, a seção "Enable tracking metrics" mostra só o botão "Configure", sem rastreamento ativo nem subdomínio de rastreamento; TLS em "Enforced" (obrigatório). Nenhuma configuração alterada. **Reconfirmar antes do primeiro envio real.**
+* **Fontes oficiais consultadas em 12/10/2026** (base das afirmações sobre provedores):
+  * Resend: retenção de 30 dias em todos os planos, inclusive conteúdo e metadados ([account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits)); região de envio não define o armazenamento, dados da conta nos Estados Unidos ([Choosing a Region](https://resend.com/docs/dashboard/domains/regions)); cópias de segurança por 7 dias, remoção antecipada só a pedido, amostra analisada para segurança ([GDPR](https://resend.com/security/gdpr), atualizada em 12/10/2026); lista de suboperadores ([Subprocessors](https://resend.com/legal/subprocessors), 27/08/2026); conteúdo visível no painel ([Managing sent emails](https://resend.com/docs/dashboard/emails/manage-emails), [Emails dashboard](https://resend.com/docs/dashboard/emails/introduction)); rastreamento desligado por padrão, subdomínio de rastreamento não removível ([Open and Click Tracking](https://resend.com/docs/dashboard/domains/tracking)). DPA não lido por inteiro.
+  * Cloudflare: local dos Durable Objects escolhido pela plataforma, sem opção para o Brasil ([Data location](https://developers.cloudflare.com/durable-objects/reference/data-location/), 26/06/2026); restauração do armazenamento dentro dos últimos 30 dias ([SQLite-backed storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)); Workers Logs e Traces ([Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/), 12/10/2026; [Traces](https://developers.cloudflare.com/workers/observability/traces/)); tratamento do IP pela própria política, sem prazo específico ([Privacy Policy](https://www.cloudflare.com/privacypolicy/), em vigor desde 04/11/2025).
+  * **Não reconferidas em 13/10/2026** (a rodada de implementação não acessou serviços externos): reconferir antes do primeiro envio real.
+* **Decisões da autora para a redação (12/10/2026):**
+  1. nova versão dos dois documentos, relevante, com novo aceite;
+  2. estrutura e estilo dos documentos atuais preservados;
+  3. serviço descrito como destinado à fase restrita de testes, sem afirmar que o T2 está ativo;
+  4. Cloudflare como hospedagem e Resend como provedora de envio;
+  5. dados dos Durable Objects podem ficar fora do Brasil;
+  6. restauração do armazenamento da Cloudflare numa janela de 30 dias, sem afirmar que todos os dados permanecem recuperáveis;
+  7. Resend: dados de e-mails por 30 dias e cópias de segurança por 7 dias, sem presumir que os prazos se somam;
+  8. pessoas com acesso autorizado à conta Resend podem ver o conteúdo dos e-mails, inclusive os códigos;
+  9. amostra de e-mails analisada pela Resend para segurança e prevenção de abuso;
+  10. região de envio São Paulo não determina o armazenamento dos dados da Resend;
+  11. transferência internacional descrita sem afirmar conformidade jurídica não verificada;
+  12. canal de contato; mensagens recebidas pelo Gmail tratadas pelo Google;
+  13. registro de aceite por versão;
+  14. os e-mails do Sino nunca pedem senha;
+  15. o pedido de envio à Resend parte do serviço, não do computador do usuário;
+  16. rastreamento de abertura e cliques desativado na configuração prevista, sujeito à reconferência antes do envio real;
+  17. regras operacionais (abaixo);
+  18. revisão jurídica mantida como pendência.
+* **Ajustes finais e refinamentos (12/10/2026):** suboperadores remetidos à lista oficial, com o link `https://resend.com/legal/subprocessors` (em vez de "todas nos Estados Unidos"); frases que davam a entender envio real ativo passadas para "quando o serviço real estiver em uso" / "quando houver envio real", com uma frase de enquadramento no item 7 da Política; rastreamento como compromisso de operar sem ele, com reconferência antes do primeiro envio; Política item 2: o Sino não pede a localização do dispositivo, o IP pode permitir inferir localização aproximada, e o serviço usa o IP só para limitar abusos, guarda um resumo, não guarda o IP completo em texto e não o usa para determinar localização. Sem frase genérica sobre revisão jurídica nos textos.
+* **Regras de operação (fora dos textos):** não usar o link público de e-mails da Resend; não usar os recursos de IA da Resend (AI Editor, assistente) com mensagens do Sino.
+* **Antes do primeiro envio real:** reconferir rastreamento e TLS no painel da Resend; conferir Workers Logs e Traces desligados no painel da Cloudflare depois do deploy do T2; reconferir as fontes oficiais acima.
+* **Pendências jurídicas (M12, antes de terceiros):** papel da desenvolvedora como agente de tratamento (o texto diz só "opera" e "define como funciona"); papéis da Cloudflare e da Resend; encarregado e enquadramento como agente de pequeno porte; pedidos de titulares (prazo e procedimento não prometidos); base legal da transferência internacional (o texto informa só o fato).
+
 ### Pendências da M8 (não resolvidas)
 
 * ~~Domínio e remetente (M8-B).~~ Resolvido para o uso restrito em 08/10/2026 (remetente e Reply-To aprovados).
-* ~~Responsável pela operação e contato para titulares (M8-C).~~ Resolvido para o uso restrito em 08/10/2026 (Carinne; `sino.lembrete.contas@gmail.com`); falta a redação nos Termos e na Política.
-* Rastreamento de abertura e de cliques na Resend: confirmar desligado (08/10/2026: não confirmado).
+* ~~Responsável pela operação e contato para titulares (M8-C).~~ Resolvido para o uso restrito em 08/10/2026 (Carinne; `sino.lembrete.contas@gmail.com`); redação nos Termos e na Política feita na versão de 13/10/2026 (P41).
+* Rastreamento de abertura e de cliques na Resend: conferido visualmente como desligado em 12/10/2026 (B1); **reconfirmar antes do primeiro envio real**.
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).

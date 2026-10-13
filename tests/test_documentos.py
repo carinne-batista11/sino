@@ -23,8 +23,9 @@ sys.path.insert(0, os.path.join(apoio_banco.RAIZ_PROJETO, "backend"))
 
 import documentos  # noqa: E402
 
-CONTATO = ("Dúvidas, sugestões e relatos de problemas podem ser enviados para sino.lembrete.contas@gmail.com. "
-           "Não envie senhas, arquivos do banco de dados ou informações financeiras pessoais.")
+CONTATO_INICIO = ("Dúvidas, sugestões, relatos de problemas e pedidos sobre dados pessoais podem ser enviados para "
+                  "sino.lembrete.contas@gmail.com")
+CONTATO_FIM = "Não envie senhas, códigos, arquivos do banco de dados ou informações financeiras pessoais."
 AUTORIA = "O Sino é um projeto pessoal de portfólio desenvolvido por Carinne Batista."
 
 
@@ -39,8 +40,9 @@ class TestConteudoAprovado(unittest.TestCase):
         for chave, (_, texto) in documentos.DOCUMENTOS.items():
             with self.subTest(chave):
                 self.assertIn(AUTORIA, texto)
-                self.assertIn("Última atualização: 06/10/2026", texto)
-                self.assertIn(CONTATO, texto)
+                self.assertIn("Última atualização: 13/10/2026", texto)
+                self.assertIn(CONTATO_INICIO, texto)
+                self.assertIn(CONTATO_FIM, texto)
                 self.assertNotIn("PENDENTE", texto)
 
     def test_titulos(self):
@@ -82,11 +84,8 @@ class TestConteudoAprovado(unittest.TestCase):
         # regras 5.32 iguais às do serviço
         self.assertIn("Cada código vale por 10 minutos, aceita até 5 tentativas e só pode ser usado uma vez; "
                       "um novo código pode ser pedido depois de 60 segundos e invalida o anterior.", termos)
-        # estado atual: serviço não publicado, login local
-        self.assertIn("**Nesta versão, o serviço ainda não foi publicado para uso por outras pessoas**", termos)
+        # login local continua sem o serviço
         self.assertIn("Entrar com uma conta já existente continua funcionando sem o serviço.", termos)
-        self.assertIn("**Nesta versão, o serviço de códigos ainda não foi publicado para uso por outras pessoas.**",
-                      politica)
         # forma de guarda conferida no código do serviço e da caixa de demonstração
         self.assertNotIn("só em forma protegida", politica)
         self.assertIn("resumos de mão única (HMAC-SHA256)", politica)
@@ -102,8 +101,66 @@ class TestConteudoAprovado(unittest.TestCase):
         self.assertIn("apenas conclui o fluxo demonstrativo e não comprova acesso ao e-mail", termos)
         self.assertIn("não revela se o endereço corresponde a uma conta que pode recuperar a senha", termos)
         self.assertNotIn("sempre a mesma", termos)
-        self.assertIn("Esta política será atualizada antes da publicação.", politica)
         self.assertIn("O Sino não envia nome, senha, informações financeiras nem o arquivo do banco.", politica)
+
+    def test_servico_real_em_fase_restrita_versao_de_13_10(self):  # P41
+        termos, politica = documentos.TERMOS_DE_USO, documentos.POLITICA_DE_PRIVACIDADE
+        # o que deixou de ser verdade (versão de 06/10) não pode continuar declarado
+        for texto in (termos, politica):
+            for frase in ("ainda não foi publicado", "seriam enviados", "Esta política será atualizada antes da publicação",
+                          "na implementação atual, a Resend", "todas nos Estados Unidos"):
+                self.assertNotIn(frase, texto)
+            # sem declaração genérica sobre revisão jurídica nos textos ao usuário
+            self.assertNotRegex(texto, r"(?i)revisão jurídica")
+        # fase restrita, sem afirmar que o envio real está ativo
+        self.assertIn("**Nesta fase, o serviço de códigos é destinado apenas a testes restritos da desenvolvedora.**",
+                      termos)
+        self.assertIn('"O envio de códigos está restrito nesta fase do Sino."', termos)
+        self.assertIn("Quando o serviço real estiver em uso, o endereço de e-mail informado será enviado", termos)
+        self.assertIn("Quando houver envio real, os e-mails de código serão enviados por "
+                      "`nao-responda@envios.appsino.com.br`", termos)
+        self.assertIn("nunca pedirão a sua senha", termos)
+        self.assertIn("nas contas criadas a partir da versão de 06/10/2026, a versão aceita (item 8)", termos)
+        self.assertIn("Quando o serviço real estiver em uso, o endereço de e-mail e alguns dados técnicos serão enviados",
+                      politica)
+        self.assertIn("O que se segue descreve o funcionamento do serviço real de códigos, planejado para a fase "
+                      "restrita de testes, e vale quando ele estiver em uso.", politica)
+        self.assertIn("Nesta fase, o serviço real é destinado apenas a testes restritos da desenvolvedora", politica)
+        self.assertIn("O serviço de códigos é operado por Carinne Batista", politica)
+        # IP e localização (item 2)
+        self.assertIn("não pede a localização do dispositivo", politica)
+        self.assertIn("O endereço IP pode permitir inferir uma localização geográfica aproximada", politica)
+        self.assertIn("O serviço usa o endereço IP apenas para limitar abusos: guarda um resumo calculado a partir dele, "
+                      "não guarda o IP completo em texto no armazenamento do serviço de códigos e não o usa para "
+                      "determinar a localização "
+                      "geográfica.", politica)
+        # Cloudflare
+        self.assertIn("Cloudflare Workers", politica)
+        self.assertIn("(Durable Objects)", politica)
+        self.assertIn("esses dados podem ficar fora do Brasil", politica)
+        self.assertIn("restaurar esse armazenamento a um momento dos últimos 30 dias", politica)
+        self.assertIn("(Workers Logs e Traces) ficam desligados", politica)
+        # Resend
+        self.assertIn("a **Resend**. O pedido de envio à Resend parte do serviço, não diretamente do seu computador.",
+                      politica)
+        self.assertIn("O serviço deve operar sem rastreamento de abertura e de cliques", politica)
+        self.assertIn("conferida novamente antes do primeiro envio real", politica)
+        self.assertIn("região de envio de São Paulo", politica)
+        self.assertIn("ficam guardados nos **Estados Unidos**, qualquer que seja a região de envio", politica)
+        self.assertIn("por **30 dias** no plano usado e que mantém cópias de segurança por **7 dias**; ela não detalha "
+                      "como esses dois prazos se combinam", politica)
+        self.assertIn("inclusive os códigos", politica)
+        self.assertIn("uma pequena amostra de e-mails pode ser analisada para segurança e prevenção de abuso", politica)
+        self.assertIn("https://resend.com/legal/subprocessors", politica)
+        # transferência internacional, titulares e contato
+        self.assertIn("*Transferência internacional.*", politica)
+        self.assertIn("são tratados fora do Brasil, inclusive nos Estados Unidos", politica)
+        self.assertIn("*Dados do serviço de códigos.*", politica)
+        self.assertIn("Os prazos do serviço de códigos e dos provedores estão no item 7.", politica)
+        self.assertIn("Esse endereço é uma conta do Gmail: as mensagens enviadas a ele são tratadas pelo Google", politica)
+        for texto in (termos, politica):
+            self.assertIn("Quando houver envio real, as respostas aos e-mails de código também chegarão a esse endereço.",
+                          texto)
 
     def test_regras_de_senha_da_etapa_7(self):  # 5.33, 5.34
         termos = documentos.TERMOS_DE_USO
