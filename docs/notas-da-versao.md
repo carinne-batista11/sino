@@ -4,9 +4,9 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
-## E4 em andamento (13/10/2026): Termos e Política publicados; T2 em testes reais restritos
+## E4 em andamento (13 e 14/10/2026): Termos e Política publicados; T2 concluído e desmontado
 
-Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026). O **T2** (primeiro envio real de e-mail pela Resend) foi **implantado em 13/10/2026** num Worker temporário, e os primeiros e-mails reais foram entregues a **um único endereço autorizado**, numa cópia isolada do app. Há testes pendentes, e o encerramento do T2 está previsto até 20/10/2026. **A E4 não está concluída**, e o serviço não foi validado para uso amplo (produção). O aplicativo normal não mudou e nenhuma versão nova foi lançada.
+Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026). O **T2** (primeiro envio real de e-mail pela Resend) foi **implantado em 13/10/2026** num Worker temporário, e os e-mails reais foram entregues a **um único endereço autorizado**, numa cópia isolada do app. Os testes terminaram em 14/10/2026, e o ambiente temporário foi **desmontado no mesmo dia**. **A E4 não está concluída**: ainda faltam publicar o serviço definitivo, em uso restrito, e configurar o aplicativo para ele. O serviço não foi validado para uso amplo (produção). O aplicativo normal não mudou e nenhuma versão nova foi lançada.
 
 ### Publicado no GitHub em 13/10/2026 (commit `65a6b9d`): Termos de Uso e Política de Privacidade, versão de 13/10/2026 (mudança relevante)
 
@@ -32,16 +32,18 @@ Preparada e revisada em 13/10/2026 (P42), com auditoria de segurança e correç�
 - **Aplicativo:** só uma cópia isolada, aberta por ferramenta própria, recebe o token, pelo ambiente do processo. A instalação normal do Sino não muda: sem a variável, as requisições são as mesmas de antes.
 - **Ferramentas locais:** `servidor/ferramentas/t2_segredos.py` (segredos exclusivos do T2, em pasta privada, com a chave da Resend só digitada num terminal) e `servidor/ferramentas/t2_app.py` (cópia isolada de uma revisão publicada, com banco próprio, e remoção controlada).
 - **Testes:** 1034 do aplicativo e 246 do serviço aprovados, com dados fictícios, sem rede e sem abrir o aplicativo.
-- **Próximos passos, só com autorização:** testes restantes e, no encerramento, exclusão do Worker e revogação da chave.
+- **Ambiente temporário:** usado nos testes de 13 e 14/10/2026 e desmontado em 14/10/2026.
 
-### Testes reais do T2 (13/10/2026; uso restrito, um endereço autorizado)
+### Testes reais do T2 (13 e 14/10/2026; uso restrito, um endereço autorizado)
 
-- **Aprovados:** quatro e-mails reais entregues; cadastro confirmado por código; recuperação de senha com código incorreto recusado (4 tentativas restantes) e código correto aceito, cancelada sem trocar a senha; cadastro com endereço fora da lista recusado com a mensagem de restrição; recuperação para endereço sem conta com resposta neutra e nenhum e-mail.
-- **Aprovado em parte:** reenvio do código (liberado depois de 60 segundos, e o código novo foi aceito); falta confirmar que o código antigo deixa de valer.
-- **Pendentes:** invalidação do código antigo depois do reenvio, expiração do código, esgotamento das tentativas e conferência final do conteúdo dos e-mails recebidos. Ainda falta decidir se a alteração de e-mail será testada nesta fase.
+- **Aprovados em 13/10:** quatro e-mails reais entregues; cadastro confirmado por código; recuperação de senha com código incorreto recusado (4 tentativas restantes) e código correto aceito, cancelada sem trocar a senha; reenvio liberado depois de 60 segundos, com o código novo aceito; cadastro com endereço fora da lista recusado com a mensagem de restrição; recuperação para endereço sem conta com resposta neutra e nenhum e-mail.
+- **Aprovados em 14/10** (mais quatro e-mails, oito no total, todos com entrega confirmada no painel da Resend): depois do reenvio, o código antigo deixa de valer; depois de cinco códigos errados, nem o código certo é aceito; os e-mails trazem o remetente, o texto e o rodapé aprovados, sem links, e as respostas vão para o contato do projeto.
+- **Aprovado em parte:** código vencido. Depois de cerca de 11 minutos, o próprio aplicativo recusou o código, sem consultar o serviço. A recusa pelo serviço depois de 10 minutos é coberta pelos testes automáticos, mas não foi vista diretamente neste teste.
+- **Fora desta fase:** a troca de e-mail não foi testada com envio real, por decisão da autora; ela é coberta pelos testes automáticos e já foi validada em demonstração (Sino 6.2).
 - **Autenticação dos e-mails:** o primeiro e-mail falhou no DMARC, sem causa confirmada; o segundo passou em SPF, DKIM e DMARC, depois da publicação de um registro DMARC para o domínio de envio.
-- **Desempenho:** o tempo de CPU por requisição ficou acima da meta original do projeto em parte da pequena amostra, sem erros nas métricas gerais do painel; a continuidade dos testes segue um critério operacional revisado, e o desempenho para uso amplo (produção) não foi validado.
-- **Encerramento** até 20/10/2026: exclusão do Worker temporário, revogação da chave da Resend e remoção da cópia isolada e dos arquivos privados de teste.
+- **Desempenho:** o tempo de CPU por requisição ficou acima da meta original do projeto em parte da pequena amostra, sem erros nas métricas gerais do painel (que não mostram cada requisição individualmente); no fim dos testes, a mediana ficou pouco abaixo da meta. A continuidade dos testes seguiu um critério operacional revisado, e o desempenho para uso amplo (produção) não foi validado.
+- **Encerramento (14/10/2026):** o Worker temporário foi excluído, a chave da Resend foi apagada, a cópia isolada e os arquivos privados de teste foram removidos, e a sessão do Wrangler foi encerrada. O domínio de envio e o seu registro DMARC de monitoramento foram mantidos para a próxima fase. O domínio principal está sem registro DMARC, por motivo ainda não identificado; isso será investigado.
+- **O que falta para concluir a E4:** publicar o serviço definitivo em uso restrito e configurar o aplicativo para ele.
 
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 

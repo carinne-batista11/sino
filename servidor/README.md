@@ -9,9 +9,10 @@ a autorização que o aplicativo confere localmente. O contrato está em
 validado localmente e publicado no repositório com a Sino 6.2. O serviço de
 produção **não foi publicado** nem validado. Na E4, o ambiente remoto de
 testes (T1, sem envio) foi usado e encerrado em 12/10/2026; o ambiente T2
-(primeiro envio real) foi implantado em 13/10/2026 para testes restritos:
-e-mails reais só no T2, a um único destinatário autorizado. Encerramento
-previsto até 20/10/2026 (ver abaixo).
+(primeiro envio real) foi usado em 13 e 14/10/2026 para testes restritos e
+**encerrado e desmontado em 14/10/2026**: oito e-mails reais, todos Delivered,
+só para um único destinatário autorizado (ver abaixo). A E4 continua
+pendente: faltam a produção restrita e a configuração da versão do aplicativo.
 
 ## Organização
 
@@ -97,15 +98,22 @@ Todo comando do Wrangler deste ambiente leva `-c wrangler.teste.jsonc` (sem
 ele, a configuração seria a de produção). Deploy, segredos remotos e remoção
 só com autorização (plano e comandos em `docs/ERS_v7.0_propostas.md`, "E4").
 
-## Ambiente T2 (E4; primeiro envio real; implantado em 13/10/2026 para testes restritos)
+## Ambiente T2 (E4; primeiro envio real; encerrado em 14/10/2026)
 
 **Objetivo:** um Worker **temporário** (`sino-servico-codigos-t2`, no máximo 7
 dias depois do deploy; a Cloudflare não o exclui sozinha: a exclusão é
 **manual**, no encerramento) para o primeiro envio real de
-e-mail pela Resend, só para os endereços autorizados pela autora. Implantado em
-13/10/2026, com os primeiros envios reais entregues; encerramento até
-20/10/2026 (resultados em `docs/ERS_v7.0_propostas.md`, "E4 — T2: execução e
-testes reais").
+e-mail pela Resend, só para os endereços autorizados pela autora.
+
+**Situação:** implantado em 13/10/2026; oito e-mails reais, todos Delivered,
+para um único destinatário autorizado; **encerrado em 14/10/2026**, antes do
+prazo de 20/10/2026. Worker, chave da Resend (`sino-t2-temporario`), cópia
+isolada e segredos locais removidos; logout do Wrangler e remoção dos 14
+registros locais temporários. O domínio `envios.appsino.com.br` foi mantido.
+Não houve implantação definitiva nem validação de produção. Resultados,
+ressalvas e evidências em `docs/ERS_v7.0_propostas.md`, "E4 — T2: execução e
+testes reais" e "E4 — avaliação dos critérios". A descrição abaixo fica como
+referência para um próximo ambiente.
 
 **Diferenças em relação à produção** (`src/index.ts`, `wrangler.jsonc`, nunca
 publicada): a entrada `src/t2.ts` é a de produção — Resend, `REMETENTE` e
@@ -144,7 +152,8 @@ excluir qualquer coisa; `t2_app.py remover`; exclusão manual do Worker, pelo
 painel ou com `npx wrangler delete -c wrangler.t2.jsonc` num terminal
 interativo; **revogação da chave na Resend**; remoção controlada da pasta dos
 segredos; `npx wrangler logout`; nova conferência do banco real e dos backups.
-Detalhes em `docs/ERS_v7.0_propostas.md`, "E4 — T2: execução e testes reais".
+Executado em 14/10/2026; detalhes em `docs/ERS_v7.0_propostas.md`, "E4 — T2:
+execução e testes reais".
 
 ### Ferramentas (Linux; `.venv` do projeto)
 
