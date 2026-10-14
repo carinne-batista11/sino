@@ -4,9 +4,9 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
-## E4 em andamento (13/10/2026): Termos e Política publicados; T2 preparado, sem deploy
+## E4 em andamento (13/10/2026): Termos e Política publicados; T2 em testes reais restritos
 
-Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026). O **T2** (primeiro envio real de e-mail pela Resend) está **preparado no código**, mas **não foi implantado**: não há Worker T2 na Cloudflare, nenhuma chave da Resend foi criada e **nenhum e-mail real foi enviado**. Nenhuma versão nova do aplicativo foi lançada.
+Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026). O **T2** (primeiro envio real de e-mail pela Resend) foi **implantado em 13/10/2026** num Worker temporário, e os primeiros e-mails reais foram entregues a **um único endereço autorizado**, numa cópia isolada do app. Há testes pendentes, e o encerramento do T2 está previsto até 20/10/2026. **A E4 não está concluída**, e o serviço não foi validado para uso amplo (produção). O aplicativo normal não mudou e nenhuma versão nova foi lançada.
 
 ### Publicado no GitHub em 13/10/2026 (commit `65a6b9d`): Termos de Uso e Política de Privacidade, versão de 13/10/2026 (mudança relevante)
 
@@ -19,18 +19,29 @@ Textos atualizados em preparação para o T2, aprovados pela autora (P41). Eles 
   - itens 8, 10 e 12: canal para pedidos sobre os dados do serviço e dos provedores; prazos dos provedores; contato acompanhado pela desenvolvedora, com mensagens tratadas pelo Google (Gmail).
 - **Classificação da autora:** relevante nos dois documentos, porque muda o compartilhamento com provedores, a retenção, a localização e a transferência internacional dos dados e identifica quem opera o serviço. Todos os usuários existentes aceitam a nova versão no próximo login; novos cadastros registram a versão de 13/10/2026.
 - As versões de 04/10/2026 e de 06/10/2026 ficam preservadas em [`docs/legal/`](legal/).
-- **Pendentes:** revisão jurídica antes de terceiros; reconfirmar, antes do primeiro envio real, o rastreamento e o TLS no painel da Resend e os Logs e Traces desligados no painel da Cloudflare.
+- **Conferências nos painéis (13/10/2026):** os Logs e Traces desligados foram conferidos na Cloudflare antes do primeiro envio real; o rastreamento desligado e o TLS foram conferidos na Resend antes do primeiro envio (segundo a autora, conforme o histórico das conversas) e conferidos de novo depois dos testes.
+- **Fontes oficiais (14/10/2026):** as páginas públicas da Resend e da Cloudflare citadas na Política foram conferidas de novo, sem divergência com o texto; alguns pontos dependem de contrato ou de configuração e não podem ser comprovados por essas páginas.
+- **Pendente:** revisão jurídica antes de terceiros.
 
-### Preparação técnica do T2 (código e documentação; sem deploy e sem envio real)
+### Preparação técnica do T2 (código e documentação)
 
-Preparada e revisada localmente em 13/10/2026 (P42), com auditoria de segurança e correções; entra no GitHub com o commit que traz esta nota. Nada disso foi implantado nem usado com a Resend.
+Preparada e revisada em 13/10/2026 (P42), com auditoria de segurança e correções, e publicada no GitHub (commit `00b45da`).
 
-- **E-mails de código** (quando houver envio real): o rodapé passa a ser "Esta é uma mensagem automática do Sino. Precisa de ajuda? Entre em contato: sino.lembrete.contas@gmail.com", e as respostas vão para esse endereço (Reply-To). Remetente aprovado: `Sino <nao-responda@envios.appsino.com.br>`.
+- **E-mails de código** (no envio real; até agora, só no T2 restrito): o rodapé passa a ser "Esta é uma mensagem automática do Sino. Precisa de ajuda? Entre em contato: sino.lembrete.contas@gmail.com", e as respostas vão para esse endereço (Reply-To). Remetente aprovado: `Sino <nao-responda@envios.appsino.com.br>`.
 - **Serviço:** remetente e Reply-To obrigatórios, sem valor padrão (sem eles, o serviço responde indisponível e não chama a Resend); entrada temporária do T2 com um token exclusivo, além da lista de destinatários; configuração própria (`servidor/wrangler.t2.jsonc`) com registros, rastreamento e URLs de prévia desligados e armazenamento separado. O serviço de produção continua sem publicação.
 - **Aplicativo:** só uma cópia isolada, aberta por ferramenta própria, recebe o token, pelo ambiente do processo. A instalação normal do Sino não muda: sem a variável, as requisições são as mesmas de antes.
 - **Ferramentas locais:** `servidor/ferramentas/t2_segredos.py` (segredos exclusivos do T2, em pasta privada, com a chave da Resend só digitada num terminal) e `servidor/ferramentas/t2_app.py` (cópia isolada de uma revisão publicada, com banco próprio, e remoção controlada).
 - **Testes:** 1034 do aplicativo e 246 do serviço aprovados, com dados fictícios, sem rede e sem abrir o aplicativo.
-- **Próximos passos, só com autorização:** commit e publicação deste código, chave restrita da Resend, segredos, deploy temporário (até 7 dias), conferência no painel e primeiro envio real; no encerramento, exclusão do Worker e revogação da chave.
+- **Próximos passos, só com autorização:** testes restantes e, no encerramento, exclusão do Worker e revogação da chave.
+
+### Testes reais do T2 (13/10/2026; uso restrito, um endereço autorizado)
+
+- **Aprovados:** quatro e-mails reais entregues; cadastro confirmado por código; recuperação de senha com código incorreto recusado (4 tentativas restantes) e código correto aceito, cancelada sem trocar a senha; cadastro com endereço fora da lista recusado com a mensagem de restrição; recuperação para endereço sem conta com resposta neutra e nenhum e-mail.
+- **Aprovado em parte:** reenvio do código (liberado depois de 60 segundos, e o código novo foi aceito); falta confirmar que o código antigo deixa de valer.
+- **Pendentes:** invalidação do código antigo depois do reenvio, expiração do código, esgotamento das tentativas e conferência final do conteúdo dos e-mails recebidos. Ainda falta decidir se a alteração de e-mail será testada nesta fase.
+- **Autenticação dos e-mails:** o primeiro e-mail falhou no DMARC, sem causa confirmada; o segundo passou em SPF, DKIM e DMARC, depois da publicação de um registro DMARC para o domínio de envio.
+- **Desempenho:** o tempo de CPU por requisição ficou acima da meta original do projeto em parte da pequena amostra, sem erros nas métricas gerais do painel; a continuidade dos testes segue um critério operacional revisado, e o desempenho para uso amplo (produção) não foi validado.
+- **Encerramento** até 20/10/2026: exclusão do Worker temporário, revogação da chave da Resend e remoção da cópia isolada e dos arquivos privados de teste.
 
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 

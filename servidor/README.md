@@ -7,10 +7,11 @@ a autorização que o aplicativo confere localmente. O contrato está em
 
 **Estado:** contrato v1.1 (restrição de destinatários da E3, ERS v7.0 5.49),
 validado localmente e publicado no repositório com a Sino 6.2. O serviço de
-produção **não foi publicado** e nenhum e-mail real foi enviado. Na E4, o
-ambiente remoto de testes (T1, sem envio) foi usado e encerrado em 12/10/2026;
-o ambiente T2 (primeiro envio real) está preparado no código, sem deploy (ver
-abaixo).
+produção **não foi publicado** nem validado. Na E4, o ambiente remoto de
+testes (T1, sem envio) foi usado e encerrado em 12/10/2026; o ambiente T2
+(primeiro envio real) foi implantado em 13/10/2026 para testes restritos:
+e-mails reais só no T2, a um único destinatário autorizado. Encerramento
+previsto até 20/10/2026 (ver abaixo).
 
 ## Organização
 
@@ -96,12 +97,15 @@ Todo comando do Wrangler deste ambiente leva `-c wrangler.teste.jsonc` (sem
 ele, a configuração seria a de produção). Deploy, segredos remotos e remoção
 só com autorização (plano e comandos em `docs/ERS_v7.0_propostas.md`, "E4").
 
-## Ambiente T2 (E4; primeiro envio real; preparado no código, sem deploy)
+## Ambiente T2 (E4; primeiro envio real; implantado em 13/10/2026 para testes restritos)
 
 **Objetivo:** um Worker **temporário** (`sino-servico-codigos-t2`, no máximo 7
-dias depois do deploy, excluído ao encerrar) para o primeiro envio real de
-e-mail pela Resend, só para os endereços autorizados pela autora. Nada foi
-publicado: não houve deploy, chave da Resend nem envio.
+dias depois do deploy; a Cloudflare não o exclui sozinha: a exclusão é
+**manual**, no encerramento) para o primeiro envio real de
+e-mail pela Resend, só para os endereços autorizados pela autora. Implantado em
+13/10/2026, com os primeiros envios reais entregues; encerramento até
+20/10/2026 (resultados em `docs/ERS_v7.0_propostas.md`, "E4 — T2: execução e
+testes reais").
 
 **Diferenças em relação à produção** (`src/index.ts`, `wrangler.jsonc`, nunca
 publicada): a entrada `src/t2.ts` é a de produção — Resend, `REMETENTE` e
@@ -127,7 +131,20 @@ barreira adicional: a lista de destinatários continua valendo.
   partir de um arquivo fora do Git.
 
 Todo comando do Wrangler deste ambiente leva `-c wrangler.t2.jsonc` (sem ele,
-a configuração seria a de produção).
+a configuração seria a de produção), **inclusive a exclusão do Worker**.
+
+**Autenticação:** o login no Wrangler (`npx wrangler login`) é feito pela
+autora, no terminal dela. A sessão expira: depois disso, qualquer comando
+autenticado exige renovar a sessão ou fazer novo login, por isso nenhum deles é
+executado sem autorização. `npx wrangler logout` faz parte do encerramento.
+
+**Encerramento (resumo; cada etapa com autorização):** registro final das
+evidências (painéis da Cloudflare e da Resend, banco da cópia) **antes** de
+excluir qualquer coisa; `t2_app.py remover`; exclusão manual do Worker, pelo
+painel ou com `npx wrangler delete -c wrangler.t2.jsonc` num terminal
+interativo; **revogação da chave na Resend**; remoção controlada da pasta dos
+segredos; `npx wrangler logout`; nova conferência do banco real e dos backups.
+Detalhes em `docs/ERS_v7.0_propostas.md`, "E4 — T2: execução e testes reais".
 
 ### Ferramentas (Linux; `.venv` do projeto)
 
@@ -187,7 +204,8 @@ processos usa `/proc` (Linux). A revisão "publicada" é a da referência local.
 Apagar arquivos não garante a eliminação física em SSDs, instantâneos ou
 armazenamento com cópia na escrita; o que invalida a chave é **revogá-la na
 Resend**. O procedimento completo (do commit ao encerramento) está em
-`docs/ERS_v7.0_propostas.md`, "E4 — T2: preparação técnica".
+`docs/ERS_v7.0_propostas.md`, "E4 — T2: preparação técnica"; a situação dos
+testes e o encerramento atualizado, em "E4 — T2: execução e testes reais".
 
 ## Modo de demonstração (desenvolvimento)
 

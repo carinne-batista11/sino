@@ -575,7 +575,7 @@ Registro do que a autora já fez e proposta técnica da E4. **Nenhum envio real,
   * **Solicitados** (os três acima): `TXT resend._domainkey.envios.appsino.com.br`, `CNAME rsend.envios.appsino.com.br`, `CNAME send.envios.appsino.com.br`.
   * **Encontrados:** nenhum. Os dois servidores do Registro.br respondem com autoridade `NXDOMAIN` para os três nomes (e também para `envios.appsino.com.br`); o resolvedor local também não os encontra. O número de série da zona (SOA) mudou entre as consultas (2026281040 → 2026281050), mas os registros ainda não aparecem.
   * Isso é coerente com o "Pending" da Resend. Não se conclui daqui que falte algum registro nem que os tipos devam mudar: os registros a usar são os do painel da Resend. Conferir de novo depois da publicação da zona.
-* Já existe `_dmarc.appsino.com.br` com `v=DMARC1; p=reject;` (sem `sp=`, por isso a política vale também para os subdomínios). O DMARC é uma **orientação publicada para os servidores que recebem** as mensagens: pede que mensagens que falham na autenticação alinhada (SPF ou DKIM) sejam rejeitadas. **Não é uma trava de envio** do Sino nem da Resend. São condições separadas:
+* *(Nota de 13/10/2026: esse registro não existe mais na zona atual; ver "E4 — T2: execução e testes reais", DNS.)* Já existe `_dmarc.appsino.com.br` com `v=DMARC1; p=reject;` (sem `sp=`, por isso a política vale também para os subdomínios). O DMARC é uma **orientação publicada para os servidores que recebem** as mensagens: pede que mensagens que falham na autenticação alinhada (SPF ou DKIM) sejam rejeitadas. **Não é uma trava de envio** do Sino nem da Resend. São condições separadas:
   * a **verificação do domínio na Resend**, que a Resend exige para enviar com remetente desse domínio;
   * os **controles do serviço** (lista de destinatários, camadas A e B, configuração do ambiente);
   * o DMARC, que só afeta como o destinatário trata a mensagem que receber.
@@ -811,6 +811,11 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
   * Resend: retenção de 30 dias em todos os planos, inclusive conteúdo e metadados ([account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits)); região de envio não define o armazenamento, dados da conta nos Estados Unidos ([Choosing a Region](https://resend.com/docs/dashboard/domains/regions)); cópias de segurança por 7 dias, remoção antecipada só a pedido, amostra analisada para segurança ([GDPR](https://resend.com/security/gdpr), atualizada em 12/10/2026); lista de suboperadores ([Subprocessors](https://resend.com/legal/subprocessors), 27/08/2026); conteúdo visível no painel ([Managing sent emails](https://resend.com/docs/dashboard/emails/manage-emails), [Emails dashboard](https://resend.com/docs/dashboard/emails/introduction)); rastreamento desligado por padrão, subdomínio de rastreamento não removível ([Open and Click Tracking](https://resend.com/docs/dashboard/domains/tracking)). DPA não lido por inteiro.
   * Cloudflare: local dos Durable Objects escolhido pela plataforma, sem opção para o Brasil ([Data location](https://developers.cloudflare.com/durable-objects/reference/data-location/), 26/06/2026); restauração do armazenamento dentro dos últimos 30 dias ([SQLite-backed storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)); Workers Logs e Traces ([Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/), 12/10/2026; [Traces](https://developers.cloudflare.com/workers/observability/traces/)); tratamento do IP pela própria política, sem prazo específico ([Privacy Policy](https://www.cloudflare.com/privacypolicy/), em vigor desde 04/11/2025).
   * **Não reconferidas em 13/10/2026** (a rodada de implementação não acessou serviços externos): reconferir antes do primeiro envio real.
+  * **Reconferidas em 14/10/2026** (depois do primeiro envio real; só leitura de páginas públicas oficiais, sem painéis): **nenhuma divergência** com a Política de 13/10/2026; afirmações **confirmadas** ou **parcialmente confirmadas**:
+    * Resend — retenção de 30 dias em todos os planos, com conteúdo, metadados, eventos, registros e métricas ([account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits), sem data na página): confirmado; cópias de segurança por 7 dias, remoção antecipada a pedido, dados guardados nos Estados Unidos, amostra pequena de e-mails analisada para segurança pela RunPod em infraestrutura operada pela Resend, aviso de 14 dias antes de mudar suboperadores ([GDPR](https://resend.com/security/gdpr), atualizada em 12/10/2026): confirmado (a página fala em retenção "enquanto a conta está ativa"); região de São Paulo só define o envio, dados da conta nos Estados Unidos ([Choosing a Region](https://resend.com/docs/dashboard/domains/regions), sem data): confirmado, com o conteúdo coberto pela página GDPR; painel com remetente, destinatário, assunto e versões Preview, Plain Text e HTML ([Managing sent emails](https://resend.com/docs/dashboard/emails/manage-emails)): confirmado (a mesma página informa links públicos válidos por 48 horas e exportações por 7 dias; [Emails dashboard](https://resend.com/docs/dashboard/emails/introduction) não detalha os campos); lista de suboperadores ([Subprocessors](https://resend.com/legal/subprocessors), `updated_at` 27/08/2026, igual à de 12/10/2026; 22 empresas nos Estados Unidos): confirmado; rastreamento desligado por padrão e subdomínio de rastreamento não removível ([Open and Click Tracking](https://resend.com/docs/dashboard/domains/tracking), sem data): confirmado.
+    * Cloudflare — Durable Objects criados perto do primeiro pedido, sem garantia de país; América do Sul (`sam`) listada, mas "Durable Objects currently do not spawn in this location" ([Data location](https://developers.cloudflare.com/durable-objects/reference/data-location/), atualizada em 26/06/2026): confirmado (a frase "podem ficar fora do Brasil" é prudente; a fonte indica que hoje não ficam no Brasil); restauração a qualquer momento dos últimos 30 dias ([SQLite-backed storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/), atualizada em 21/09/2026): **parcialmente confirmado** (os 30 dias, sim; a recuperação de dados já apagados é inferência, e a página não diz se o recurso fica sempre ativo); Workers Logs ([Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/), atualizada em 12/10/2026) e Traces ([Traces](https://developers.cloudflare.com/workers/observability/traces/), atualizada em 02/10/2026): **parcialmente confirmado** (amostragem 0 e `invocation_logs: false` documentados; `enabled: false` não descrito expressamente; o estado desligado foi conferido no painel no passo 8); tratamento do IP sem prazo específico, dados guardados principalmente nos Estados Unidos e no Espaço Econômico Europeu, acesso de qualquer parte do mundo ([Privacy Policy](https://www.cloudflare.com/privacypolicy/), em vigor desde 04/11/2025): confirmado (a Política diz "Europa"); métricas por *reservoir sampling*, disponíveis por até três meses ([Metrics and analytics](https://developers.cloudflare.com/workers/observability/metrics-and-analytics/), atualizada em 01/07/2026): confirmado.
+    * **Limitações:** DPA da Resend não analisado integralmente; local efetivo dos Durable Objects deste Worker não comprovado; disponibilidade contínua do PITR não comprovada; condições contratuais e questões jurídicas (papéis, transferência internacional) fora do alcance de fontes públicas. A **revisão jurídica** continua separada e **pendente** (M12).
+    * Ajustes de redação possíveis numa versão futura da Política (não feitos; sem divergência): Durable Objects hoje fora da América do Sul; amostra de segurança feita por suboperador de IA (RunPod); retenção da Resend "enquanto a conta está ativa"; "Espaço Econômico Europeu" em vez de "Europa".
 * **Decisões da autora para a redação (12/10/2026):**
   1. nova versão dos dois documentos, relevante, com novo aceite;
   2. estrutura e estilo dos documentos atuais preservados;
@@ -833,11 +838,12 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
 * **Ajustes finais e refinamentos (12/10/2026):** suboperadores remetidos à lista oficial, com o link `https://resend.com/legal/subprocessors` (em vez de "todas nos Estados Unidos"); frases que davam a entender envio real ativo passadas para "quando o serviço real estiver em uso" / "quando houver envio real", com uma frase de enquadramento no item 7 da Política; rastreamento como compromisso de operar sem ele, com reconferência antes do primeiro envio; Política item 2: o Sino não pede a localização do dispositivo, o IP pode permitir inferir localização aproximada, e o serviço usa o IP só para limitar abusos, guarda um resumo, não guarda o IP completo em texto e não o usa para determinar localização. Sem frase genérica sobre revisão jurídica nos textos.
 * **Regras de operação (fora dos textos):** não usar o link público de e-mails da Resend; não usar os recursos de IA da Resend (AI Editor, assistente) com mensagens do Sino.
 * **Antes do primeiro envio real:** reconferir rastreamento e TLS no painel da Resend; conferir Workers Logs e Traces desligados no painel da Cloudflare depois do deploy do T2; reconferir as fontes oficiais acima.
+  * *Situação em 14/10/2026 (o primeiro envio real foi feito em 13/10/2026):* Workers Logs e Traces desligados **conferidos** no painel da Cloudflare no passo 8, em 13/10/2026, antes do primeiro envio. Rastreamento e TLS na Resend: **conferidos em 13/10/2026, antes do primeiro envio** (conferência visual da autora no painel: TLS "Enforced"; rastreamento de aberturas e cliques sem configuração ativa; nenhuma configuração alterada e nenhum envio real até aquele momento). *Fonte dessa conferência prévia:* relato da autora, recuperado por ela do histórico das conversas em 14/10/2026; não há captura nem registro técnico dela. Depois dos testes, houve **reconferência** visual no mesmo dia, com quatro mensagens Delivered (ver "Resend" em "E4 — T2: execução e testes reais"). Fontes oficiais da Política: **reconferidas em 14/10/2026**, depois do primeiro envio (ver "Reconferidas em 14/10/2026", acima): nenhuma divergência, com as limitações registradas ali.
 * **Pendências jurídicas (M12, antes de terceiros):** papel da desenvolvedora como agente de tratamento (o texto diz só "opera" e "define como funciona"); papéis da Cloudflare e da Resend; encarregado e enquadramento como agente de pequeno porte; pedidos de titulares (prazo e procedimento não prometidos); base legal da transferência internacional (o texto informa só o fato).
 
-### E4 — T2: preparação técnica (13/10/2026; sem deploy, sem envio real)
+### E4 — T2: preparação técnica (13/10/2026)
 
-**Situação:** código, configuração e ferramentas do T2 preparados e revisados localmente (P42). Nada foi publicado na Cloudflare nem na Resend: sem deploy, sem chave da Resend, sem segredos operacionais e sem envio real. O T2 operacional não começou.
+**Situação:** código, configuração e ferramentas do T2 foram preparados e revisados localmente (P42) e publicados no GitHub em 13/10/2026 (`00b45da`). Até a implantação, nada havia sido publicado na Cloudflare nem na Resend (sem deploy, sem chave da Resend, sem segredos operacionais e sem envio real). O T2 foi implantado e testado em uso restrito em 13/10/2026: ver "E4 — T2: execução e testes reais".
 
 * **Objetivo:** um Worker **temporário**, `sino-servico-codigos-t2`, para o primeiro envio real de e-mail pela Resend, só para os endereços autorizados pela autora. Duração máxima: **7 dias** depois do deploy, com exclusão do Worker ao encerrar.
 * **Diferença em relação à produção:** a entrada `servidor/src/t2.ts` é a de produção (`src/index.ts`: Resend, lista de destinatários, limites, idempotência, retenção, `REMETENTE` e `RESPONDER_PARA` obrigatórios) envolvida por um **token exclusivo** (`TOKEN_ACESSO`). Sem `Authorization: Bearer <token>` correto, ou com o segredo ausente, a resposta é a mesma 404 de uma rota inexistente, antes de ler o corpo e de tocar nos Durable Objects. O token nunca é registrado; é uma barreira adicional, não substitui a lista. A produção continua sem token e nunca foi publicada.
@@ -866,7 +872,7 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
 * **Permissões e isolamento:** pastas 700 e arquivos 600 criados com criação exclusiva, sem seguir links, gravados por inteiro e sincronizados; leituras conferem tipo, dono e permissão no descritor aberto; consultas Git sem `GIT_DIR`, `GIT_WORK_TREE`, configuração do usuário ou do sistema e com `GIT_NO_REPLACE_OBJECTS`.
 * **Fontes oficiais consultadas em 13/10/2026 (leitura):** Resend, [Send Email](https://resend.com/docs/api-reference/emails/send-email) (`reply_to`: texto ou lista); [Create API key](https://resend.com/docs/api-reference/api-keys/create-api-key) (permissão `sending_access` com restrição a um domínio; o formato da chave não é definido, só exemplos `re_...` — por isso a ferramenta só exige caracteres válidos para o cabeçalho).
 
-**Procedimento operacional futuro (não executado; cada passo com autorização da autora):**
+**Procedimento operacional (cada passo com autorização da autora).** Situação em 14/10/2026: passos 1 a 3 e 5 a 10 executados em 13/10/2026; passo 4 **cumprido em 14/10/2026, com ressalvas** (encerramento aprovado pela autora): conferência prévia do painel da Resend em 13/10/2026, antes do primeiro envio (TLS "Enforced"; rastreamento sem configuração ativa; domínio verificado em 08/10/2026), com base no histórico das conversas recuperado pela autora em 14/10/2026, sem captura técnica; reconferência do painel em 13/10/2026, depois dos testes, com quatro mensagens Delivered; reconferência das fontes públicas oficiais da Resend e da Cloudflare em 14/10/2026, **depois** do primeiro envio, com resultados confirmados ou parcialmente confirmados e nenhuma divergência. Ressalvas: DPA da Resend não analisado integralmente; local efetivo dos Durable Objects e disponibilidade contínua do PITR não comprovados; questões jurídicas pendentes — a revisão jurídica continua separada e pendente (ver "Antes do primeiro envio real" e "Reconferidas em 14/10/2026" na seção anterior); passo 11 **em parte** (primeiro envio e parte dos casos feitos; casos pendentes em "E4 — T2: execução e testes reais"); passo 12 **pendente**.
 
 1. **Revisão final e commit:** revisão do diff e autorização; commit só dos arquivos revisados.
 2. **Push** para `origin/main`, sem `--force` e sem tags, com autorização.
@@ -897,15 +903,111 @@ Rodada só de conferência, registro e planejamento. **Nenhum deploy, login pelo
 * Os e-mails autorizados ainda podem ser lidos de uma entrada que não é terminal (comportamento herdado de `destinatarios.py`); a chave da Resend, não.
 * `t2_segredos.py` não tem comando para apagar uma pasta **concluída**: o encerramento dela é manual (passo 12).
 
+### E4 — T2: execução e testes reais (13/10/2026; uso restrito, um destinatário autorizado)
+
+**Situação:** Worker temporário `sino-servico-codigos-t2` implantado pela autora em 13/10/2026, por volta das 12h39 (Brasília), a partir da revisão publicada `00b45da`. Primeiros envios reais pela Resend feitos e testados numa cópia isolada do app (`t2_app.py`), com um único destinatário autorizado: **quatro envios reais** em 13/10/2026. Prazo de encerramento: até **20/10/2026, por volta das 12h39 (Brasília)**, mantido. A E4 **não** está concluída: há testes pendentes (abaixo). Nada aqui valida a infraestrutura para produção.
+
+**Estado do Worker depois de 13/10/2026:** não confirmado. A última conferência do painel é de 13/10/2026 (por volta das 14h50). Em 14/10/2026, a sessão local do Wrangler estava expirada desde 13/10/2026, por volta das 13h36, e nenhum comando autenticado foi executado (para não renovar a sessão sem autorização). A Cloudflare não exclui o Worker sozinha: a exclusão é manual, no encerramento.
+
+**Preparação e implantação (autora, com conferência local):**
+* Chave da Resend `sino-t2-temporario`, com permissão de envio restrita a `envios.appsino.com.br`.
+* Segredos preparados com `t2_segredos.py` em pasta privada fora da pasta pessoal (a pasta pessoal é um repositório Git, e a ferramenta recusa caminhos dentro de repositórios Git); estado `concluido`; chave da Resend digitada só no terminal da autora.
+* `.config/.wrangler/` acrescentado ao `.git/info/exclude` do repositório da pasta pessoal, para proteger as credenciais do Wrangler.
+* Painel da Cloudflare (passo 8, conferência visual da autora): Logs, Traces, Issues e Preview URLs desligados; três Durable Objects; três variáveis e cinco segredos; requisição sem token respondeu 404.
+* Cópia isolada preparada com a revisão `00b45da` (marca `concluida`, sem banco nem backups do projeto, sem arquivos compartilhados com o repositório) e aberta com `t2_app.py abrir`.
+
+**Reinício do computador (14/10/2026, por volta das 11h):** o app isolado foi **encerrado pelo reinício**, não pelo procedimento de encerramento (`t2_app.py remover` não foi executado). Conferência de leitura no mesmo dia: nenhum processo da cópia; trava `flock` **liberada** (nenhuma trava ativa sobre o arquivo); o arquivo `.em_uso` **continua na pasta** (a ferramenta usa a trava, não a existência do arquivo, em `abrir` e em `remover`); banco da cópia **preservado** (sem arquivos temporários do SQLite), `app.log` vazio, marca `concluida` da revisão `00b45da`; pasta dos segredos preservada (só nomes e permissões conferidos). Para os testes restantes, a cópia precisa ser **reaberta** com `t2_app.py abrir`, com autorização. Nada foi removido nem reaberto.
+
+**Resultados**
+
+| Teste | Resultado | Evidência |
+|---|---|---|
+| 1º e-mail real (cadastro) recebido; código aceito; conta criada com e-mail confirmado | Aprovado | Observação da autora; auditoria local (1 usuário, `email_verificado = 1`, aceites dos documentos de 13/10/2026) |
+| 2º e-mail (recuperação de senha) recebido | Aprovado | Observação da autora |
+| Código incorreto recusado, com 4 tentativas restantes | Aprovado | Observação da autora |
+| Código correto aceito dentro do prazo depois de uma tentativa errada; tela de nova senha | Aprovado | Observação da autora |
+| Recuperação cancelada sem redefinir a senha (duas vezes) | Aprovado | Observação da autora; auditoria local (autorizações consumidas: só `cadastro`, 1) |
+| Login com a senha original e saída da conta | Aprovado | Observação da autora |
+| Cadastro com endereço fora da lista: mensagem "O envio de códigos está restrito nesta fase do Sino.", permanência no formulário | Aprovado | Observação da autora; auditoria local (nenhuma conta nova); comportamento previsto no código (403 antes de qualquer envio) |
+| Recuperação com endereço sem conta: resposta neutra, tela do código, nenhum e-mail recebido | Aprovado | Observação da autora. Limite: o bloqueio veio do `sem_envio` (endereço sem conta), não da lista; a restrição da lista na recuperação continua coberta só pelos testes automáticos |
+| Reenvio liberado depois de 60 s; 2º código recebido e aceito; cancelado sem redefinir | **Aprovado em parte** (o reenvio funciona; a invalidação do código antigo não foi testada) | Observação da autora |
+| Reenvio: invalidação do código antigo | **Pendente**: não testada (o código novo foi confirmado primeiro) | — |
+| Expiração do código depois de 10 minutos | **Pendente** | — |
+| Esgotamento das 5 tentativas incorretas | **Pendente** | — |
+
+**Pendentes (cada um com autorização):**
+* invalidação do código antigo depois do reenvio (normalmente **dois** envios reais: o código antigo e o do reenvio);
+* expiração de 10 minutos (um envio);
+* esgotamento das 5 tentativas (um envio);
+* conferência final do conteúdo dos e-mails recebidos: remetente, respostas para o contato (Reply-To), texto aprovado com o rodapé e ausência de links;
+* **decisão da autora** sobre testar a alteração de e-mail no T2 (exigiria um segundo endereço autorizado e envios a ele, **não incluídos** na estimativa abaixo).
+
+Estimativa: cerca de **4 envios reais** ao destinatário atual (sem a alteração de e-mail), dentro dos limites por destino (5 por hora e 10 por dia, em janelas UTC). Os testes exigem reabrir a cópia isolada (ver "Reinício do computador").
+
+**Resend (painel, reconferência visual da autora, 13/10/2026, depois dos testes; a conferência prévia, antes do primeiro envio, está em "Antes do primeiro envio real"):** **quatro e-mails com status Delivered**; na seção de métricas de rastreamento, só o botão "Configure", sem subdomínio de rastreamento configurado; TLS "Enforced". É a evidência visual dessa tela; não cobre, sozinha, toda configuração possível de rastreamento.
+
+**Autenticação dos e-mails (Gmail, observação da autora)**
+* 1º e-mail: SPF PASS, DKIM PASS (`envios.appsino.com.br`), **DMARC FAIL**. Causa **não comprovada (inconclusiva)**: o DNS atual indica DKIM alinhado, e a linha `Authentication-Results` não foi analisada.
+* 2º e-mail, depois da publicação do DMARC: SPF PASS, DKIM PASS, **DMARC PASS**.
+
+**DNS (consultas públicas de leitura, 13/10/2026)**
+* Servidores do domínio: `d.sec.dns.br` e `f.sec.dns.br`, com **DNSSEC ativo** (DS publicado; respostas validadas por 1.1.1.1 e 8.8.8.8). Em 07/10 eram `a.auto.dns.br`/`b.auto.dns.br`.
+* `_dmarc.envios.appsino.com.br` = `v=DMARC1; p=none;`, publicado pela autora no Registro.br; confirmado nos dois servidores autoritativos, em 1.1.1.1 e em 8.8.8.8 (número de série da zona 2026281021 → 2026286000).
+* O antigo `_dmarc.appsino.com.br` (`p=reject`, registrado em 07/10) **não existe** na zona atual (`NXDOMAIN`). Não há registro de quando nem por que foi removido. **Investigação pendente** (separada do T2), sem causa atribuída.
+* Registros da Resend preservados: DKIM `resend._domainkey.envios`, `CNAME send.envios` → `send.forge.rmta.net` (SPF `v=spf1 ip4:… ~all`) e `CNAME rsend.envios` → `rsend-sae1.forge.rmta.net`.
+
+**Cloudflare (painel Metrics, últimas 24 horas, 13/10/2026, por volta das 14h50–14h52, conferência visual da autora)**
+* Invocações: 13; subrequisições: 44; erros: 0 (0%). A contagem inclui requisições de tipos diferentes (verificação sem token, pedidos com e sem envio, validações) e não é reconciliada teste a teste.
+* Implantação ativa `d48d4ef7`, com 100% do tráfego.
+* Quatro chamadas a `api.resend.com` com respostas 2xx (coerente com os quatro envios).
+* Tempo total (wall time, duração da requisição; **não** é tempo de CPU): P50 492 ms; P90, P99 e P99,9 927 ms (inclui a espera pela Resend e pelos Durable Objects, que não conta como CPU). O caso 8 usa só o tempo de CPU (abaixo).
+* São métricas agregadas de uma amostra pequena, não um teste de carga.
+
+**Caso 8 (CPU) — decisão da autora (13/10/2026, P43)**
+* **Observado:** CPU P50 8,43 ms; P90, P99 e P99,9 17,84 ms, numa amostra de 13 invocações de tipos diferentes. Com tão poucas amostras, os percentis altos coincidem com o maior valor observado e não descrevem uma distribuição; pelo menos uma invocação amostrada ficou acima de 10 ms. O painel mostrou 0 erros agregados; os erros 1102 não foram auditados um a um (Logs desligados por decisão).
+* **Diferença em relação ao T1:** o T2 incluiu validações com o código correto (assinatura Ed25519 no Worker) e envios reais, que o T1 não exercitava. É uma diferença entre as amostras, não uma causa comprovada.
+* **Documentação oficial da Cloudflare (consultada em 13/10/2026):** o Workers Free tem limite nominal de **10 ms de CPU por requisição** ([Limits](https://developers.cloudflare.com/workers/platform/limits/)); há flexibilidade para excessos **infrequentes**, e a execução é interrompida quando o limite é atingido **de forma consistente**; a espera por rede não conta como CPU. Nas métricas, os percentis de CPU vêm de amostragem (*reservoir sampling*) e "higher quantiles may appear to exceed CPU time limits without generating invocation errors", por causa do *rollover* de CPU ([Metrics and analytics](https://developers.cloudflare.com/workers/observability/metrics-and-analytics/)). Um excesso efetivo aparece como erro 1102 / "Exceeded CPU Time Limits" ([Errors](https://developers.cloudflare.com/workers/observability/errors/)). A documentação não diz se as métricas do Worker incluem os Durable Objects, que têm limite próprio de 30 s de CPU por invocação ([Durable Objects limits](https://developers.cloudflare.com/durable-objects/platform/limits/)).
+* **Critério original (preservado):** "tempo de CPU por requisição abaixo de 10 ms nas métricas" — **não atendido** (P99 observado de 17,84 ms).
+* **Critério operacional revisado, para continuar os testes restritos:** nenhum erro de CPU nas métricas agregadas; mediana de CPU abaixo de 10 ms; acompanhamento das métricas durante o T2 — **atendido na amostra observada**.
+* **Capacidade e desempenho para produção: não validados.** Nenhuma decisão de mudança de plano nem de otimização de código neste momento. A evidência não indica excesso de um limite efetivamente aplicado; indica que o critério original não foi atendido.
+
+**Auditorias locais (somente leitura)**
+* Banco da cópia: `quick_check` ok; 1 usuário, com e-mail confirmado; autorizações consumidas: só `cadastro`, 1 (as recuperações canceladas não consumiram autorização); nenhum arquivo temporário do SQLite.
+* `app.log` (600) vazio, sem erros.
+* Banco real e cinco backups iguais à ref7; `main` = `origin/main` = `00b45da`, árvore limpa (conferência de 13/10/2026, antes da atualização desta documentação). Em 14/10/2026: banco real e cinco backups continuam iguais à ref7; `main` = `origin/main` local = `00b45da`, com estes documentos modificados e sem commit.
+* Nenhum endereço, código, senha, token ou segredo foi lido ou registrado nas auditorias.
+
+**Encerramento (pendente, até 20/10/2026, por volta das 12h39, Brasília; nada executado)** — cada etapa com autorização:
+1. **Registro final de evidências, antes de qualquer exclusão:** capturas do painel da Cloudflare (métricas, incluindo CPU e erros) e da Resend (envios, rastreamento, TLS). As métricas podem permanecer disponíveis por um período limitado, mas não há garantia documental de sua disponibilidade após a exclusão do Worker. Por precaução, as evidências relevantes devem ser registradas antes da desmontagem. Fazer também uma auditoria só de leitura do banco da cópia (que é apagado por `remover`).
+2. **App isolado:** já encerrado pelo reinício de 14/10/2026 (se for reaberto para os testes, fechá-lo antes); `t2_app.py remover` (primeiro sem e depois com `--confirmar`).
+3. **Wrangler:** a sessão local expirou em 13/10/2026; a autora precisa renovar a sessão ou fazer novo login **no terminal dela** antes de qualquer comando autenticado.
+4. **Excluir o Worker (manual; a Cloudflare não o exclui sozinha):** pelo painel ou com `wrangler delete`, **sempre com `-c wrangler.t2.jsonc`** (sem ele, o comando miraria a configuração de produção); conferir depois que o Worker e os namespaces não existem mais (também com `-c wrangler.t2.jsonc`).
+5. **Revogar a chave `sino-t2-temporario` na Resend** (obrigatório). Os e-mails enviados continuam no painel da Resend pelo prazo de retenção do provedor (cerca de 30 dias, como informa a Política).
+6. Apagar os arquivos da pasta de segredos de forma controlada (um por vez, sem recursão; apagar não garante eliminação física).
+7. `wrangler logout`.
+8. **Conferir novamente a ref7** (banco real e cinco backups) depois da desmontagem; confirmar e registrar o encerramento.
+
+**Decisões pendentes do encerramento (da autora):**
+* destino dos registros locais do Wrangler (`~/.config/.wrangler/logs`);
+* destino do registro DMARC temporário `_dmarc.envios.appsino.com.br` (`p=none`), publicado para o T2;
+* destino da regra `.config/.wrangler/` no `.git/info/exclude` do repositório da pasta pessoal (ver o item 8, abaixo).
+
 ### Pendências da M8 (não resolvidas)
 
 * ~~Domínio e remetente (M8-B).~~ Resolvido para o uso restrito em 08/10/2026 (remetente e Reply-To aprovados).
 * ~~Responsável pela operação e contato para titulares (M8-C).~~ Resolvido para o uso restrito em 08/10/2026 (Carinne; `sino.lembrete.contas@gmail.com`); redação nos Termos e na Política feita na versão de 13/10/2026 (P41).
-* Rastreamento de abertura e de cliques na Resend: conferido visualmente como desligado em 12/10/2026 (B1); **reconfirmar antes do primeiro envio real** (passo 4 do T2).
-* T2 operacional (passos 1 a 12 de "E4 — T2: preparação técnica"): commit e publicação do código, chave restrita, segredos, deploy temporário, conferência no painel, primeiro envio e encerramento; tudo com autorização.
+* Rastreamento de abertura e de cliques na Resend: conferido visualmente como desligado em 12/10/2026 (B1); em 13/10/2026, **antes** do primeiro envio real, sem configuração ativa e com TLS "Enforced" (relato da autora, recuperado do histórico das conversas em 14/10/2026); e de novo em 13/10/2026, **depois** dos testes (só "Configure"; TLS "Enforced"). Fontes oficiais da Política reconferidas em 14/10/2026, sem divergência (com as limitações registradas); passo 4 cumprido com ressalvas.
+* T2 em execução desde 13/10/2026 (ver "E4 — T2: execução e testes reais"): quatro envios reais a um destinatário autorizado; testes pendentes (invalidação do código antigo, expiração, esgotamento das tentativas, conferência do conteúdo dos e-mails; decisão sobre a alteração de e-mail; cerca de 4 envios reais, sem contar a alteração de e-mail); app isolado encerrado pelo reinício de 14/10/2026 (reabrir para os testes); estado do Worker não confirmado depois de 13/10/2026; DMARC do primeiro e-mail inconclusivo; caso 8 com critério original não atendido (erros 1102 não auditados individualmente) e critério operacional revisado acompanhado durante o T2; capacidade e desempenho para produção não validados; encerramento até 20/10/2026, por volta das 12h39.
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).
+
+### Pendência independente — item 8: auditoria de segurança do repositório Git em `/home/carinne` (registrada em 14/10/2026)
+
+* **Fato:** a pasta pessoal `/home/carinne` é um repositório Git (identificado em 13/10/2026, na preparação do T2; por isso a ferramenta de segredos recusou caminhos dentro dela). Em 13/10/2026, com autorização, a regra `.config/.wrangler/` foi acrescentada ao `.git/info/exclude` desse repositório.
+* **Pendência:** auditoria de segurança desse repositório (o que ele contém, o que está versionado ou exposto e se há remoto configurado), **separada da E4**.
+* **Quando:** depois das prioridades do T2 (testes restantes e encerramento), começando por um **diagnóstico exclusivamente de leitura**, com autorização.
+* **Situação:** não iniciada. Nenhuma alteração em `.git`, `.gitignore`, `.git/info/exclude` ou configurações da pasta pessoal faz parte desta pendência sem autorização específica.
 
 ### Conferência dos provedores (06/10/2026, fontes oficiais; nada contratado nem configurado)
 
