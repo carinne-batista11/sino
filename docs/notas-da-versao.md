@@ -45,6 +45,15 @@ Preparada e revisada em 13/10/2026 (P42), com auditoria de segurança e correç�
 - **Encerramento (14/10/2026):** o Worker temporário foi excluído, a chave da Resend foi apagada, a cópia isolada e os arquivos privados de teste foram removidos, e a sessão do Wrangler foi encerrada. O domínio de envio e o seu registro DMARC de monitoramento foram mantidos para a próxima fase. O domínio principal está sem registro DMARC, por motivo ainda não identificado; isso será investigado.
 - **O que falta para concluir a E4:** publicar o serviço definitivo em uso restrito e configurar o aplicativo para ele.
 
+### Otimização do serviço de códigos (O1; publicada no GitHub em 14/10/2026, commit `981d1e8`)
+
+- **O que mudou:** o serviço de códigos passou a assinar as autorizações com a criptografia nativa do ambiente da Cloudflare, em vez de uma biblioteca em JavaScript. As autorizações continuam **idênticas** às anteriores: o aplicativo, o contrato do serviço e as configurações não mudaram, e nada muda para quem usa o Sino.
+- **Por quê:** reduzir o trabalho do serviço, porque o tempo de CPU medido no T2 ficou acima da meta original do projeto em parte da amostra.
+- **Testes:** 254 do serviço e 1034 do aplicativo aprovados, com dados fictícios; assinaturas idênticas às da versão anterior em 200 casos de teste e no ambiente local que simula a Cloudflare.
+- **Tamanho:** o pacote do serviço ficou cerca de 46% menor no teste local. Isso não comprova, sozinho, que o serviço ficou mais rápido na Cloudflare.
+- **Ressalvas:** um teste antigo de carga, executado localmente, passa só em parte das execuções, tanto antes quanto depois desta mudança, provavelmente por limitação do simulador (não comprovado). O desempenho real só será conhecido depois de medir o serviço publicado.
+- **Situação:** o serviço definitivo ainda não foi publicado; esta mudança não envolveu nenhum deploy. A E4 continua em andamento.
+
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 
 Segunda entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.49, P39, contrato v1.1). A publicação é **do código no GitHub**: o serviço de códigos continua sem deploy, não há envio real de e-mails e o Sino não foi liberado para terceiros (E4 e seção 11.3 da ERS). Suítes: 950 testes do aplicativo e 215 do serviço aprovados, em bancos temporários e ambientes isolados. Validação manual no modo de demonstração, só com endereços fictícios e a caixa local: as mensagens foram observadas pela autora, e os efeitos (duas mensagens na caixa, a conta criada e o e-mail alterado, nenhuma conta dos pedidos recusados) foram conferidos nos arquivos da demonstração.

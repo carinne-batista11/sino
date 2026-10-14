@@ -1033,13 +1033,69 @@ Critérios existentes, sem alteração: a definição da E4 (ERS v7.0, seção 1
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).
+* **Decisões 5 a 9 da produção restrita e lançamento da versão do app (pendentes):** ver "E4 — produção restrita: planejamento, decisões e otimização O1".
+* **CPU real na Cloudflare (P43):** a otimização O1 (14/10/2026) foi feita só com medições locais; o critério original da P43 continua **não atendido** e depende de medição real no serviço publicado.
 
-### Pendência independente — item 8: auditoria de segurança do repositório Git em `/home/carinne` (registrada em 14/10/2026)
+### E4 — produção restrita: planejamento, decisões e otimização O1 (14/10/2026)
 
-* **Fato:** a pasta pessoal `/home/carinne` é um repositório Git (identificado em 13/10/2026, na preparação do T2; por isso a ferramenta de segredos recusou caminhos dentro dela). Em 13/10/2026, com autorização, a regra `.config/.wrangler/` foi acrescentada ao `.git/info/exclude` desse repositório.
-* **Pendência:** auditoria de segurança desse repositório (o que ele contém, o que está versionado ou exposto e se há remoto configurado), **separada da E4**.
-* **Quando:** depois das prioridades do T2 (testes, concluídos em 14/10/2026, e encerramento), começando por um **diagnóstico exclusivamente de leitura**, com autorização.
-* **Situação:** não iniciada. Nenhuma alteração em `.git`, `.gitignore`, `.git/info/exclude` ou configurações da pasta pessoal faz parte desta pendência sem autorização específica. No encerramento do T2 (14/10/2026), a autora decidiu **manter** a regra `.config/.wrangler/` (linha 8 do `.git/info/exclude`; `git check-ignore` confirma; nenhum arquivo dessa pasta versionado), a revisar nesta auditoria.
+**Situação:** só planejamento, decisões da autora e uma otimização de código publicada no GitHub (sem implantação na Cloudflare). **Nenhum deploy definitivo**, nenhuma alteração de DNS, nenhuma contratação. A E4 e a M8 **não estão concluídas**.
+
+#### Planejamento (diagnóstico só de leitura, 14/10/2026, depois de `e5ed03d`)
+
+* `servidor/wrangler.jsonc` (produção) ainda incompleto para publicar: sem `observability` explícito (na Cloudflare ela vem ligada por padrão, o que contrariaria a Política), sem `workers_dev` e `preview_urls` explícitos, KID ainda `dev-1` (fixado por teste) e sem `REMETENTE`/`RESPONDER_PARA`.
+* Não existe ferramenta de segredos para a produção (`t2_segredos.py` é exclusiva do T2).
+* App: `URL_PRODUCAO = None` e `CHAVES_PUBLICAS_PRODUCAO = {}` em `backend/servico_codigos.py`; a "configuração da versão do app" consiste em preenchê-los e lançar uma versão.
+* A produção restrita é pública e sem token: terceiros podem consumir os limites dos endereços autorizados (ver decisão 3).
+
+#### Decisões aprovadas pela autora (14/10/2026)
+
+1. **Endereço:** a produção restrita usará inicialmente o `workers.dev`, com subdomínio **neutro**, sem nome pessoal. O atual `carinnebatista11` deve ser trocado antes, porque o endereço fica fixado na versão do app. O nome definitivo depende de conferência de disponibilidade e de aprovação da autora. **Sem alteração de DNS nesta fase.** Domínio próprio, que exigiria zona na Cloudflare e mudança dos servidores de nomes no Registro.br, só será avaliado no futuro. **Nenhum deploy autorizado.**
+2. **Planos:** Cloudflare Workers Free e Resend Free aprovados inicialmente; **nenhum plano pago autorizado**. Acompanhar CPU, requisições, limites dos Durable Objects e envios. O Workers Paid só será reavaliado se os resultados técnicos justificarem, com nova autorização. Esta decisão não altera nem dispensa a P43.
+3. **Abuso:** na produção restrita, **manter** as proteções existentes (limites por IP e por destinatário, teto global de envios); acompanhar consumo e possíveis abusos só pelas métricas disponíveis, respeitando a Política e a decisão de manter Logs e Traces desligados; **aceitar** nesta fase o risco residual de terceiros consumirem os limites de um destinatário autorizado; **reavaliar** a proteção adicional por dispositivo ("duas cotas", com token por instalação) antes de liberar o Sino a terceiros. A aprovação não autoriza implementação, mudança no contrato da API, deploy nem alteração de limites.
+4. **CPU:** o Workers Free continua sendo o plano escolhido; **investigar a CPU antes do deploy definitivo** e avaliar otimizações possíveis, começando por diagnóstico só de leitura. A P43 original continua **não atendida**. Nenhuma alteração de critério, contratação ou implantação autorizada. *(A investigação levou à O1, implementada e publicada no GitHub com autorização própria, sem implantação na Cloudflare; ver abaixo.)*
+
+#### Decisões pendentes (nenhuma tomada)
+
+| # | Tema | Recomendação do planejamento (**não aprovada**) |
+|---|---|---|
+| 5 | Guarda dos segredos de produção | Guardar só a `CHAVE_HMAC` em gerenciador de senhas |
+| 6 | Observabilidade do Worker de produção | Desligada |
+| 7 | CT138 completo no envio real (alteração de e-mail, segundo endereço) | — |
+| 8 | Expiração verificada no próprio serviço, por script controlado | Sim, com um envio |
+| 9 | DMARC | Investigar o domínio principal antes; `p=none` em `envios` na fase restrita |
+
+Também pendente: o lançamento da versão do app configurada para a produção.
+
+#### Otimização O1: assinatura Ed25519 nativa (commit `981d1e89888b85013cdbac2a8ba1341570a2e981`, publicado no GitHub em 14/10/2026; sem implantação na Cloudflare)
+
+* **O que mudou:** a assinatura Ed25519 das autorizações do serviço de códigos deixou de usar `@noble/curves` e passou a usar a WebCrypto nativa do runtime (`crypto.subtle.sign`). A semente de 32 bytes da `CHAVE_ASSINATURA` é envolvida em PKCS#8 (RFC 8410) e importada como chave **não exportável**, só para assinar. A importação acontece antes de tocar no limite do IP e no objeto do destino: se falhar, o serviço responde 503 sem consumir tentativas, códigos ou limites.
+* **Compatibilidade preservada:** mesmo prefixo, conteúdo, ordem das chaves, KID e formato do token. Como o Ed25519 é determinístico, as assinaturas são **idênticas byte a byte** às anteriores. Vetores de conformidade compartilhados, app Python, contrato, segredos e configurações **inalterados**.
+* **Dependências:** `@noble/curves` permanece, mas só no módulo de referência `servidor/src/nucleo/autorizacao_referencia.ts`, usado pelos testes; não entra mais nos pacotes de produção nem do T2. `@noble/hashes` continua em uso legítimo no serviço (HMAC, SHA-256 e conversões em `cripto.ts`, e `utf8ToBytes` em `autorizacao.ts`). Versões e licenças inalteradas.
+* **Testes aprovados:**
+  * typecheck do serviço OK;
+  * serviço **254/254** na primeira execução completa (eram 246; mais 8 novos);
+  * app **1034/1034** (bancos temporários; banco real e backups inalterados);
+  * **equivalência criptográfica:** 200 de 200 sementes e conteúdos fictícios idênticos à referência, mais o vetor versionado, no Node e no `workerd`;
+  * **integração nativa no `workerd`:** importação PKCS#8 não exportável; validação com o código certo devolve 200, a autorização é verificada pela referência, a repetição com a mesma chave devolve a mesma autorização e outra chave recebe 410;
+  * falha simulada na importação: 503, nada consumido, nenhum segredo no registro;
+  * falha simulada na assinatura: a repetição com a mesma chave recupera a mesma autorização, e o uso único é preservado.
+* **Tamanho dos pacotes (dry-run local do Wrangler, sem rede nem login):**
+
+| Pacote | Antes (`e5ed03d`) | Depois (O1) | Redução |
+|---|---|---|---|
+| Produção (`wrangler.jsonc`) | 135.423 B | 72.413 B | cerca de 46,5% |
+| T2 (`wrangler.t2.jsonc`) | 136.421 B | 73.411 B | cerca de 46,2% |
+
+  **Limitações:** são tamanhos do pacote gerado localmente, sem compressão, e não medições na Cloudflare. A redução indica menos código para carregar e inicializar, mas **não comprova** redução do tempo de CPU por requisição: não se sabe quanto a inicialização do módulo entra na CPU medida, nem o efeito real da assinatura nativa no runtime da Cloudflare.
+* **Teste de carga intermitente:** o teste antigo "100 fluxos simultâneos" (`servidor/test/workers/objetos.test.ts`, limite de 60 s) falhou por tempo em parte das execuções. Esse teste só faz pedidos de código, caminho que a O1 não altera. Numa comparação alternada, a base `e5ed03d` passou em **1 de 3** execuções e a O1 também em **1 de 3**, com durações iguais quando passaram. A hipótese é limitação de desempenho do simulador local e da máquina, **não comprovada**. Pode reaparecer em validações futuras.
+* **P43:** continua **pendente de medição real na Cloudflare**. O critério original (CPU abaixo de 10 ms por requisição) segue **não atendido** até nova medição no serviço publicado.
+
+### Pendência independente — item 8: repositório Git da pasta pessoal `/home/carinne` (registrada em 14/10/2026; atualizada no mesmo dia)
+
+* **Registro original (13 e 14/10/2026):** a pasta pessoal `/home/carinne` era um repositório Git (identificado em 13/10/2026, na preparação do T2; por isso a ferramenta de segredos recusou caminhos dentro dela). Em 13/10/2026, com autorização, a regra `.config/.wrangler/` foi acrescentada ao `.git/info/exclude` desse repositório, e no encerramento do T2 a autora decidiu mantê-la até a auditoria.
+* **Atualização (14/10/2026, com autorização da autora):** depois de um diagnóstico, o repositório foi **desvinculado** da pasta pessoal: o remoto configurado apontava para um repositório do GitHub que não foi encontrado (resposta "Repository not found"; não se concluiu que tenha sido excluído), e a pasta `.git` foi **movida** (não excluída) para `/var/tmp/backup-git-home-20261014/`. Foram guardados também um *bundle* do histórico, com arquivo de conferência SHA-256, e uma cópia de segurança definitiva em `~/.local/share/backups-git/home-20261014/` (permissão 700); o conteúdo dessas cópias não foi auditado. **Desde então, `/home/carinne` não é mais um repositório Git.** A regra `.config/.wrangler/` deixou de ter efeito, porque ficou dentro da pasta `.git` movida.
+* **Backups:** as cópias em `/var/tmp/backup-git-home-20261014/` e em `~/.local/share/backups-git/home-20261014/` **devem ser preservadas**. Nenhuma exclusão, alteração ou reversão sem autorização específica da autora. Lembrete: `/var/tmp` pode ser limpo pelo sistema; a cópia em `~/.local/share/backups-git/` é a definitiva.
+* **Situação:** resolvida **em parte**. O risco de versionar ou expor arquivos da pasta pessoal por esse repositório deixou de existir. A auditoria do conteúdo histórico das cópias e a decisão sobre o destino final delas continuam pendentes, sem prazo e **separadas da E4**.
 
 ### Conferência dos provedores (06/10/2026, fontes oficiais; nada contratado nem configurado)
 
@@ -1179,7 +1235,7 @@ Reavaliar a restrição de uso comercial nas próximas versões, preservando as 
   * **certifi: MPL-2.0**, que exige compartilhar só os arquivos dela **se forem modificados**;
   * no app móvel entram também o Flutter (BSD-3-Clause, mais as dependências do motor) e o Python embarcado.
 
-  No serviço de códigos: `@noble/curves` 2.4.0 e `@noble/hashes` 2.4.0, ambos MIT.
+  No serviço de códigos: `@noble/curves` 2.4.0 e `@noble/hashes` 2.4.0, ambos MIT. *(Atualização de 14/10/2026, O1: `@noble/curves` permanece só no módulo de referência usado pelos testes e não entra mais nos pacotes gerados para implantação; `@noble/hashes` continua em uso no serviço.)*
 
 #### O que cada alternativa permite (linguagem simples)
 
