@@ -9,7 +9,7 @@ import { REPETIR_APOS_S, type Finalidade } from "./config";
 import { emailAparado, normalizarEmail } from "./email";
 import type { Enviador } from "./envio/enviador";
 import { montarMensagem } from "./envio/mensagens";
-import { assinarAutorizacao } from "./nucleo/autorizacao";
+import { assinarAutorizacao, importarChaveAssinatura } from "./nucleo/autorizacao";
 import { hmacHex, sha256Hex } from "./nucleo/cripto";
 import { resumoDoEmail, type Destinatarios } from "./nucleo/destinatarios";
 import type {
@@ -59,6 +59,8 @@ export interface Dependencias {
   relogio(): number;
   /** Mantém uma tarefa viva depois da resposta (ctx.waitUntil no Worker). */
   emSegundoPlano(tarefa: Promise<unknown>): void;
+  /** Importação da chave de assinatura; substituível só nos testes. */
+  importarChaveAssinatura?(semente: Uint8Array): Promise<CryptoKey>;
 }
 
 export interface Resposta {
@@ -301,6 +303,16 @@ export interface EntradaValidacao {
 export async function validarDesafio(deps: Dependencias, e: EntradaValidacao): Promise<Resposta> {
   const segredos = deps.segredos;
   if (!segredos) return INDISPONIVEL;
+  // A chave é importada antes de reservar o limite do IP e de chamar o objeto
+  // do destino: se a importação falhar, nada é consumido (tentativa, código
+  // nem limite) e a resposta é a de serviço indisponível.
+  let chaveAssinatura: CryptoKey;
+  try {
+    chaveAssinatura = await (deps.importarChaveAssinatura ?? importarChaveAssinatura)(segredos.chaveAssinatura);
+  } catch (erro) {
+    registrarFalha("importação da chave de assinatura", erro);
+    return INDISPONIVEL;
+  }
   const agora = deps.relogio();
   const ipHash = hmacHex(segredos.chaveHmac, "ip", prefixoIp(e.ip));
   if (!(await deps.ip(ipHash).reservarValidacao(agora))) {
@@ -322,7 +334,7 @@ export async function validarDesafio(deps: Dependencias, e: EntradaValidacao): P
       return {
         status: 200,
         corpo: {
-          autorizacao: assinarAutorizacao(r.dados, segredos.kid, segredos.chaveAssinatura),
+          autorizacao: await assinarAutorizacao(r.dados, segredos.kid, chaveAssinatura),
           expira_em: iso(r.dados.expiraEm),
           agora: iso(agora),
         },

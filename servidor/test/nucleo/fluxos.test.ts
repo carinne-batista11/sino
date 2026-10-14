@@ -2,7 +2,7 @@
 // da recuperação, teto global, falhas parciais entre objetos, repetição de
 // pedidos/validações, envio incerto e ausência de dados sensíveis nos logs.
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   INTERVALO_REENVIO_MS,
   PRAZO_ENVIANDO_MS,
@@ -18,7 +18,7 @@ import {
   validarDesafio,
   type EntradaPedido,
 } from "../../src/fluxos";
-import { chavePublicaDe, verificarAutorizacao } from "../../src/nucleo/autorizacao";
+import { chavePublicaDe, verificarAutorizacao } from "../../src/nucleo/autorizacao_referencia";
 import { hmacHex } from "../../src/nucleo/cripto";
 import { CHAVE_ASSINATURA, CHAVE_HMAC, KID, Mundo, capturarRegistros } from "./apoio";
 
@@ -410,5 +410,74 @@ describe("repetição de desafio encerrado (M2)", () => {
     expect(fimReal).toEqual({ status: 410, corpo: { erro: "desafio_encerrado" } });
     expect(fimSem).toEqual(fimReal);
     ultimoCodigo();
+  });
+});
+
+describe("chave de assinatura (Ed25519 nativo)", () => {
+  /** Dependências com contadores de chamadas ao objeto do destino e ao limite por IP. */
+  function depsContadas(extra: Partial<ReturnType<Mundo["deps"]>> = {}) {
+    const base = mundo.deps();
+    const chamadas = { destino: 0, ip: 0 };
+    return {
+      chamadas,
+      deps: {
+        ...base,
+        destino: (h: string) => { chamadas.destino++; return base.destino(h); },
+        ip: (h: string) => { chamadas.ip++; return base.ip(h); },
+        ...extra,
+      },
+    };
+  }
+
+  it("falha na importação: 503 sem chamar o destino nem o limite do IP; nada é consumido nem vaza", async () => {
+    const id = (await pedirDesafio(mundo.deps(), entrada())).corpo.desafio_id as string;
+    const codigo = ultimoCodigo();
+    const antes = linhaDesafio(id);
+    const ipsAntes = mundo.ips.size;
+    // A mensagem do erro simulado contém a semente em hex: não pode aparecer nos registros.
+    const sementeHex = "22".repeat(32);
+    const { deps, chamadas } = depsContadas({
+      importarChaveAssinatura: async () => { throw new Error(`falha simulada ${sementeHex}`); },
+    });
+
+    const v = await validarDesafio(deps, { desafioId: id, email: EMAIL, segredo: SEGREDO, chave: "valida-falha-0001", codigo, ip: "203.0.113.7" });
+    expect(v).toEqual({ status: 503, corpo: { erro: "servico_indisponivel" } });
+    expect(chamadas).toEqual({ destino: 0, ip: 0 });
+    expect(mundo.ips.size).toBe(ipsAntes);
+    const depois = linhaDesafio(id);
+    expect(depois.tentativas).toBe(antes.tentativas);
+    expect(depois.validado_em).toBeNull();
+    expect(depois.autorizacao_jti).toBeNull();
+    const juntos = registros.linhas.join("\n");
+    expect(juntos).toContain("importação da chave de assinatura");
+    expect(juntos).not.toContain(sementeHex);
+    expect(juntos).not.toContain("falha simulada");
+
+    // O código continua válido: a validação normal autoriza.
+    expect((await validar(id, codigo, "valida-depois-001")).status).toBe(200);
+  });
+
+  it("falha em crypto.subtle.sign depois do consumo: a repetição com a mesma chave recupera a mesma autorização", async () => {
+    const r = await pedirDesafio(mundo.deps(), entrada());
+    const id = r.corpo.desafio_id as string;
+    const codigo = ultimoCodigo();
+    const espia = vi.spyOn(crypto.subtle, "sign").mockRejectedValueOnce(new Error("falha simulada na assinatura"));
+    try {
+      await expect(validar(id, codigo, "valida-repete-001")).rejects.toThrow("falha simulada na assinatura");
+    } finally {
+      espia.mockRestore();
+    }
+    // O código foi consumido no objeto (uso único preservado)...
+    expect(linhaDesafio(id).validado_em).not.toBeNull();
+    // ...e a mesma Idempotency-Key devolve a autorização, com a validade original.
+    const v = await validar(id, codigo, "valida-repete-001");
+    expect(v.status).toBe(200);
+    expect(v.corpo.expira_em).toBe(r.corpo.expira_em);
+    const conteudo = verificarAutorizacao(v.corpo.autorizacao as string, { [KID]: chavePublicaDe(CHAVE_ASSINATURA) });
+    expect(conteudo).toMatchObject({ fin: "cadastro", ctx: CONTEXTO, kid: KID });
+    expect(conteudo!.exp).toBe(Math.floor(Date.parse(r.corpo.expira_em as string) / 1000));
+    expect((await validar(id, codigo, "valida-repete-001")).corpo.autorizacao).toBe(v.corpo.autorizacao);
+    // Outra chave continua recusada.
+    expect((await validar(id, codigo, "valida-outra-0003")).status).toBe(410);
   });
 });

@@ -14,12 +14,12 @@ import { describe, expect, it } from "vitest";
 import { INTERVALO_REENVIO_MS, TETO_GLOBAL_DIA } from "../../src/config";
 import { emailValido, normalizarEmail } from "../../src/email";
 import { criarApp } from "../../src/http";
+import { PREFIXO_ASSINATURA, assinarAutorizacao, importarChaveAssinatura } from "../../src/nucleo/autorizacao";
 import {
-  PREFIXO_ASSINATURA,
-  assinarAutorizacao,
+  assinarAutorizacaoReferencia,
   chavePublicaDe,
   verificarAutorizacao,
-} from "../../src/nucleo/autorizacao";
+} from "../../src/nucleo/autorizacao_referencia";
 import { paraBase64Url, sha256Hex } from "../../src/nucleo/cripto";
 import {
   lerDestinatarios,
@@ -55,8 +55,9 @@ const DADOS: DadosAutorizacao = {
   expiraEm: Date.UTC(2026, 9, 1, 12, 10, 0, 999),
 };
 
-function vetores() {
-  const valido = assinarAutorizacao(DADOS, KID, CHAVE_ASSINATURA);
+async function vetores() {
+  // Assinado pelo serviço (Ed25519 nativo); o arquivo versionado não muda.
+  const valido = await assinarAutorizacao(DADOS, KID, await importarChaveAssinatura(CHAVE_ASSINATURA));
   const [payload, assinatura] = valido.split(".");
   const conteudo = (o: Record<string, unknown>) => JSON.stringify(o);
   const base = {
@@ -95,8 +96,10 @@ function vetores() {
 }
 
 describe("vetores de assinatura", () => {
-  it("coincidem com o arquivo compartilhado e com o verificador de referência", () => {
-    const v = vetores();
+  it("coincidem com o arquivo compartilhado e com o verificador de referência", async () => {
+    const v = await vetores();
+    // A assinatura nativa é idêntica à de referência em JavaScript.
+    expect(v.valido.token).toBe(assinarAutorizacaoReferencia(DADOS, KID, CHAVE_ASSINATURA));
     const publicas = { [KID]: hexToBytes(v.chave_publica_hex) };
     expect(verificarAutorizacao(v.valido.token, publicas)).toEqual(v.valido.conteudo);
     for (const motivo of ["conteudo_alterado", "assinatura_de_outro_conteudo", "kid_desconhecido", "chave_errada"]) {
