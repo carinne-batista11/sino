@@ -1,14 +1,42 @@
-// Configuração local do serviço de códigos do Sino. Não contém account_id
-// nem segredos; os segredos ficam em .dev.vars (ignorado pelo Git) no
-// desenvolvimento local. Este serviço ainda não foi publicado. REMETENTE e
-// RESPONDER_PARA não têm valor aqui nem padrão no código: sem eles, o serviço
-// responde indisponível e não chama a Resend.
+// Configuração de PRODUÇÃO RESTRITA do serviço de códigos do Sino (ERS v7.0,
+// E4/M8; decisões 5 e 6 de 15/10/2026). Entrada src/index.ts (só Resend).
+// Ainda não publicada: o deploy só acontece com autorização da autora.
+//
+// Não contém account_id nem segredos. Os segredos de produção (CHAVE_HMAC,
+// CHAVE_ASSINATURA, DESTINATARIOS_PERMITIDOS e RESEND_API_KEY) são NOVOS,
+// gerados por ferramentas/producao_segredos.py numa pasta fora do Git, e vão
+// para os Workers Secrets no próprio deploy, com --secrets-file; nunca
+// reaproveitados do desenvolvimento, do T1 nem do T2. No desenvolvimento
+// local, os segredos ficam em .dev.vars (ignorado pelo Git).
+//
+// Variáveis só públicas. Edite-as AQUI, nunca no painel: o deploy substitui
+// as variáveis pelas deste arquivo. KID_ASSINATURA "prod-1" é exclusivo da
+// produção (desenvolvimento "dev-1", T1 "teste-1", T2 "t2-1"); trocar a chave
+// de assinatura exige trocar o KID no MESMO deploy. REMETENTE e
+// RESPONDER_PARA: valores aprovados pela autora (08/10/2026, confirmados em
+// 13/10/2026); sem eles, o serviço responde indisponível e não chama a Resend.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sino-servico-codigos",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "send_metrics": false,
+  // Só o endereço <name>.<subdomínio>.workers.dev (decisão 1); sem rotas nem
+  // domínio personalizado e sem URLs de prévia por versão.
+  "workers_dev": true,
+  "preview_urls": false,
+  // Decisão 6 (alternativa A): Workers Logs, registros de invocação, traces e
+  // Issues desligados, com amostragem 0 e "persist": false como reforço, como
+  // no T2. A Política de Privacidade descreve Logs e Traces desligados. O
+  // acompanhamento usa só as métricas agregadas dos painéis; `wrangler tail`
+  // apenas em incidente autorizado, só na tela, sem gravar.
+  "observability": {
+    "enabled": false,
+    "head_sampling_rate": 0,
+    "logs": { "enabled": false, "invocation_logs": false, "head_sampling_rate": 0, "persist": false },
+    "traces": { "enabled": false, "head_sampling_rate": 0, "persist": false },
+    "issues": { "enabled": false }
+  },
   "durable_objects": {
     "bindings": [
       { "name": "DESTINO", "class_name": "DestinoDO" },
@@ -20,6 +48,8 @@
     { "tag": "v1", "new_sqlite_classes": ["DestinoDO", "LimiteIpDO", "TetoGlobalDO"] }
   ],
   "vars": {
-    "KID_ASSINATURA": "dev-1"
+    "KID_ASSINATURA": "prod-1",
+    "REMETENTE": "Sino <nao-responda@envios.appsino.com.br>",
+    "RESPONDER_PARA": "sino.lembrete.contas@gmail.com"
   }
 }

@@ -20,3 +20,6 @@ REMETENTE=
 RESPONDER_PARA=
 # O token do ambiente T2 (TOKEN_ACESSO) não entra aqui: os segredos do T2 são
 # gerados por ferramentas/t2_segredos.py numa pasta fora do repositório.
+# Os segredos da PRODUÇÃO também não entram aqui: são novos, gerados por
+# ferramentas/producao_segredos.py numa pasta fora do repositório e enviados
+# aos Workers Secrets no deploy (--secrets-file).

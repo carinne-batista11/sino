@@ -108,9 +108,9 @@ describe("configuração do ambiente T2 (wrangler.t2.jsonc)", () => {
 
 describe("configurações existentes preservadas", () => {
   it("produção: mesma entrada e sem remetente de reserva; T1: inalterada", () => {
+    // A configuração de produção completa é fixada em ambiente_producao.test.ts.
     expect(producao.name).toBe("sino-servico-codigos");
     expect(producao.main).toBe("src/index.ts");
-    expect(producao.vars).toEqual({ KID_ASSINATURA: "dev-1" });
     expect(texto("wrangler.jsonc")).not.toContain("onboarding@resend.dev");
     expect(teste.name).toBe("sino-servico-codigos-teste");
     expect(teste.main).toBe("src/teste.ts");

@@ -25,7 +25,7 @@ pendente: faltam a produção restrita e a configuração da versão do aplicati
 | `src/index.ts`, `src/dev.ts`, `src/teste.ts`, `src/t2.ts` | Entradas do Worker: produção (Resend), desenvolvimento (caixa local), ambiente remoto de testes do T1 (descarte e token, `src/acesso_teste.ts`) e ambiente T2 (produção + token) |
 | `test/nucleo/` | Testes das regras com o SQLite do Node (mesmos comandos SQL dos objetos) |
 | `test/workers/` | Testes no simulador local dos Durable Objects (concorrência, falhas parciais, alarmes) |
-| `ferramentas/` | Ferramentas locais: caixa de mensagens e modo de demonstração (desenvolvimento), `destinatarios.py` (gera a lista de destinatários), `teste_remoto.py` (roteiro do T1), `t2_segredos.py` e `t2_app.py` (segredos e cópia isolada do app do T2) |
+| `ferramentas/` | Ferramentas locais: caixa de mensagens e modo de demonstração (desenvolvimento), `destinatarios.py` (gera a lista de destinatários), `teste_remoto.py` (roteiro do T1), `t2_segredos.py` e `t2_app.py` (segredos e cópia isolada do app do T2), `producao_segredos.py` (segredos da produção restrita) |
 
 ## Testes
 
@@ -45,7 +45,70 @@ O simulador local roda sem login nem conta na Cloudflare.
 Nenhum segredo fica no repositório. Para rodar o Worker localmente, copie
 `.dev.vars.example` para `.dev.vars` (ignorado pelo Git) e preencha só na sua
 máquina. Os valores usados nos testes (`vitest.config.ts`) são fixos e não são
-credenciais.
+credenciais. Os segredos da produção são outros e nunca passam por `.dev.vars`
+(ver "Produção restrita").
+
+## Produção restrita (E4/M8; decisões 5 e 6 de 15/10/2026; ainda não publicada)
+
+Configuração em `wrangler.jsonc` (fixada por `test/nucleo/ambiente_producao.test.ts`):
+Worker `sino-servico-codigos`, entrada `src/index.ts`, só
+`https://sino-servico-codigos.<subdomínio>.workers.dev` (subdomínio neutro da
+conta, decisão 1; pretendido `appsino`, sujeito à disponibilidade), sem rotas
+nem Preview URLs. Variáveis só públicas: `KID_ASSINATURA` `prod-1` (exclusivo
+da produção), `REMETENTE` e `RESPONDER_PARA`. Edite-as no arquivo, nunca no
+painel: o deploy substitui as variáveis pelas do arquivo.
+
+**Observabilidade (decisão 6, alternativa A):** Workers Logs, registros de
+invocação, Traces e Issues desligados, como no T2 (a Política de Privacidade
+descreve Logs e Traces desligados). O acompanhamento usa só as métricas
+agregadas dos painéis (Cloudflare: requisições, erros, CPU e duração, Durable
+Objects; Resend: cota e situação dos envios). `wrangler tail` só em incidente
+autorizado pela autora, na tela, sem gravar em arquivo. O próprio código
+registra só contexto e tipo do erro (`src/nucleo/registro.ts`).
+
+**Segredos (decisão 5):** `CHAVE_HMAC`, `CHAVE_ASSINATURA`,
+`DESTINATARIOS_PERMITIDOS` e `RESEND_API_KEY` ficam nos Workers Secrets,
+enviados no próprio deploy com `--secrets-file` (sem intervalo sem segredos).
+São novos, nunca os do desenvolvimento, do T1 ou do T2. A chave da Resend é
+exclusiva da produção (só envio, restrita a `envios.appsino.com.br`). A
+autora guarda no gerenciador de senhas uma cópia de recuperação da
+`CHAVE_HMAC` (sem ela, a lista de destinatários não pode ser atualizada sem
+trocar a chave) e da semente Ed25519 (`CHAVE_ASSINATURA`). A lista e a chave
+da Resend não são guardadas: a lista é regenerada a partir da `CHAVE_HMAC` e
+a chave da Resend é revogada e recriada se perdida. Arquivos `.env` e
+`.env.*` são ignorados pelo Git em qualquer pasta.
+
+```bash
+.venv/bin/python servidor/ferramentas/producao_segredos.py preparar --pasta <pasta nova, caminho absoluto> --url https://sino-servico-codigos.<subdomínio>.workers.dev
+.venv/bin/python servidor/ferramentas/producao_segredos.py chave-resend --pasta <pasta>   # num terminal interativo
+.venv/bin/python servidor/ferramentas/producao_segredos.py conferir --pasta <pasta>       # sem mostrar valores
+.venv/bin/python servidor/ferramentas/producao_segredos.py descartar --pasta <pasta>      # só preparação incompleta
+```
+
+- mesmas garantias de `t2_segredos.py` (pasta 700 fora de qualquer repositório
+  Git, arquivos 600 nunca sobrescritos, e-mails sem eco, nada sensível no
+  terminal, desfazimento de falhas);
+- grava `segredos.json` (para `--secrets-file`), `recuperacao.json` (cópia de
+  recuperação: `CHAVE_HMAC`, semente, KID e chave pública) e
+  `app_producao.json` (só valores públicos: URL e chave pública `prod-1`, para
+  a versão do aplicativo);
+- `conferir` confere formatos, a lista contra a `CHAVE_HMAC`, a cópia de
+  recuperação, a correspondência entre semente e chave pública (uma
+  autorização fictícia assinada com a semente e verificada pelo código do
+  aplicativo), o KID de `wrangler.jsonc` e a presença da chave da Resend.
+
+Deploy (só com autorização da autora, no terminal dela): na pasta `servidor/`,
+`npx wrangler deploy --secrets-file <pasta>/segredos.json`. Depois:
+conferência no painel (Logs, Traces, Issues e Preview URLs desligados; três
+variáveis; quatro segredos só por nome), cópia de recuperação guardada,
+arquivos da pasta apagados um a um e `npx wrangler logout`.
+
+**Rotação:** a chave de assinatura e o `KID_ASSINATURA` mudam sempre no MESMO
+deploy (com `--secrets-file`), depois de uma versão do aplicativo que conheça
+as duas chaves públicas; autorizações em andamento podem ser recusadas na
+troca, mas os códigos pendentes não dependem dessa chave. Trocar a
+`CHAVE_HMAC` invalida os códigos pendentes, zera os contadores de limite
+(objetos com outro nome) e exige gerar a lista de novo no mesmo deploy.
 
 ## Lista de destinatários (contrato v1.1)
 

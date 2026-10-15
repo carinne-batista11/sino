@@ -54,6 +54,14 @@ Preparada e revisada em 13/10/2026 (P42), com auditoria de segurança e correç�
 - **Ressalvas:** um teste antigo de carga, executado localmente, passa só em parte das execuções, tanto antes quanto depois desta mudança, provavelmente por limitação do simulador (não comprovado). O desempenho real só será conhecido depois de medir o serviço publicado.
 - **Situação:** o serviço definitivo ainda não foi publicado; esta mudança não envolveu nenhum deploy. A E4 continua em andamento.
 
+### Preparação da produção restrita (decisões 5 e 6; 15/10/2026, ainda sem publicação)
+
+- **Segredos:** os segredos do serviço definitivo serão novos, guardados no armazenamento de segredos da Cloudflare e nunca no repositório. A autora guarda cópias de recuperação das duas chaves principais no gerenciador de senhas dela. O serviço definitivo usa um identificador de chave próprio, diferente dos ambientes de teste. Arquivos de ambiente (`.env`) ficam fora do Git.
+- **Registros:** os registros detalhados e o rastreamento da Cloudflare continuam desligados, como já informa a Política de Privacidade; o acompanhamento usa só números agregados dos painéis.
+- **Ferramenta:** nova ferramenta local para preparar e conferir os segredos sem mostrá-los. Testada só com dados fictícios; nenhum segredo real foi gerado.
+- **Testes:** 260 do serviço e 1064 do aplicativo aprovados.
+- **Situação:** nada foi publicado; o endereço definitivo depende da disponibilidade do nome na Cloudflare. A E4 continua em andamento.
+
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 
 Segunda entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.49, P39, contrato v1.1). A publicação é **do código no GitHub**: o serviço de códigos continua sem deploy, não há envio real de e-mails e o Sino não foi liberado para terceiros (E4 e seção 11.3 da ERS). Suítes: 950 testes do aplicativo e 215 do serviço aprovados, em bancos temporários e ambientes isolados. Validação manual no modo de demonstração, só com endereços fictícios e a caixa local: as mensagens foram observadas pela autora, e os efeitos (duas mensagens na caixa, a conta criada e o e-mail alterado, nenhuma conta dos pedidos recusados) foram conferidos nos arquivos da demonstração.

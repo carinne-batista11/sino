@@ -1033,10 +1033,10 @@ Critérios existentes, sem alteração: a definição da E4 (ERS v7.0, seção 1
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).
-* **Decisões 5 a 9 da produção restrita e lançamento da versão do app (pendentes):** ver "E4 — produção restrita: planejamento, decisões e otimização O1".
+* **Decisões 7 a 9 da produção restrita e lançamento da versão do app (pendentes):** ver "E4 — produção restrita: planejamento, decisões e otimização O1". Decisões 5 e 6 aprovadas e implementadas localmente em 15/10/2026, sem commit nem deploy.
 * **CPU real na Cloudflare (P43):** a otimização O1 (14/10/2026) foi feita só com medições locais; o critério original da P43 continua **não atendido** e depende de medição real no serviço publicado.
 
-### E4 — produção restrita: planejamento, decisões e otimização O1 (14/10/2026)
+### E4 — produção restrita: planejamento, decisões e otimização O1 (14/10/2026; atualizada em 15/10/2026)
 
 **Situação:** só planejamento, decisões da autora e uma otimização de código publicada no GitHub (sem implantação na Cloudflare). **Nenhum deploy definitivo**, nenhuma alteração de DNS, nenhuma contratação. A E4 e a M8 **não estão concluídas**.
 
@@ -1047,24 +1047,35 @@ Critérios existentes, sem alteração: a definição da E4 (ERS v7.0, seção 1
 * App: `URL_PRODUCAO = None` e `CHAVES_PUBLICAS_PRODUCAO = {}` em `backend/servico_codigos.py`; a "configuração da versão do app" consiste em preenchê-los e lançar uma versão.
 * A produção restrita é pública e sem token: terceiros podem consumir os limites dos endereços autorizados (ver decisão 3).
 
-#### Decisões aprovadas pela autora (14/10/2026)
+#### Decisões aprovadas pela autora (14 e 15/10/2026)
 
 1. **Endereço:** a produção restrita usará inicialmente o `workers.dev`, com subdomínio **neutro**, sem nome pessoal. O atual `carinnebatista11` deve ser trocado antes, porque o endereço fica fixado na versão do app. O nome definitivo depende de conferência de disponibilidade e de aprovação da autora. **Sem alteração de DNS nesta fase.** Domínio próprio, que exigiria zona na Cloudflare e mudança dos servidores de nomes no Registro.br, só será avaliado no futuro. **Nenhum deploy autorizado.**
 2. **Planos:** Cloudflare Workers Free e Resend Free aprovados inicialmente; **nenhum plano pago autorizado**. Acompanhar CPU, requisições, limites dos Durable Objects e envios. O Workers Paid só será reavaliado se os resultados técnicos justificarem, com nova autorização. Esta decisão não altera nem dispensa a P43.
 3. **Abuso:** na produção restrita, **manter** as proteções existentes (limites por IP e por destinatário, teto global de envios); acompanhar consumo e possíveis abusos só pelas métricas disponíveis, respeitando a Política e a decisão de manter Logs e Traces desligados; **aceitar** nesta fase o risco residual de terceiros consumirem os limites de um destinatário autorizado; **reavaliar** a proteção adicional por dispositivo ("duas cotas", com token por instalação) antes de liberar o Sino a terceiros. A aprovação não autoriza implementação, mudança no contrato da API, deploy nem alteração de limites.
 4. **CPU:** o Workers Free continua sendo o plano escolhido; **investigar a CPU antes do deploy definitivo** e avaliar otimizações possíveis, começando por diagnóstico só de leitura. A P43 original continua **não atendida**. Nenhuma alteração de critério, contratação ou implantação autorizada. *(A investigação levou à O1, implementada e publicada no GitHub com autorização própria, sem implantação na Cloudflare; ver abaixo.)*
+5. **Segredos de produção (15/10/2026):** `CHAVE_HMAC`, `CHAVE_ASSINATURA`, `DESTINATARIOS_PERMITIDOS` e `RESEND_API_KEY` nos **Workers Secrets**, enviados no próprio deploy com `--secrets-file`; segredos **novos**, sem reaproveitar os do desenvolvimento, do T1 ou do T2; **KID exclusivo** da produção (`prod-1`); **cópias seguras de recuperação** da `CHAVE_HMAC` e da semente Ed25519 no gerenciador de senhas da autora (a lista é regenerada a partir da `CHAVE_HMAC`; a chave da Resend é revogada e recriada se perdida); arquivos `.env` e `.env.*` protegidos no `.gitignore`. Variáveis públicas (`KID_ASSINATURA`, `REMETENTE`, `RESPONDER_PARA`) só em `wrangler.jsonc`, nunca no painel. A chave de assinatura e o KID mudam sempre no mesmo deploy. *(A recomendação do diagnóstico era guardar só a `CHAVE_HMAC`; a autora aprovou guardar também a semente Ed25519.)*
+6. **Observabilidade (15/10/2026), alternativa A:** Workers Logs, registros de invocação, Traces e Issues **desligados**, como no T2, coerente com a Política; acompanhamento só pelas **métricas agregadas** dos painéis da Cloudflare e da Resend; `wrangler tail` **somente em incidente autorizado** pela autora, na tela, sem gravar. Observabilidade mínima e alertas automáticos ficam para reavaliar antes da disponibilização a terceiros (exigiriam revisar a Política). A medição real da CPU (P43) depois do deploy usa as métricas agregadas e, se confirmada a disponibilidade no plano Free, a API GraphQL Analytics; a P43 continua **não atendida**.
+
+Escolhas da autora para a implantação (15/10/2026): subdomínio pretendido **`appsino`** (`https://sino-servico-codigos.appsino.workers.dev`), **sujeito à disponibilidade** na Cloudflare (conferida só no painel, na troca); lista de destinatários da produção restrita com o e-mail principal da autora e **um segundo endereço** dela, para o CT138 (alteração de e-mail).
 
 #### Decisões pendentes (nenhuma tomada)
 
 | # | Tema | Recomendação do planejamento (**não aprovada**) |
 |---|---|---|
-| 5 | Guarda dos segredos de produção | Guardar só a `CHAVE_HMAC` em gerenciador de senhas |
-| 6 | Observabilidade do Worker de produção | Desligada |
-| 7 | CT138 completo no envio real (alteração de e-mail, segundo endereço) | — |
+| 7 | CT138 completo no envio real (alteração de e-mail, segundo endereço) | — *(segundo endereço já incluído na lista planejada, 15/10/2026)* |
 | 8 | Expiração verificada no próprio serviço, por script controlado | Sim, com um envio |
 | 9 | DMARC | Investigar o domínio principal antes; `p=none` em `envios` na fase restrita |
 
 Também pendente: o lançamento da versão do app configurada para a produção.
+
+#### Implementação das decisões 5 e 6 (15/10/2026; local, sem commit, sem deploy)
+
+* **`servidor/wrangler.jsonc`:** `workers_dev: true`, `preview_urls: false`, bloco `observability` idêntico ao do T2 (tudo desligado, amostragem 0, `persist: false`, Issues desligado) e variáveis só públicas: `KID_ASSINATURA` `prod-1`, `REMETENTE` e `RESPONDER_PARA` aprovados. Sem `account_id`, rotas nem segredos.
+* **Testes:** `servidor/test/nucleo/ambiente_producao.test.ts` (novo) fixa a configuração de produção (só `workers.dev`, sem rotas, ambientes, `keep_vars`, Logpush nem consumidores de tail; observabilidade igual à do T2; os três objetos e a migração `v1`; KID diferente de `dev-1`, `teste-1` e `t2-1`; nenhum segredo nem valor de desenvolvimento no conteúdo efetivo); a asserção antiga do KID `dev-1` em `ambiente_t2.test.ts` foi retirada.
+* **`.gitignore`:** `.env` e `.env.*` em qualquer pasta (o modelo `servidor/.dev.vars.example` continua versionado).
+* **Ferramenta `servidor/ferramentas/producao_segredos.py`** (comandos `preparar`, `chave-resend`, `conferir`, `descartar`), reaproveitando as operações de pasta e arquivo privado de `t2_segredos.py`: segredos novos; `segredos.json` (para `--secrets-file`), `recuperacao.json` (cópia de recuperação da `CHAVE_HMAC` e da semente, com KID e chave pública) e `app_producao.json` (só URL e chave pública `prod-1`); KID conferido contra `wrangler.jsonc`; `conferir` valida tudo sem mostrar valores, inclusive uma autorização fictícia assinada com a semente e verificada pelo código do aplicativo. Testes em `tests/test_producao_segredos.py` (30), só com dados fictícios. **Nenhum segredo real gerado.**
+* **Resultados:** typecheck OK; serviço **260/260** (eram 254); app **1064/1064** (eram 1034; mais 30 da ferramenta); `wrangler deploy --dry-run` local (4.146.0, sem login): 70,72 KiB, gzip 19,07 KiB, só as três variáveis públicas e os três Durable Objects. O pool de testes do simulador (Wrangler 4.124.0 embutido) avisa que não conhece o campo `observability.issues`; o Wrangler 4.146.0 do projeto aceita o campo sem aviso (o mesmo do T2).
+* **Pendentes:** commit B (URL e chave pública no aplicativo) depois da geração dos segredos; troca do subdomínio, chave da Resend de produção e cópias de recuperação (ações da autora); reconferência das fontes oficiais antes do deploy; deploy só com autorização.
 
 #### Otimização O1: assinatura Ed25519 nativa (commit `981d1e89888b85013cdbac2a8ba1341570a2e981`, publicado no GitHub em 14/10/2026; sem implantação na Cloudflare)
 

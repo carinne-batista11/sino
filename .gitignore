@@ -18,3 +18,8 @@ servidor/.wrangler/
 servidor/.dev.vars
 servidor/.dev.vars.*
 !servidor/.dev.vars.example
+
+# Arquivos de ambiente (.env), em qualquer pasta: o Wrangler e outras
+# ferramentas os leem como segredos locais. Decisão 5 (15/10/2026).
+.env
+.env.*
