@@ -16,6 +16,7 @@ import httpx
 
 from apoio_servico import (
     AGORA_SERVIDOR_MS,
+    CHAVE_PRIVADA,
     DESAFIO,
     KID,
     URL_BASE,
@@ -48,6 +49,16 @@ def autorizacao_ok(operacao, agora=T + 30_000, exp_s=EXP_S, **trocas):
     return resposta(200, {"autorizacao": token, "expira_em": iso(T + VALIDADE_MS), "agora": iso(agora)})
 
 
+def sem_producao():
+    """Simula uma instalação sem os valores de produção (como antes da E4/M8)."""
+    from contextlib import ExitStack
+
+    pilha = ExitStack()
+    pilha.enter_context(mock.patch.object(sc, "URL_PRODUCAO", None))
+    pilha.enter_context(mock.patch.object(sc, "CHAVES_PUBLICAS_PRODUCAO", {}))
+    return pilha
+
+
 class TestConfiguracao(unittest.TestCase):
     CHAVE = "11" * 32
 
@@ -64,14 +75,17 @@ class TestConfiguracao(unittest.TestCase):
                     sc.validar_url_base(url)
 
     def test_configuracao_do_ambiente(self):
-        self.assertIsNone(sc.configuracao_do_ambiente({}))
         config = sc.configuracao_do_ambiente(
             {"SINO_SERVICO_URL": "http://127.0.0.1:8787", "SINO_SERVICO_CHAVES": f"dev-1:{'22' * 32}"},
         )
         self.assertEqual(config.url_base, "http://127.0.0.1:8787")
         self.assertEqual(list(config.chaves_publicas), ["dev-1"])
-        # Sem chaves públicas, o serviço é considerado não configurado.
-        self.assertIsNone(sc.configuracao_do_ambiente({"SINO_SERVICO_URL": "https://x.com"}))
+
+    def test_instalacao_sem_producao_nao_tem_servico(self):
+        # Sem URL ou sem chaves públicas, o serviço é considerado não configurado.
+        with sem_producao():
+            self.assertIsNone(sc.configuracao_do_ambiente({}))
+            self.assertIsNone(sc.configuracao_do_ambiente({"SINO_SERVICO_URL": "https://x.com"}))
 
     def test_configuracao_invalida_registra_so_o_tipo(self):
         with capturar_stderr() as saida:
@@ -121,7 +135,8 @@ class TestTokenDeAcesso(unittest.IsolatedAsyncioTestCase):
     def test_sem_variavel_a_configuracao_nao_tem_token(self):
         config = sc.configuracao_do_ambiente({"SINO_SERVICO_URL": URL_T2, "SINO_SERVICO_CHAVES": CHAVES_T2})
         self.assertIsNone(config.token_acesso)
-        self.assertIsNone(sc.configuracao_do_ambiente({}))
+        with sem_producao():
+            self.assertIsNone(sc.configuracao_do_ambiente({}))
 
     def test_com_url_do_ambiente_le_o_token(self):
         config = sc.configuracao_do_ambiente(
@@ -182,6 +197,74 @@ class TestTokenDeAcesso(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({r.cabecalhos for r in pedidos}), 1)
         self.assertNotIn(TOKEN_FICTICIO, saida.getvalue())
         self.assertNotIn(TOKEN_FICTICIO, repr(cliente._configuracao))
+
+
+# Produção restrita (E4/M8, decisões 1 e 5): valores públicos conferidos
+# contra servidor/wrangler.jsonc. A chave pública vem de app_producao.json,
+# gerado com os segredos (a semente nunca entra no repositório).
+URL_DEFINITIVA = "https://sino-servico-codigos.appsino.workers.dev"
+CHAVE_PUBLICA_PROD_1 = "71697e86735eb2085720c9e9566db1e607a41a86174040242aabe9c8f49cc2e6"
+WRANGLER_PRODUCAO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servidor", "wrangler.jsonc")
+
+
+def configuracao_wrangler_producao():
+    """wrangler.jsonc sem os comentários (só em linha própria)."""
+    with open(WRANGLER_PRODUCAO, encoding="utf-8") as arquivo:
+        linhas = [l for l in arquivo.read().splitlines() if not l.strip().startswith("//")]
+    return json.loads("\n".join(linhas))
+
+
+def bytes_da_chave(chave):
+    from cryptography.hazmat.primitives import serialization
+
+    return chave.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+
+
+class TestConfiguracaoProducao(unittest.TestCase):
+    """Valores de produção do aplicativo (sem variáveis de ambiente)."""
+
+    def test_url_definitiva_do_worker_em_workers_dev(self):
+        self.assertEqual(sc.URL_PRODUCAO, URL_DEFINITIVA)
+        self.assertEqual(sc.validar_url_base(sc.URL_PRODUCAO), URL_DEFINITIVA)
+        nome = configuracao_wrangler_producao()["name"]
+        self.assertTrue(sc.URL_PRODUCAO.startswith(f"https://{nome}."))
+        self.assertTrue(sc.URL_PRODUCAO.endswith(".workers.dev"))
+
+    def test_so_a_chave_publica_do_kid_de_producao(self):
+        kid = configuracao_wrangler_producao()["vars"]["KID_ASSINATURA"]
+        self.assertEqual(kid, "prod-1")
+        self.assertEqual(list(sc.CHAVES_PUBLICAS_PRODUCAO), [kid])
+        self.assertEqual(bytes_da_chave(sc.CHAVES_PUBLICAS_PRODUCAO[kid]).hex(), CHAVE_PUBLICA_PROD_1)
+
+    def test_sem_variaveis_usa_a_producao_sem_token(self):
+        for ambiente in ({}, {"SINO_SERVICO_TOKEN": TOKEN_FICTICIO}):
+            with self.subTest(ambiente=sorted(ambiente)):
+                config = sc.configuracao_do_ambiente(ambiente)
+                self.assertEqual(config.url_base, URL_DEFINITIVA)
+                self.assertEqual(list(config.chaves_publicas), ["prod-1"])
+                self.assertIsNone(config.token_acesso)
+        # A configuração recebe uma cópia: alterá-la não muda a da produção.
+        config.chaves_publicas.clear()
+        self.assertEqual(list(sc.CHAVES_PUBLICAS_PRODUCAO), ["prod-1"])
+
+    def test_variaveis_do_ambiente_continuam_substituindo_a_producao(self):
+        config = sc.configuracao_do_ambiente({"SINO_SERVICO_URL": URL_T2, "SINO_SERVICO_CHAVES": CHAVES_T2})
+        self.assertEqual((config.url_base, list(config.chaves_publicas)), (URL_T2, ["t2-1"]))
+        config = sc.configuracao_do_ambiente({"SINO_SERVICO_CHAVES": CHAVES_T2})
+        self.assertEqual((config.url_base, list(config.chaves_publicas)), (URL_DEFINITIVA, ["t2-1"]))
+
+    def test_assinatura_de_outra_chave_com_o_kid_de_producao_e_recusada(self):
+        import autorizacao_servico
+
+        conteudo = {"v": 1, "kid": "prod-1", "jti": "anRpLWRlLXRlc3RlLTAwMQ", "fin": "cadastro",
+                    "ctx": "ab" * 32, "iat": 1_700_000_000, "exp": 1_700_000_600}
+        token = assinar(conteudo)   # chave de teste, não a de produção
+        # Controle: o mesmo token é aceito com a chave pública de teste.
+        self.assertEqual(autorizacao_servico.verificar_assinatura(token, {"prod-1": CHAVE_PRIVADA.public_key()}).kid,
+                         "prod-1")
+        with self.assertRaises(autorizacao_servico.AutorizacaoInvalidaError) as erro:
+            autorizacao_servico.verificar_assinatura(token, sc.CHAVES_PUBLICAS_PRODUCAO)
+        self.assertEqual(str(erro.exception), "assinatura")
 
 
 class TestOperacao(unittest.TestCase):

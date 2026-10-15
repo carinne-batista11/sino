@@ -60,9 +60,14 @@ BYTES_NONCE = 32
 BYTES_SEGREDO = 32
 BYTES_CHAVE = 18
 
-# Produção: definidos quando o serviço for publicado (hospedagem pendente).
-URL_PRODUCAO = None
-CHAVES_PUBLICAS_PRODUCAO = {}
+# Produção restrita (ERS v7.0, E4/M8; decisões 1 e 5 de 15/10/2026): Worker
+# sino-servico-codigos em workers.dev e a chave pública do KID prod-1 (só a
+# pública; a semente fica só nos segredos do Worker). SINO_SERVICO_URL e
+# SINO_SERVICO_CHAVES, se definidas, continuam substituindo estes valores.
+URL_PRODUCAO = "https://sino-servico-codigos.appsino.workers.dev"
+CHAVES_PUBLICAS_PRODUCAO = {
+    "prod-1": autorizacao.chave_publica_de_hex("71697e86735eb2085720c9e9566db1e607a41a86174040242aabe9c8f49cc2e6"),
+}
 
 _RE_DESAFIO = re.compile(r"[A-Za-z0-9_-]{22}")
 _RE_INSTANTE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z")
@@ -135,8 +140,9 @@ def ler_token_de_acesso(texto):
 def configuracao_do_ambiente(ambiente=None):
     """
     Configuração do serviço: SINO_SERVICO_URL e SINO_SERVICO_CHAVES no
-    desenvolvimento; os valores de produção quando existirem. Devolve None se
-    o serviço não estiver configurado (as telas mostram indisponível).
+    desenvolvimento e nos testes; sem elas, URL_PRODUCAO e
+    CHAVES_PUBLICAS_PRODUCAO. Devolve None se o serviço não estiver
+    configurado (as telas mostram indisponível).
 
     SINO_SERVICO_TOKEN (opcional, só ambientes de teste como o T2 da E4) só é
     lido quando SINO_SERVICO_URL vem do ambiente; com a URL de produção, é
