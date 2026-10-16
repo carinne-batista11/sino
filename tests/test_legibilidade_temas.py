@@ -160,6 +160,22 @@ class TesteDeLegibilidade(TesteDeSessao):
         self.ir_para_inicio(pagina)
         self.registrar(pagina, "Início", paleta)
 
+        # v7.0 5.44 (M3): seletor de mês e ano -- mês de hoje exibido (fundo e
+        # contorno juntos, "Mês atual" desativado) e outro mês exibido (hoje só
+        # com contorno).
+        abrir_seletor = next(c for c in self.todos(pagina) if isinstance(c, ft.TextButton)
+                             and c.data == "escolher_mes_e_ano")
+        self.clicar(pagina, abrir_seletor)
+        self.registrar(pagina, "Início/Escolher mês e ano", paleta)
+        self.fechar_dialogos(pagina)
+        seta = lambda icone: next(c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and c.icon == icone)
+        self.clicar(pagina, seta(ft.Icons.CHEVRON_RIGHT))
+        self.clicar(pagina, next(c for c in self.todos(pagina) if isinstance(c, ft.TextButton)
+                                 and c.data == "escolher_mes_e_ano"))
+        self.registrar(pagina, "Início/Escolher mês e ano (outro mês)", paleta)
+        self.fechar_dialogos(pagina)
+        self.clicar(pagina, seta(ft.Icons.CHEVRON_LEFT))
+
         self.clicar(pagina, self.botao(pagina, "Ver status") or self.clicavel_com_texto(pagina, "Ver status"))
         self.registrar(pagina, "Ver status", paleta)
         for filtro in ("Pendentes", "Pagas", "Atrasadas"):
@@ -443,7 +459,12 @@ class TestTemaDoFlet(unittest.TestCase):
                 calendario = tema_flet.date_picker_theme
                 self.assertEqual(calendario.bgcolor, paleta["fundo_dialogo"])
                 self.assertEqual(calendario.header_foreground_color, paleta["texto_principal"])
-                self.assertEqual(calendario.today_foreground_color, paleta["acao_primaria"])
+                # v7.0 5.47 (M6): cor do número de hoje por estado.
+                self.assertEqual(calendario.today_foreground_color, {
+                    ft.ControlState.SELECTED: paleta["texto_sobre_acao"],
+                    ft.ControlState.DEFAULT: paleta["acao_primaria"],
+                })
+                self.assertEqual(calendario.today_border_side.color, paleta["acao_primaria"])
                 self.assertEqual(tema_flet.color_scheme.on_primary, paleta["texto_sobre_acao"])
 
     def test_calendario_no_escuro_tem_contraste(self):

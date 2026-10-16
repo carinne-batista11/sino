@@ -5,9 +5,24 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.7 — E8 e E11: calendários em português e seletor de mês e ano (16/10/2026)
+
+Entrega conjunta da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regras 5.47, M6, e 5.44, M3), implementada em 16/10/2026. ~~**Ainda não publicada:**~~ validação manual concluída em 16/10/2026 (24 de 24 testes aprovados); na data deste registro, o commit e a publicação no GitHub estavam pendentes. *Atualização (16/10/2026):* publicada no GitHub em 16/10/2026, no commit `feat: release Sino 6.7 calendars and month selector` (identificador no histórico do Git).
+
+- **Calendários (E8):** os calendários de Nova conta e Editar conta (vencimento e data de pagamento) passam a aparecer em **português do Brasil**, com a semana começando no **domingo** e os textos "Selecione a data", "Cancelar" e "OK". O número do **dia de hoje** fica legível mesmo quando também é o dia selecionado.
+- **Digitação da data:** continua pelo lápis do calendário, no formato **dd/mm/aaaa**, com barras; o campo se chama "Data (dd/mm/aaaa)" e as mensagens de erro estão em português. A inclusão automática das barras foi analisada e não entrou nesta versão (o calendário nativo usado pelo Sino não permite).
+- **Seletor de mês e ano (E11):** em Início, tocar no mês e ano ("Outubro 2026 ▾") abre um diálogo com o ano e os 12 meses; escolher um mês vai direto para ele. **"Mês atual"** volta para o mês de hoje e **"Cancelar"** fecha sem mudar nada. As setas de mês continuam funcionando como antes.
+- **Destaques:** o mês exibido aparece com fundo verde; o mês de hoje, com contorno.
+- **Anos disponíveis:** do primeiro ano com contas (ou do ano atual) até o último ano com contas (ou cinco anos à frente), incluindo sempre o ano exibido.
+- **Recorrências:** as contas de meses futuros das séries sem término continuam sendo criadas só quando o mês é aberto; abrir o seletor, trocar o ano ou cancelar não cria nada.
+- **Acessibilidade e temas:** seletor acessível pelo teclado e com nomes para leitores de tela; legível nos temas Claro e Escuro.
+- **Testes:** 1146 testes automáticos do aplicativo aprovados (35 novos), em bancos temporários e sem acesso à rede. Validação manual numa cópia isolada, com banco próprio e dados fictícios, feita pela autora: **24 de 24 testes aprovados** (11 dos calendários e 13 do seletor de mês e ano, inclusive com a janela estreita, de cerca de 380 px), sem nenhuma anomalia.
+- **Sem mudanças** no banco de dados (nenhuma migração), nos Termos de Uso, na Política de Privacidade ou no serviço de códigos.
+- **Continua valendo:** o Sino segue sem liberação pública; o envio de códigos continua restrito aos endereços autorizados da autora (Sino 6.3, abaixo).
+
 ## Sino 6.6 — E7: orientação para quem ainda não tem contas (16/10/2026)
 
-Sexta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.43, M2), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes.
+Sexta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.43, M2), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes. *Atualização (16/10/2026):* publicada no GitHub no commit `de06c4eaa2990cfb34a94d55da62a73d896f4e00`.
 
 - **O que muda:** quem ainda não tem nenhuma conta, em nenhum mês, passa a ver em Início a orientação **"Registre suas primeiras contas e tenha tudo sob controle."**, com um ícone de adicionar, no lugar de "Suas contas estão em dia!" (que não fazia sentido para quem nunca cadastrou nada). A lista do mês deixa de mostrar "Nenhuma conta neste mês." nesse caso.
 - **Só informativa:** a orientação não é um botão e não abre nada; as contas continuam sendo cadastradas pelo botão "+".

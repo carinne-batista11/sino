@@ -663,6 +663,23 @@ def rotulo_periodo(modo, ano, mes=None):
     return str(ano) if modo == "anual" else f"{MESES_PT[mes - 1]} de {ano}"
 
 
+def faixa_de_anos(anos_com_contas, ano_atual, ano_exibido):
+    """
+    v7.0 5.44 (M3-2): (primeiro, último) ano do seletor de mês e ano de Início:
+    do menor entre o ano atual e o primeiro ano com contas até o maior entre o
+    ano atual + 5 e o último ano com contas. Inclui também o ano exibido em
+    Início (as setas de mês são livres e podem levar para fora da faixa).
+    """
+    anos = list(anos_com_contas) + [ano_exibido]
+    return min([ano_atual] + anos), max([ano_atual + 5] + anos)
+
+
+def nome_do_mes_no_seletor(ano, mes, exibido, de_hoje):
+    """v7.0 5.44 (M3-4): nome acessível de um mês do seletor, com os estados."""
+    estados = (["exibido"] if exibido else []) + (["mês atual"] if de_hoje else [])
+    return ", ".join([rotulo_periodo("mensal", ano, mes)] + estados)
+
+
 def janela_seis_meses(ano, mes):
     """RF21: o mês (ano, mes) e os cinco anteriores, em ordem."""
     meses = [(ano, mes)]
@@ -858,12 +875,42 @@ def tema_flet(tema):
             header_bgcolor=paleta["fundo_dialogo"],
             header_foreground_color=paleta["texto_principal"],
             divider_color=paleta["divisor"],
-            today_foreground_color=paleta["acao_primaria"],
+            # v7.0 5.47 (M6): a cor do número de hoje depende do estado --
+            # selecionado, o fundo é a cor de ação, então o número usa a cor
+            # de texto sobre ação (antes ficava 1:1 e sumia).
+            today_foreground_color={
+                ft.ControlState.SELECTED: paleta["texto_sobre_acao"],
+                ft.ControlState.DEFAULT: paleta["acao_primaria"],
+            },
             today_border_side=ft.BorderSide(1, paleta["acao_primaria"]),
             cancel_button_style=ft.ButtonStyle(color=paleta["acao_primaria"]),
             confirm_button_style=ft.ButtonStyle(color=paleta["acao_primaria"]),
         ),
     )
+
+
+def configuracao_de_idioma():
+    """v7.0 5.47 (M6): português do Brasil para os textos padrão do Flutter
+    (calendário: meses, dias da semana a partir do domingo, dd/mm/aaaa)."""
+    pt_br = ft.Locale("pt", "BR")
+    return ft.LocaleConfiguration(supported_locales=[pt_br], current_locale=pt_br)
+
+
+# v7.0 5.47 (M6): textos próprios dos calendários de Nova conta e Editar conta.
+TEXTOS_CALENDARIO = {
+    "help_text": "Selecione a data",
+    "cancel_text": "Cancelar",
+    "confirm_text": "OK",
+    "field_label_text": "Data (dd/mm/aaaa)",
+    "error_format_text": "Formato inválido. Use dd/mm/aaaa.",
+    "error_invalid_text": "Data fora do intervalo permitido.",
+}
+
+
+def criar_seletor_data(**opcoes):
+    """`ft.DatePicker` com os textos em português (TEXTOS_CALENDARIO); a data
+    continua digitável pelo lápis (modo de entrada padrão do Flutter)."""
+    return ft.DatePicker(**TEXTOS_CALENDARIO, **opcoes)
 
 
 class ServicoCodigos:
@@ -993,6 +1040,7 @@ def main(page: ft.Page):
 
     page.theme = tema_flet("claro")
     page.dark_theme = tema_flet("escuro")
+    page.locale_configuration = configuracao_de_idioma()
     aplicar_tema(modulo_cores.TEMA_PADRAO)
 
     demonstracao = fluxos_codigo.modo_demonstracao()
@@ -2149,12 +2197,131 @@ def main(page: ft.Page):
                 mes_atual[0] -= 1
             atualizar_dados()
 
+        def ir_para_mes(ano, mes):
+            # v7.0 5.44 (M3): navegação pelo seletor -- mesmo caminho das setas
+            # (mes_atual alterado no lugar, lido por Ver status e pela volta da
+            # edição; geração sob demanda dentro de atualizar_dados).
+            page.pop_dialog()
+            mes_atual[0], mes_atual[1] = ano, mes
+            atualizar_dados()
+
+        def abrir_seletor_de_mes(e=None):
+            """
+            v7.0 5.44 (M3-1 a M3-4): diálogo com o ano (setas, dentro da faixa)
+            e a grade dos 12 meses. Abrir, trocar o ano e cancelar não navegam
+            nem geram ocorrências; só a escolha de um mês (ou "Mês atual").
+            """
+            hoje_seletor = date.today()
+            primeiro_ano, ultimo_ano = faixa_de_anos(
+                database.anos_com_contas(usuario_atual["id"]), hoje_seletor.year, mes_atual[0])
+            ano_no_dialogo = {"valor": mes_atual[0]}
+            foco = ft.BorderSide(3, cores.texto_principal)
+
+            def botao_do_mes(mes):
+                ano = ano_no_dialogo["valor"]
+                exibido = (ano, mes) == tuple(mes_atual)
+                de_hoje = (ano, mes) == (hoje_seletor.year, hoje_seletor.month)
+                lado = {ft.ControlState.FOCUSED: foco}
+                if de_hoje:
+                    # Contorno do mês de hoje na cor de ação; sobre o fundo
+                    # preenchido (mesma cor) ele sumiria, então, quando os dois
+                    # coincidem, o contorno usa a cor do texto principal.
+                    lado[ft.ControlState.DEFAULT] = ft.BorderSide(
+                        2, cores.texto_principal if exibido else cores.acao_primaria)
+                return ft.Semantics(
+                    label=nome_do_mes_no_seletor(ano, mes, exibido, de_hoje),
+                    button=True, selected=exibido, expand=True,   # a largura vem da linha
+                    content=ft.Button(
+                        content=MESES_PT[mes - 1][:3], elevation=0,
+                        bgcolor=cores.acao_primaria if exibido else cores.fundo_dialogo,
+                        color=cores.texto_sobre_acao if exibido else cores.texto_principal,
+                        style=ft.ButtonStyle(
+                            side=lado, padding=0,
+                            shape=ft.RoundedRectangleBorder(radius=8),
+                        ),
+                        data=("mes_do_seletor", ano, mes),
+                        on_click=lambda e, mes=mes: ir_para_mes(ano_no_dialogo["valor"], mes),
+                    ),
+                )
+
+            def conteudo():
+                ano = ano_no_dialogo["valor"]
+                return ft.Column(
+                    tight=True, spacing=8, width=260,
+                    controls=[
+                        ft.Row(
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            controls=[
+                                ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, tooltip="Ano anterior",
+                                              icon_color=cores.texto_principal,
+                                              disabled_color=cores.botao_desabilitado_texto,
+                                              disabled=ano <= primeiro_ano, on_click=lambda e: trocar_ano(-1)),
+                                ft.Text(str(ano), size=16, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                                ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, tooltip="Próximo ano",
+                                              icon_color=cores.texto_principal,
+                                              disabled_color=cores.botao_desabilitado_texto,
+                                              disabled=ano >= ultimo_ano, on_click=lambda e: trocar_ano(1)),
+                            ],
+                        ),
+                        *[ft.Row(spacing=8, controls=[botao_do_mes(linha * 3 + coluna) for coluna in (1, 2, 3)])
+                          for linha in range(4)],
+                    ],
+                )
+
+            def trocar_ano(delta):
+                novo = ano_no_dialogo["valor"] + delta
+                if primeiro_ano <= novo <= ultimo_ano:
+                    ano_no_dialogo["valor"] = novo
+                    dialogo.content = conteudo()
+                    page.update()
+
+            mes_de_hoje_exibido = tuple(mes_atual) == (hoje_seletor.year, hoje_seletor.month)
+            dialogo = ft.AlertDialog(
+                title=ft.Text("Escolher mês e ano", color=cores.texto_principal),
+                content=conteudo(),
+                actions=[
+                    ft.TextButton(
+                        content="Mês atual", disabled=mes_de_hoje_exibido,
+                        style=ft.ButtonStyle(color=cores.botao_desabilitado_texto if mes_de_hoje_exibido
+                                             else cores.acao_primaria),
+                        on_click=lambda e: ir_para_mes(date.today().year, date.today().month),
+                    ),
+                    ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                                  style=ft.ButtonStyle(color=cores.acao_primaria)),
+                ],
+                bgcolor=cores.fundo_dialogo,
+            )
+            page.show_dialog(dialogo)
+
+        # v7.0 5.44 (M3-3): mês e ano com seta para baixo, uma única área
+        # clicável (botão: recebe foco pelo Tab e abre com Enter ou Espaço),
+        # separada das setas; contorno visível no foco; nome acessível com o
+        # período (atualizado em atualizar_dados).
+        abrir_periodo = ft.Semantics(
+            button=True,
+            content=ft.TextButton(
+                content=ft.Row(
+                    tight=True, spacing=0,
+                    controls=[texto_mes,
+                              ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=20, color=cores.texto_principal)],
+                ),
+                tooltip="Escolher mês e ano",
+                style=ft.ButtonStyle(
+                    color=cores.texto_principal,
+                    side={ft.ControlState.FOCUSED: ft.BorderSide(2, cores.acao_primaria)},
+                    padding=ft.Padding(8, 4, 4, 4),
+                ),
+                data="escolher_mes_e_ano",
+                on_click=abrir_seletor_de_mes,
+            ),
+        )
+
         seletor_mes = ft.Row(
             alignment=ft.MainAxisAlignment.CENTER,
             controls=[
                 ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, icon_size=18, on_click=lambda e: mudar_mes(-1),
                               icon_color=cores.texto_secundario),
-                texto_mes,
+                abrir_periodo,
                 ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, icon_size=18, on_click=lambda e: mudar_mes(1),
                               icon_color=cores.texto_secundario),
             ],
@@ -2476,7 +2643,7 @@ def main(page: ft.Page):
                         rascunho_status["data_pagamento"] = nova_data.isoformat()
                         atualizar_bloco_status()
 
-                    seletor_data_pagamento = ft.DatePicker(
+                    seletor_data_pagamento = criar_seletor_data(
                         value=(
                             date.fromisoformat(rascunho_status["data_pagamento"])
                             if rascunho_status.get("data_pagamento") else date.today()
@@ -3366,7 +3533,7 @@ def main(page: ft.Page):
                         page.update()
                         atualizar_estado_botao_salvar()
 
-                seletor_data = ft.DatePicker(
+                seletor_data = criar_seletor_data(
                     first_date=date(2000, 1, 1),
                     last_date=date(2100, 12, 31),
                     on_change=ao_escolher_data,
@@ -3967,6 +4134,7 @@ def main(page: ft.Page):
 
         def atualizar_dados():
             texto_mes.value = f"{MESES_PT[mes_atual[1] - 1]} {mes_atual[0]}"
+            abrir_periodo.label = f"Escolher mês e ano, {rotulo_periodo('mensal', *mes_atual)}"
             # RF05 (5.15): título da lista acompanha o mês selecionado no
             # seletor -- "Suas contas de setembro" -- sem alterar texto_mes
             # (seletor continua "Setembro 2026", tela separada).
@@ -6011,7 +6179,7 @@ def main(page: ft.Page):
                 campo_data.value = data_selecionada["valor"].strftime("%d/%m/%Y")
                 page.update()
 
-        seletor_data = ft.DatePicker(
+        seletor_data = criar_seletor_data(
             first_date=date(2000, 1, 1),
             last_date=date(2100, 12, 31),
             on_change=ao_escolher_data,

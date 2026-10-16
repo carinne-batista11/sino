@@ -82,6 +82,10 @@ PARES_TEXTO = (
     ("aviso_texto", "aviso_fundo"),
     ("acao_primaria", "fundo_pagina"),       # "Ver status"
     ("acao_primaria", "fundo_card"),
+    # v7.0 5.47 (M6) e 5.44 (M3): número de hoje no calendário sem seleção e
+    # mês de hoje (contorno) no seletor de mês, ambos sobre o fundo do diálogo;
+    # selecionados, usam texto_sobre_acao sobre acao_primaria (par acima).
+    ("acao_primaria", "fundo_dialogo"),
     ("texto_sem_categoria", "fundo_card"),    # rótulo "Sem categoria"
     ("variacao_aumento", "fundo_card"),
     ("variacao_reducao", "fundo_card"),
