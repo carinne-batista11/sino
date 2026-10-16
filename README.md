@@ -17,7 +17,7 @@ O Sino é um aplicativo desktop para registrar e acompanhar as contas do dia a d
 
 ## ✨ Funcionalidades
 
-A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está **concluída para portfólio e demonstração local** (04/10/2026). As mudanças estão resumidas nas [notas da versão](docs/notas-da-versao.md). A **Sino 6.1** (06/10/2026), primeira entrega da [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md), acrescenta versões e registro do aceite dos Termos de Uso e da Política de Privacidade. A **Sino 6.2** (07/10/2026) restringe o serviço de códigos a uma lista de destinatários permitidos; o serviço continua sem publicação e sem envio real de e-mails.
+A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está **concluída para portfólio e demonstração local** (04/10/2026). As mudanças estão resumidas nas [notas da versão](docs/notas-da-versao.md). A **Sino 6.1** (06/10/2026), primeira entrega da [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md), acrescenta versões e registro do aceite dos Termos de Uso e da Política de Privacidade. A **Sino 6.2** (07/10/2026) restringe o serviço de códigos a uma lista de destinatários permitidos (naquela entrega, o serviço ainda não estava publicado). A **Sino 6.3** (E4; versão registrada em 16/10/2026) passa a usar o serviço de códigos publicado em **produção restrita**, com envio real de e-mails só para os endereços autorizados pela autora.
 
 - **Contas únicas, mensais ou anuais**, com ou sem data de término. Os vencimentos respeitam o calendário: uma conta do dia 31 vence em 28/02 e volta para 31/03.
 - **Edição e exclusão com escopo**: em contas recorrentes, você escolhe entre "Somente este mês" e "Este mês em diante", inclusive para categoria e descrição.
@@ -31,18 +31,33 @@ A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está *
 - **Contas de usuário** com aceite dos Termos, senha mínima de 8 caracteres armazenada com PBKDF2 e confirmação do e-mail por **código** (cadastro, alteração de e-mail e "Esqueci minha senha").
 - **Fechamento seguro**: fechar a janela enquanto um cadastro, uma alteração de e-mail ou uma recuperação de senha é gravado espera o fim da gravação.
 
-## 📌 Situação da v6.0
+## 📌 Situação da ERS v7.0
+
+A [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md) é o plano em andamento, dividido em entregas publicadas separadamente (detalhes na seção 15 dela):
+
+- **E1–E4 concluídas:** licença (E1), versões e aceite dos Termos e da Política (E2, Sino 6.1), restrição de destinatários (E3, Sino 6.2) e envio real em produção restrita (E4, Sino 6.3). A E4 foi encerrada com ressalvas: a meta original de desempenho do serviço de códigos não foi atendida (risco aceito só para o uso restrito), e a revisão jurídica dos Termos e da Política continua pendente.
+- **E5–E12 pendentes:** melhorias de experiência de uso.
+- **E13–E15 pendentes:** avaliação e preparação da disponibilização para outras pessoas.
+- **E16–E18 pendentes:** comprovantes em imagem e backup completo.
+- **Faturas (M13):** proposta ainda candidata, sem aprovação.
+- **Envio de e-mails para outras pessoas (M8):** adiado.
+
+O Sino continua sendo um projeto de **portfólio e de uso pessoal da autora**, sem liberação pública.
+
+## 📌 Situação da v6.0 (04/10/2026)
+
+*Registro do encerramento da v6.0; o estado atual está na seção acima.*
 
 **Concluído:** todas as funcionalidades acima, verificadas com 879 testes automáticos do aplicativo e 151 do serviço de códigos, além de validações manuais registradas na ERS (seções 13.3 a 13.6).
 
 **Parcial:**
 
-- A confirmação de e-mail por código funciona com o serviço de códigos ([`servidor/`](servidor/)) rodando **no próprio computador**. A integração com a Resend está implementada, mas a entrega real de e-mails não foi validada.
+- A confirmação de e-mail por código funciona com o serviço de códigos ([`servidor/`](servidor/)) rodando **no próprio computador**. A integração com a Resend está implementada, mas a entrega real de e-mails não foi validada. *(Situação na v6.0. Desde a Sino 6.3, o serviço está publicado em produção restrita, com entrega real validada para os endereços autorizados da autora.)*
 - Contraste dos dois temas medido nos testes em todas as telas, nos campos, nos gráficos de barras e nos estados principais. Ficam fora as fatias do gráfico de rosca nas cores das categorias (identificadas também pela legenda em texto), os controles desativados e o que o Flutter desenha por conta própria (calendário, dicas, foco).
 - Desempenho com 1.000 contas [medido](docs/desempenho-v6.md): abaixo de 2 s por operação na consulta ao banco e na montagem das telas (máximo de 1,7 s no pior caso, com 1.000 contas no mesmo mês). A renderização da janela não foi medida.
 - Termos de Uso e Política de Privacidade integrados ao app e aprovados pela autora para portfólio e demonstração local (04/10/2026); revisão jurídica pendente.
 
-**Adiado para uso por outras pessoas:** publicação do serviço de códigos e envio real de e-mails (hospedagem, domínio, responsável pela operação), revisão jurídica dos Termos e da Política e decisão sobre versionamento do texto aceito. Por isso, o Sino é hoje um projeto de **portfólio e demonstração local**, não um aplicativo pronto para uso por terceiros.
+**Adiado para uso por outras pessoas:** publicação do serviço de códigos e envio real de e-mails (hospedagem, domínio, responsável pela operação), revisão jurídica dos Termos e da Política e decisão sobre versionamento do texto aceito. Por isso, o Sino era, na v6.0, um projeto de **portfólio e demonstração local**, não um aplicativo pronto para uso por terceiros. *(Na ERS v7.0, as versões dos documentos e o novo aceite foram feitos na Sino 6.1, e o envio real em produção restrita na Sino 6.3; a revisão jurídica e a disponibilização a outras pessoas continuam pendentes.)*
 
 ## 📸 Telas
 
@@ -108,7 +123,7 @@ Protótipos feitos antes da implementação, mantidos como registro da direção
 - **SQLite**, para o armazenamento local dos dados
 - **unittest** (biblioteca padrão do Python), para os testes automatizados
 - **httpx** e **cryptography**, no cliente do serviço de códigos de e-mail
-- **TypeScript**, **Cloudflare Workers** com **Durable Objects** (SQLite) e **Resend**, no serviço de códigos de e-mail, que roda localmente e ainda não foi publicado; testes com **Vitest**
+- **TypeScript**, **Cloudflare Workers** com **Durable Objects** (SQLite) e **Resend**, no serviço de códigos de e-mail, publicado em produção restrita (envio só para endereços autorizados) e também executável localmente; testes com **Vitest**
 
 ## ▶️ Como executar
 
@@ -127,7 +142,7 @@ python3 backend/main.py
 
 Na primeira execução, o banco de dados é criado automaticamente em `database/sino.db`. Esse arquivo fica apenas na sua máquina e não é versionado.
 
-Sem o serviço de códigos configurado, a tela de cadastro avisa que a confirmação por e-mail não está disponível e não cria a conta. O login de contas existentes funciona normalmente, sem internet.
+O aplicativo vem configurado para o serviço de códigos em **produção restrita**: só endereços autorizados pela autora recebem códigos. Para qualquer outro endereço, o cadastro e a alteração de e-mail mostram "O envio de códigos está restrito nesta fase do Sino." e nada é gravado (por isso, não é possível criar uma conta nova); a recuperação de senha mantém a resposta neutra, sem envio. O login de contas existentes continua local e funciona sem internet. Se o app for aberto fora do `.venv`, sem o pacote `cryptography`, a confirmação por e-mail aparece como indisponível.
 
 ### Demonstração local
 
@@ -147,9 +162,9 @@ Com o ambiente virtual `.venv` ativado e as dependências instaladas (veja "Como
 python3 -m unittest discover tests
 ```
 
-A suíte (879 testes na entrega da v6.0) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
+A suíte (879 testes na entrega da v6.0; 1070 na Sino 6.3) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
 
-Os testes do serviço de códigos (`servidor/`, 151 testes) usam Node.js 24 e rodam localmente, sem conta em serviços externos:
+Os testes do serviço de códigos (`servidor/`; 151 testes na v6.0, 260 na Sino 6.3) usam Node.js 24 e rodam localmente, sem conta em serviços externos:
 
 ```bash
 cd servidor
@@ -163,13 +178,14 @@ npm test
 backend/    interface do aplicativo (Flet), paleta de cores do tema e cliente do serviço de códigos
 database/   camada de dados (SQLite)
 docs/       especificações (ERS), notas da versão, contrato do serviço de códigos e protótipos de interface
-servidor/   serviço de códigos de e-mail (roda localmente; não publicado)
+servidor/   serviço de códigos de e-mail (produção restrita; também roda localmente)
 tests/      testes automatizados do aplicativo
 ```
 
 ## 📄 Documentação
 
-- [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md): versão atual, concluída para portfólio e demonstração local (estado das Etapas 8 a 10 nas seções 13.3 a 13.5; encerramento e rastreabilidade dos testes na seção 13.6)
+- [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md): plano em andamento, com as mudanças em relação à v6.0, as decisões e a situação das entregas (seção 15); histórico das análises em [propostas da ERS v7.0](docs/ERS_v7.0_propostas.md)
+- [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md): base vigente para tudo o que a v7.0 não altera, concluída para portfólio e demonstração local (estado das Etapas 8 a 10 nas seções 13.3 a 13.5; encerramento e rastreabilidade dos testes na seção 13.6)
 - [ERS v5.0](docs/ERS_Controle_de_Contas_v5.0.md): versão implementada e auditada
 - [Notas da versão](docs/notas-da-versao.md)
 - [Contrato do serviço de códigos](docs/contrato-servico-codigos.md)

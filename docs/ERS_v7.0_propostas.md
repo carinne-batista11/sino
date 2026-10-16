@@ -1,6 +1,8 @@
 # ERS v7.0 — propostas em planejamento
 
-**Situação:** planejamento iniciado em 04/10/2026. Nada aqui está decidido nem implementado. A [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) continua sendo a especificação vigente, e o código atual não muda nesta fase.
+**Situação (registro de 04/10/2026, preservado):** planejamento iniciado em 04/10/2026. Nada aqui está decidido nem implementado. A [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) continua sendo a especificação vigente, e o código atual não muda nesta fase.
+
+**Situação atual (16/10/2026):** as decisões deste documento estão consolidadas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md). Entregas concluídas: E1 (licença, M9), E2 (Sino 6.1, M12 técnica), E3 (Sino 6.2, restrição de destinatários) e E4 (Sino 6.3, envio real em produção restrita; encerrada em 15/10/2026 com ressalvas: P43 **não atendida**, com risco aceito só para a produção restrita; M8 **aberta** para a disponibilização a terceiros). M1–M7, M10 e M11 continuam **decididas e não implementadas** (E5–E12, E16–E18); M14 sem decisões (E13–E15); M13 (Faturas) continua **candidata**, sem aprovação. Revisão jurídica pendente. O Sino **não** está liberado ao público. As seções abaixo preservam o histórico de cada decisão e análise.
 
 **Organização vigente (06/10/2026, P33):** a ERS v7.0 consolidada é o planejamento geral, dividido em entregas publicadas separadamente (E1–E18 e F1, seção 15 da ERS). Prioridades: 1 licença; 2 envio real de e-mails; 3 UX; 4 disponibilização (M14); 5 comprovantes, Faturas e pendências. As ordens de implementação registradas mais abaixo neste documento são **histórico**.
 
@@ -17,8 +19,8 @@
 | M5 | Ocultar o contador "0/70" do nome do usuário, mantendo o limite e o aviso | **Decidida** (M5-A, M5-B); a implementar |
 | M6 | Calendário: corrigir o contraste do dia atual e traduzir para português | **Decidida** (M6-A, M6-B); a implementar |
 | M7 | Gráfico de colunas por categoria (nome, valor e cor), complementando a rosca | **Decidida** (M7-A a M7-D e critério de acessibilidade); a implementar |
-| M8 | Envio real de e-mails pela Resend e publicação do serviço de códigos | **Planejada com condições e pendências** (domínio, remetente e responsável a definir); nada contratado |
-| M9 | Reavaliar a restrição de uso comercial nas próximas versões, preservando as permissões MIT das anteriores (a licença não muda agora) | **Reaberta em 06/10/2026**, prioridade 1; **escolhida em 06/10/2026: MIT + Commons Clause v1.0** (P36); alterações preparadas, sem commit; revisão jurídica e INPI pendentes; `LICENSE` inalterado (MIT) |
+| M8 | Envio real de e-mails pela Resend e publicação do serviço de códigos | ~~**Planejada com condições e pendências** (domínio, remetente e responsável a definir); nada contratado~~ *Atualização (16/10/2026):* **produção restrita concluída** na E4 (15/10/2026; Sino 6.3), com envio real só para os endereços autorizados da autora, Workers Free e Resend Free, sem contratação paga; P43 não atendida, com risco aceito só para a produção restrita. **Disponibilização a terceiros pendente** (M8 aberta; ver "Encerramento formal da E4") |
+| M9 | Reavaliar a restrição de uso comercial nas próximas versões, preservando as permissões MIT das anteriores (a licença não muda agora) | **Reaberta em 06/10/2026**, prioridade 1; **escolhida em 06/10/2026: MIT + Commons Clause v1.0** (P36); ~~alterações preparadas, sem commit~~; ~~`LICENSE` inalterado (MIT)~~ *atualização (16/10/2026):* aplicada e publicada na E1 (06/10/2026, commit `58b4382`); revisão jurídica e avaliação de registro no INPI pendentes, sem gasto autorizado |
 | M10 | Anexar imagens de comprovantes (opcional), acessadas por um botão em Detalhes, sem exibição permanente | **Decidida** (M10-A a M10-L); a implementar |
 | M11 | Corrigir a quebra dos nomes das contas em janelas muito estreitas | **Decidida** (M11-A, M11-B); a implementar |
 | M12 | Revisão jurídica, versionamento e novo aceite dos Termos e da Política antes do uso por terceiros | **Decidida** (M12-A a M12-D); revisão jurídica pendente |
@@ -1049,7 +1051,7 @@ Os critérios da E4 ficam atendidos para a produção restrita, **com ressalvas*
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).
-* **Lançamento formal da versão do app (pendente, ERS 15.2):** ver "E4 — produção restrita: planejamento, decisões e otimização O1". Decisões 7, 8 e 9 executadas em 15/10/2026 (9 atendida para a produção restrita); decisões 5 e 6 implementadas e publicadas (`8a659cc`) e em uso no deploy de 15/10/2026.
+* ~~**Lançamento formal da versão do app (pendente, ERS 15.2)**~~ (cumprido em 16/10/2026: **Sino 6.3**, ERS 15.2 e 15.3). Ver "E4 — produção restrita: planejamento, decisões e otimização O1". Decisões 7, 8 e 9 executadas em 15/10/2026 (9 atendida para a produção restrita); decisões 5 e 6 implementadas e publicadas (`8a659cc`) e em uso no deploy de 15/10/2026.
 * **CPU real na Cloudflare (P43):** medida na produção restrita em 15/10/2026: o critério original continua **não atendido** (P90/P99/P99,9 de 14,4 ms; P50 de 5,54 ms; 11 invocações; 0 erros); **risco aceito pela autora só para a produção restrita**, com Workers Free mantido. Reavaliar se surgirem erros, se a mediana passar de 10 ms e antes da liberação a terceiros.
 
 ### E4 — produção restrita: planejamento, decisões e otimização O1 (14/10/2026; atualizada em 15/10/2026)
@@ -1178,7 +1180,7 @@ Cada etapa com autorização da autora; nenhum segredo exibido.
 6. revisão jurídica dos Termos e da Política (M12);
 7. reavaliação do DMARC do subdomínio de envio (`p=quarantine` ou `p=reject`, com relatórios);
 8. ampliação segura da lista de destinatários;
-9. lançamento formal da versão do aplicativo (ERS, seção 15.2).
+9. ~~lançamento formal da versão do aplicativo (ERS, seção 15.2).~~ Cumprido em 16/10/2026: código da E4 registrado como **Sino 6.3** (ERS 15.2 e 15.3), sem nova implantação nem ampliação dos destinatários.
 
 A contratação de recursos pagos (por exemplo, Workers Paid) é uma **possibilidade futura, ainda não aprovada**; Workers Free e Resend Free continuam sendo os planos em uso (decisão 2). As evidências, decisões e ressalvas anteriores ficam preservadas nas seções acima.
 
@@ -1695,7 +1697,7 @@ Permitir anexar, opcionalmente, imagens de comprovantes às contas e acessá-las
 * **Limite técnico de apagamento:** apagar um arquivo do disco não garante que ele seja irrecuperável (principalmente em SSD); isso vai para a Política, como já acontece com o banco.
 * **Backups:** os backups automáticos continuam copiando só o banco; os comprovantes não entram neles. Registrar na Política e nas notas.
 * **Interface:** em Detalhes, um botão abre o comprovante sob demanda (sem miniatura permanente na tela); o botão tem nome acessível e funciona pelo teclado. Telas e diálogos novos entram nas verificações de legibilidade dos dois temas.
-* **Documentos:** Termos e Política precisam ser atualizados antes da implementação ser liberada (o que o Sino guarda, onde, exclusão e backups) e entram na revisão jurídica (M12). ERS v7.0: requisito novo, modelo de dados, migração v9 e casos de teste.
+* **Documentos:** Termos e Política precisam ser atualizados antes da implementação ser liberada (o que o Sino guarda, onde, exclusão e backups) e entram na revisão jurídica (M12). ERS v7.0: requisito novo, modelo de dados, migração própria (**v10**, P31 de 06/10/2026; antes prevista na v9) e casos de teste.
 
 ### Perguntas apresentadas à autora (agrupadas)
 
@@ -1845,7 +1847,7 @@ O banco e os arquivos são independentes: **não há atomicidade entre o SQLite 
 | Consistência | Banco nunca aponta para arquivo incompleto; arquivo só é apagado sem referências; remoções pendentes refeitas; quarentena de 30 dias para arquivos sem referência gerenciados pelo app; "Comprovante indisponível" se um arquivo sumir |
 | Séries | Comprovante pertence à ocorrência; nunca é copiado; preserva a ocorrência ao encerrar ou alterar frequência; "Excluir este mês em diante" apaga com aviso |
 | Backup | Pacote completo criptografado (versão própria, AES-256-GCM, scrypt) só pela ferramenta de manutenção, com o Sino fechado e bloqueio compartilhado; backups antes de migrações continuam só do banco |
-| Documentos | Termos, Política e revisão jurídica (M12) antes de liberar; ERS v7.0 com requisito novo, modelo de dados, migração v9 e casos de teste |
+| Documentos | Termos, Política e revisão jurídica (M12) antes de liberar; ERS v7.0 com requisito novo, modelo de dados, migração própria (**v10**, P31 de 06/10/2026; antes prevista na v9) e casos de teste |
 
 ### Esclarecimentos da autora sobre a M10 (04/10/2026)
 
@@ -2189,6 +2191,8 @@ Uma etapa específica para **avaliar** como disponibilizar o Sino a outras pesso
 
 ## Resumo geral da ERS v7.0 proposta (04/10/2026)
 
+*Registro histórico de 04/10/2026 (com as migrações já ajustadas pela P31). O estado atual de cada melhoria está na "Lista de melhorias propostas", no início deste documento, e na ERS v7.0 (13.4 e 15.3); em particular, M8 (produção restrita concluída na E4; terceiros pendente) e M9 (aplicada na E1) mudaram depois deste resumo.*
+
 | ID | Melhoria | Situação no planejamento | Migração |
 |---|---|---|---|
 | M1 | Espaços acidentais no e-mail e nas senhas | Decidida | Não |
@@ -2262,6 +2266,8 @@ A regra 5.49 da ERS v7.0 exige que, **antes de habilitar o envio real**, os Term
 | D8 | Ambiente de teste publicado e validado, depois produção restrita; segredos por ambiente; DNS, se houver domínio | Depende de D1–D3 | Configuração (com autorização) |
 | D9 | Validação: CT138, entrega real aos endereços autorizados, expiração, tentativas, reenvio, neutralidade da recuperação | Depende de D8 | Validação |
 
+*Atualização (16/10/2026):* a coluna "Situação" preserva o estado de 06/10/2026. D1–D9 foram cumpridas para a produção restrita ao longo das E2, E3 e E4 (ver as seções da E4 na M8), com as ressalvas registradas no encerramento formal da E4; as condições para terceiros continuam pendentes (M8 aberta).
+
 ### Escolha para destravar a M8 (decidida em 06/10/2026: opção (a))
 
 * **(a) Aprovada:** **dividir a migração**: v9 só com os **aceites** (M12); depois, uma migração própria para os comprovantes (M10) e outra para Faturas, se aprovada. Isso muda a proposta técnica T6 e a seção 9.1 ("migração v9 única"), mas mantém todas as regras de produto. Primeiras entregas: **(1) M12 técnica**, com v9 de aceites; **(2) M8 em uso restrito**, com os textos novos e o novo aceite.
@@ -2286,13 +2292,15 @@ A regra 5.49 da ERS v7.0 exige que, **antes de habilitar o envio real**, os Term
 
 ## Pendências do planejamento
 
-* **M8:** domínio e remetente; responsável pela operação e contato para titulares; conferência de recursos, limites e custos da Cloudflare e da Resend; prazos de retenção configuráveis e obrigatórios de cada provedor.
+*Atualização (16/10/2026): itens resolvidos riscados, com a data; o texto original foi preservado.*
+
+* **M8:** ~~domínio e remetente; responsável pela operação e contato para titulares~~ (resolvidos para o uso restrito em 08/10/2026; produção restrita concluída na E4, 15/10/2026); conferência de recursos, limites e custos da Cloudflare e da Resend (M8-A, pendente antes de terceiros; nenhuma contratação paga aprovada); prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F, pendente). Demais pendências para terceiros em "Encerramento formal da E4" (M8 aberta).
 * **M10:** revisão da escolha criptográfica e do formato do pacote na implementação; diferenças de trava de arquivos entre Linux e Windows.
-* **M12:** contratação e realização da revisão jurídica; textos novos dos Termos e da Política para M8 e M10.
+* **M12:** contratação e realização da revisão jurídica (pendente); textos novos dos Termos e da Política para ~~M8~~ (publicados: versão de 13/10/2026, P41) e M10 (pendentes, antes de habilitar os comprovantes).
 * ~~**L1:** critério, backup e nova referência do banco para a limpeza das contas de teste, quando a autora decidir.~~ Resolvida em 06/10/2026 (reinicialização do banco; ref6).
 * **M13 (Faturas):** decisões G1–G7 (F1–F20) abertas; entrada no escopo a confirmar (F20).
-* **M9 (licença):** MIT + Commons Clause escolhida (P36); arquivos preparados, aguardando commit e publicação; pendentes: revisão jurídica e INPI (sem gasto).
+* **M9 (licença):** MIT + Commons Clause escolhida (P36); ~~arquivos preparados, aguardando commit e publicação~~ (aplicada e publicada na E1, 06/10/2026, `58b4382`); pendentes: revisão jurídica e INPI (sem gasto).
 * **Plano:** organização da P33 (06/10/2026) vigente: E1–E18 e F1 (ERS v7.0, seção 15).
-* **M14:** decisões da avaliação de disponibilização (E13). Dependências abertas da entrega 2: D1 (domínio e remetente, ou alternativa A, B ou C), D2 (responsável e contato) e a pergunta sobre o envio real no ambiente de teste.
+* **M14:** decisões da avaliação de disponibilização (E13, pendentes). ~~Dependências abertas da entrega 2: D1 (domínio e remetente, ou alternativa A, B ou C), D2 (responsável e contato) e a pergunta sobre o envio real no ambiente de teste.~~ (Resolvidas na E4: domínio próprio, remetente e contato em 07 e 08/10/2026; envio real testado no T2, 13 e 14/10/2026.)
 * **M13:** conflito C1–C4 (parcelas e recorrências não podem sumir em silêncio), a decidir em grupos menores antes de G1.
-* **ERS v7.0:** consolidar estas decisões no documento da ERS v7.0 (requisitos, regras, modelo de dados, migração v9 e casos de teste) antes da implementação; a ERS v6.0 permanece como está.
+* ~~**ERS v7.0:** consolidar estas decisões no documento da ERS v7.0 (requisitos, regras, modelo de dados, migração v9 e casos de teste) antes da implementação; a ERS v6.0 permanece como está.~~ (Feito em 04/10/2026, com as revisões seguintes registradas no histórico da ERS v7.0; migrações separadas desde a P31: v9 aceites, v10 comprovantes.)

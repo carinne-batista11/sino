@@ -16,7 +16,9 @@ testes (T1, sem envio) foi usado e encerrado em 12/10/2026; o ambiente T2
 só para um único destinatário autorizado (ver abaixo). **E4 encerrada
 formalmente pela autora em 15/10/2026** (produção restrita; P43 não atendida,
 com risco aceito só para ela; M8 aberta; Sino não liberado ao público; ver
-`docs/ERS_v7.0_propostas.md`, "Encerramento formal da E4").
+`docs/ERS_v7.0_propostas.md`, "Encerramento formal da E4"). O código da E4,
+até o commit `db00f44`, foi registrado como **Sino 6.3** em 16/10/2026, sem
+nova implantação.
 
 ## Organização
 
@@ -190,13 +192,16 @@ para um único destinatário autorizado; **encerrado em 14/10/2026**, antes do
 prazo de 20/10/2026. Worker, chave da Resend (`sino-t2-temporario`), cópia
 isolada e segredos locais removidos; logout do Wrangler e remoção dos 14
 registros locais temporários. O domínio `envios.appsino.com.br` foi mantido.
-Não houve implantação definitiva nem validação de produção. Resultados,
+Até o encerramento do T2, não houve implantação definitiva nem validação de
+produção (a produção restrita foi implantada depois, em 15/10/2026; ver
+"Produção restrita"). Resultados,
 ressalvas e evidências em `docs/ERS_v7.0_propostas.md`, "E4 — T2: execução e
 testes reais" e "E4 — avaliação dos critérios". A descrição abaixo fica como
 referência para um próximo ambiente.
 
-**Diferenças em relação à produção** (`src/index.ts`, `wrangler.jsonc`, nunca
-publicada): a entrada `src/t2.ts` é a de produção — Resend, `REMETENTE` e
+**Diferenças em relação à produção** (`src/index.ts`, `wrangler.jsonc`; ainda
+não publicada durante o T2, implantada em produção restrita em 15/10/2026): a
+entrada `src/t2.ts` é a de produção — Resend, `REMETENTE` e
 `RESPONDER_PARA` obrigatórios, lista de destinatários, limites, idempotência e
 retenção — envolvida por um **token exclusivo** (`TOKEN_ACESSO`): toda
 requisição precisa de `Authorization: Bearer <token>`; sem ele, com outro valor
