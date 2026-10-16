@@ -4,7 +4,7 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
-## E4 em andamento (13 a 15/10/2026): Termos e Política publicados; T2 concluído e desmontado; produção restrita publicada
+## E4 concluída (13 a 15/10/2026): Termos e Política publicados; T2 concluído e desmontado; produção restrita publicada
 
 Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026). O **T2** (primeiro envio real de e-mail pela Resend) foi **implantado em 13/10/2026** num Worker temporário, e os e-mails reais foram entregues a **um único endereço autorizado**, numa cópia isolada do app. Os testes terminaram em 14/10/2026, e o ambiente temporário foi **desmontado no mesmo dia**. **A E4 não está concluída**: ainda faltam publicar o serviço definitivo, em uso restrito, e configurar o aplicativo para ele. O serviço não foi validado para uso amplo (produção). O aplicativo normal não mudou e nenhuma versão nova foi lançada.
 
@@ -70,7 +70,8 @@ Preparada e revisada em 13/10/2026 (P42), com auditoria de segurança e correç�
 - **Desempenho:** o tempo de CPU por requisição ficou acima da meta original do projeto em parte da pequena amostra (mediana abaixo da meta; nenhum erro). A autora aceitou esse risco só para o uso restrito atual, a reavaliar antes de qualquer liberação a terceiros.
 - **Sem mudanças** nos Termos de Uso, na Política de Privacidade ou no banco de dados (o primeiro cadastro usou o banco já existente, versão 9).
 - **Encerramento da implantação (15/10/2026):** os arquivos locais com os segredos da implantação foram apagados (a cópia de recuperação criptografada foi conferida antes, com cópia externa), a sessão local da Cloudflare foi encerrada e os registros locais da ferramenta foram removidos. A proteção do domínio `appsino.com.br` contra e-mails falsificados (DMARC `p=reject`) foi restaurada; o domínio de envio continua com uma política de monitoramento nesta fase.
-- **Pendente:** lançamento formal de uma versão do app e revisões antes de terceiros (limites, desempenho, proteção contra abuso, política DMARC do domínio de envio, revisão jurídica). O Sino continua sem liberação para outras pessoas.
+- **E4 encerrada (15/10/2026):** a autora encerrou formalmente esta etapa. O envio real de códigos funciona só para os endereços autorizados; o Sino continua **sem liberação para outras pessoas**, e a meta original de desempenho continua não atendida (risco aceito só para o uso restrito).
+- **Pendente (antes de liberar a terceiros):** desempenho, limites e proteção contra abuso, monitoramento e alertas, avaliação de planos pagos e custos (nenhuma contratação aprovada), retenção dos provedores, revisão jurídica, política DMARC do domínio de envio, ampliação segura dos destinatários e lançamento formal de uma versão do app.
 
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 

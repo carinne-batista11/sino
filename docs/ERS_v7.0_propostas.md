@@ -1034,7 +1034,7 @@ Critérios existentes, sem alteração: a definição da E4 (ERS v7.0, seção 1
 | **Produção restrita** | **Feita**: `sino-servico-codigos` publicado em `workers.dev` (subdomínio `appsino`) e validado |
 | **Configuração da versão do app** | **Feita no código** (commit B, `db00f44`, publicado); lançamento formal de uma versão (numeração e notas) pendente |
 
-Os critérios da E4 ficam atendidos para a produção restrita, **com ressalvas** (P43 não atendida com risco aceito; restrição da lista na recuperação comprovada só por testes automáticos; DMARC de `envios` com `p=none` na fase restrita). Os critérios não foram alterados. O **encerramento formal da E4** depende de decisão da autora; a M8 continua pendente. A **M8 / produção** também continua pendente (implantação definitiva, revisão de segurança, política DMARC, limites e custos, retenção dos provedores e pendências legais).
+Os critérios da E4 ficam atendidos para a produção restrita, **com ressalvas** (P43 não atendida com risco aceito; restrição da lista na recuperação comprovada só por testes automáticos; DMARC de `envios` com `p=none` na fase restrita). Os critérios não foram alterados. **E4 encerrada formalmente pela autora em 15/10/2026** (ver "Encerramento formal da E4 (15/10/2026)"); a M8 continua aberta. A **M8 / produção** também continua pendente (implantação definitiva, revisão de segurança, política DMARC, limites e custos, retenção dos provedores e pendências legais).
 
 ### Pendências da M8 (não resolvidas)
 
@@ -1054,7 +1054,7 @@ Os critérios da E4 ficam atendidos para a produção restrita, **com ressalvas*
 
 ### E4 — produção restrita: planejamento, decisões e otimização O1 (14/10/2026; atualizada em 15/10/2026)
 
-**Situação (15/10/2026, à noite):** produção restrita **implantada e validada** na Cloudflare (Worker `sino-servico-codigos` em `workers.dev`, Workers Free e Resend Free, dois destinatários autorizados), com o aplicativo configurado para ela (commit B, `db00f44`). Sem alteração de DNS e sem contratação. Detalhes e ressalvas em "Implantação e validação da produção restrita (15/10/2026)", abaixo. A P43 continua **não atendida** (risco aceito pela autora só para a produção restrita). A M8 **não está concluída**; o encerramento formal da E4 depende de decisão da autora.
+**Situação (15/10/2026, à noite):** produção restrita **implantada e validada** na Cloudflare (Worker `sino-servico-codigos` em `workers.dev`, Workers Free e Resend Free, dois destinatários autorizados), com o aplicativo configurado para ela (commit B, `db00f44`). Sem alteração de DNS e sem contratação. Detalhes e ressalvas em "Implantação e validação da produção restrita (15/10/2026)", abaixo. A P43 continua **não atendida** (risco aceito pela autora só para a produção restrita). A M8 **não está concluída**. **E4 encerrada formalmente pela autora em 15/10/2026** (ver "Encerramento formal da E4 (15/10/2026)").
 
 *Texto anterior (14 e 15/10/2026, antes do deploy), mantido como histórico:* só planejamento, decisões da autora e uma otimização de código publicada no GitHub (sem implantação na Cloudflare). Nenhum deploy definitivo, nenhuma alteração de DNS, nenhuma contratação.
 
@@ -1157,6 +1157,30 @@ Cada etapa com autorização da autora; nenhum segredo exibido.
   * **Ação da autora:** registro TXT `_dmarc.appsino.com.br` = `v=DMARC1; p=reject;` **restaurado manualmente** no Registro.br. Sem `sp=`, a política vale também para os subdomínios sem registro próprio; `envios` tem o seu e não foi afetado.
   * **Conferência (consultas públicas):** `p=reject` publicado em `d.sec.dns.br`, `f.sec.dns.br`, 8.8.8.8 e 1.1.1.1 (no 1.1.1.1, a primeira consulta ainda devolveu o NXDOMAIN em cache negativo; a seguinte, segundos depois, já devolveu o registro); validação DNSSEC confirmada; série da zona 2026286000 → 2026289000. `_dmarc.envios.appsino.com.br` continua `v=DMARC1; p=none;`; DKIM `resend._domainkey.envios` e os CNAME `send.envios` e `rsend.envios` da Resend preservados. **Nenhum e-mail enviado** para essa validação.
   * **Conclusão:** decisão 9 **atendida para a produção restrita**. O DMARC orienta os servidores que recebem as mensagens; ele **não impede toda falsificação** de e-mail (depende de cada provedor aplicar a política). Antes da abertura a terceiros: reavaliar `p=quarantine` ou `p=reject` para `envios`, incluindo a necessidade de relatórios DMARC.
+
+#### Encerramento formal da E4 (15/10/2026)
+
+**Decisão da autora (15/10/2026):** encerramento formal da **E4 — envio real em ambiente restrito (produção restrita)**. Condições registradas:
+
+* a implantação restrita está **concluída e validada**;
+* o envio de códigos reais **funciona para os destinatários autorizados** (dois endereços da autora);
+* a **P43 continua NÃO ATENDIDA**, com risco aceito **exclusivamente para a produção restrita**;
+* a **M8 continua aberta**, para a futura disponibilização a terceiros;
+* o Sino **não está liberado ao público**.
+
+**Pendências futuras (M8 e disponibilização a terceiros):**
+
+1. reavaliação de desempenho e da P43 (critério original **não atendido**);
+2. limites, cotas e proteção contra abuso (incluindo as "duas cotas", decisão 3);
+3. observabilidade e alertas (exigiriam revisar a Política);
+4. avaliação de planos pagos, recursos e custos (M8-A);
+5. retenção de dados dos provedores (M8-F);
+6. revisão jurídica dos Termos e da Política (M12);
+7. reavaliação do DMARC do subdomínio de envio (`p=quarantine` ou `p=reject`, com relatórios);
+8. ampliação segura da lista de destinatários;
+9. lançamento formal da versão do aplicativo (ERS, seção 15.2).
+
+A contratação de recursos pagos (por exemplo, Workers Paid) é uma **possibilidade futura, ainda não aprovada**; Workers Free e Resend Free continuam sendo os planos em uso (decisão 2). As evidências, decisões e ressalvas anteriores ficam preservadas nas seções acima.
 
 ### Pendência independente — item 8: repositório Git da pasta pessoal `/home/carinne` (registrada em 14/10/2026; atualizada no mesmo dia)
 

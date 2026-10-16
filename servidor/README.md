@@ -13,8 +13,10 @@ destinatários autorizados da autora; ver "Produção restrita"). Na E4, o ambie
 testes (T1, sem envio) foi usado e encerrado em 12/10/2026; o ambiente T2
 (primeiro envio real) foi usado em 13 e 14/10/2026 para testes restritos e
 **encerrado e desmontado em 14/10/2026**: oito e-mails reais, todos Delivered,
-só para um único destinatário autorizado (ver abaixo). O encerramento formal da
-E4 depende de decisão da autora (ver `docs/ERS_v7.0_propostas.md`).
+só para um único destinatário autorizado (ver abaixo). **E4 encerrada
+formalmente pela autora em 15/10/2026** (produção restrita; P43 não atendida,
+com risco aceito só para ela; M8 aberta; Sino não liberado ao público; ver
+`docs/ERS_v7.0_propostas.md`, "Encerramento formal da E4").
 
 ## Organização
 
