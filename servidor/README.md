@@ -58,10 +58,12 @@ dois destinatários autorizados), com o aplicativo configurado para ela
 (`backend/servico_codigos.py`, commit `db00f44`). Validada: teste fora da lista
 (403, sem envio), cadastro definitivo, CT138 e expiração no próprio serviço.
 CPU (P43): critério original não atendido, risco aceito só para a produção
-restrita. Pendentes: guarda das cópias de recuperação, depois a remoção dos
-arquivos da pasta de segredos um a um, e `npx wrangler logout`. Registro
-completo em `docs/ERS_v7.0_propostas.md`, "Implantação e validação da produção
-restrita (15/10/2026)".
+restrita. Encerramento operacional concluído em 15/10/2026: cópia de
+recuperação criptografada conferida (com cópia externa), arquivos da pasta de
+segredos apagados um a um, `npx wrangler logout` e registros locais do
+Wrangler removidos. Registro completo em `docs/ERS_v7.0_propostas.md`,
+"Implantação e validação da produção restrita (15/10/2026)" e "Encerramento
+operacional e decisão 9 (15/10/2026)".
 
 Configuração em `wrangler.jsonc` (fixada por `test/nucleo/ambiente_producao.test.ts`):
 Worker `sino-servico-codigos`, entrada `src/index.ts`, só
