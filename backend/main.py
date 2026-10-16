@@ -563,6 +563,8 @@ def filtrar_por_status(contas, filtro):
 
 
 TEXTO_NAO_RECORRENTE = "Esta conta não é recorrente."
+# ERS v7.0 5.43 (M2, U2): orientação de Início para o usuário sem nenhuma conta.
+TEXTO_USUARIO_SEM_CONTAS = "Registre suas primeiras contas e tenha tudo sob controle."
 # Etapa 10 (8.4): Detalhes mostra sempre os mesmos campos; sem informação,
 # o campo exibe o texto de ausência no cinza secundário.
 TEXTO_SEM_PARCELAS = "Não há parcelas"
@@ -2188,12 +2190,29 @@ def main(page: ft.Page):
 
         bloco_atrasadas = ft.Container()
 
-        def construir_bloco_atrasadas(atrasadas):
+        def construir_bloco_atrasadas(atrasadas, sem_contas=False):
             # RF25/9: aviso compacto -- nunca a lista expandida de antes (Fase 3.9).
             # "Ver essas contas" abre a tela dedicada (mostrar_tela_atrasadas), que
             # busca TODAS as atrasadas do usuário via database.listar_contas_atrasadas,
             # sem depender do mês selecionado aqui.
-            if atrasadas:
+            if sem_contas:
+                # v7.0 5.43 (M2, U2/U4): usuário sem nenhuma conta, em nenhum
+                # mês -- orientação informativa no lugar de "Suas contas estão
+                # em dia!": ícone de adicionar na cor de ação, texto na cor
+                # principal, sem aparência de sucesso e sem ação de clique.
+                bloco_atrasadas.bgcolor = "transparent"
+                bloco_atrasadas.border_radius = 0
+                bloco_atrasadas.padding = ft.Padding(0, 4, 0, 4)
+                bloco_atrasadas.content = ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, size=16, color=cores.acao_primaria),
+                        ft.Container(width=6),
+                        # expand: quebra a linha em janela estreita, sem cortar.
+                        ft.Text(TEXTO_USUARIO_SEM_CONTAS, size=13, expand=True,
+                                 weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                    ],
+                )
+            elif atrasadas:
                 bloco_atrasadas.bgcolor = cores.alerta_atraso_fundo
                 bloco_atrasadas.border_radius = 10
                 bloco_atrasadas.padding = 12
@@ -3988,14 +4007,17 @@ def main(page: ft.Page):
             else:
                 banner_semana.visible = False
 
-            construir_bloco_atrasadas(database.listar_contas_atrasadas(usuario_atual["id"]))
+            # v7.0 5.43 (M2, U1): "sem contas" pelos dados atuais, depois da
+            # geração sob demanda acima; nunca por uma marca de primeiro acesso.
+            sem_contas = not database.usuario_tem_contas(usuario_atual["id"])
+            construir_bloco_atrasadas(database.listar_contas_atrasadas(usuario_atual["id"]), sem_contas=sem_contas)
 
             # RF05/5.15 (Etapa 3): TODAS as contas do mês (sem o antigo corte
             # em 5), na rolagem normal da página (`conteudo`); ordem mantida.
             contas_ordenadas = ordenar_contas_do_mes(contas_mes)
 
             lista_contas.controls.clear()
-            if not contas_ordenadas:
+            if not contas_ordenadas and not sem_contas:   # U2: só a orientação basta
                 lista_contas.controls.append(
                     ft.Container(
                         content=ft.Text("Nenhuma conta neste mês.", color=cores.texto_secundario, size=13),

@@ -5,9 +5,22 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.6 — E7: orientação para quem ainda não tem contas (16/10/2026)
+
+Sexta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.43, M2), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes.
+
+- **O que muda:** quem ainda não tem nenhuma conta, em nenhum mês, passa a ver em Início a orientação **"Registre suas primeiras contas e tenha tudo sob controle."**, com um ícone de adicionar, no lugar de "Suas contas estão em dia!" (que não fazia sentido para quem nunca cadastrou nada). A lista do mês deixa de mostrar "Nenhuma conta neste mês." nesse caso.
+- **Só informativa:** a orientação não é um botão e não abre nada; as contas continuam sendo cadastradas pelo botão "+".
+- **Quem já tem contas:** nada muda. Num mês vazio, continuam "Nenhuma conta neste mês." e os avisos de sempre ("Suas contas estão em dia!" ou "Você possui contas em atraso!").
+- **Sempre pelos dados atuais:** ao cadastrar a primeira conta, a orientação some; se todas as contas forem excluídas, ela volta.
+- **Temas:** legível nos temas Claro e Escuro.
+- **Testes:** 1111 testes automáticos do aplicativo aprovados (14 novos), em bancos temporários e sem acesso à rede. Validação manual numa cópia isolada, com banco próprio e dados fictícios, depois removida: 7 de 7 cenários aprovados pela autora.
+- **Sem mudanças** no banco de dados (nenhuma migração; só uma consulta nova, de leitura), nos Termos de Uso, na Política de Privacidade ou no serviço de códigos.
+- **Continua valendo:** o Sino segue sem liberação pública; o envio de códigos continua restrito aos endereços autorizados da autora (Sino 6.3, abaixo).
+
 ## Sino 6.5 — E6: descrição de até 1000 caracteres (16/10/2026)
 
-Quinta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.45, M4), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes.
+Quinta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.45, M4), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes. *Atualização (16/10/2026):* publicada no GitHub no commit `3fc862b9fae5bd8fa787553b1d7f55dc41113e1c`.
 
 - **O que muda:** a descrição de uma conta pode ter até **1000 caracteres** (antes, 500). Cada caractere percebido conta como um, inclusive emojis compostos, bandeiras e letras acentuadas.
 - **Campo maior:** em Nova conta e Editar conta, o campo de descrição começa com 2 linhas e cresce até 8; depois da oitava linha, ele rola por dentro. O contador passa a mostrar "x/1000", e a dica, "Até 1000 caracteres".

@@ -37,8 +37,9 @@ A [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md) é o plano em andamento, divid
 
 - **E1–E4 concluídas:** licença (E1), versões e aceite dos Termos e da Política (E2, Sino 6.1), restrição de destinatários (E3, Sino 6.2) e envio real em produção restrita (E4, Sino 6.3). A E4 foi encerrada com ressalvas: a meta original de desempenho do serviço de códigos não foi atendida (risco aceito só para o uso restrito), e a revisão jurídica dos Termos e da Política continua pendente.
 - **E5 (M5) concluída:** contador do nome do usuário oculto no Cadastro e em Editar nome (Sino 6.4, publicada em 16/10/2026).
-- **E6 (M4) implementada e validada:** descrição das contas com até 1000 caracteres percebidos, em campo de 2 a 8 linhas (Sino 6.5, 16/10/2026; publicação pendente na data deste registro).
-- **E7–E12 pendentes:** demais melhorias de experiência de uso.
+- **E6 (M4) concluída:** descrição das contas com até 1000 caracteres percebidos, em campo de 2 a 8 linhas (Sino 6.5, publicada em 16/10/2026).
+- **E7 (M2) implementada e validada:** orientação "Registre suas primeiras contas e tenha tudo sob controle." em Início para quem ainda não tem contas (Sino 6.6, 16/10/2026; publicação pendente na data deste registro).
+- **E8–E12 pendentes:** demais melhorias de experiência de uso.
 - **E13–E15 pendentes:** avaliação e preparação da disponibilização para outras pessoas.
 - **E16–E18 pendentes:** comprovantes em imagem e backup completo.
 - **Faturas (M13):** proposta ainda candidata, sem aprovação.

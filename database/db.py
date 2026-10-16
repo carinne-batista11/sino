@@ -3523,6 +3523,22 @@ def anos_com_contas(usuario_id):
     return [ano for ano, _ in totais_por_ano(usuario_id)]
 
 
+def usuario_tem_contas(usuario_id):
+    """
+    ERS v7.0 5.43 (M2, U1): o usuário tem alguma conta, em qualquer mês
+    (inclusive ocorrências de séries já geradas)? Calculado pelos dados
+    atuais, sem marca de primeiro acesso. Só leitura.
+    """
+    conexao = conectar()
+    try:
+        linha = conexao.execute(
+            "SELECT EXISTS(SELECT 1 FROM contas WHERE usuario_id = ?)", (usuario_id,),
+        ).fetchone()
+    finally:
+        conexao.close()
+    return bool(linha[0])
+
+
 def gastos_por_categoria(usuario_id, inicio, fim):
     """
     RF22: [{categoria_id, nome, icone, cor, total}] das categorias com contas
