@@ -424,12 +424,14 @@ def texto_para_limite(campo, texto):
     return (texto or "").strip()
 
 
-def atualizar_contador_de_limite(controle, campo, limite):
+def atualizar_contador_de_limite(controle, campo, limite, mostrar_contador=True):
     """5.23: contador pelos grafemas do valor VISÍVEL (bruto, com espaços e
     quebras de linha) -- o mesmo que o bloqueio da digitação usa -- e, se o
     texto que seria gravado (normalizado) passar do limite, a mensagem
-    amigável no campo. Nunca altera `controle.value` (P4: nada é cortado)."""
-    controle.counter = texto_contador(controle.value, limite)
+    amigável no campo. Nunca altera `controle.value` (P4: nada é cortado).
+    Com `mostrar_contador=False` (5.46, nome do usuário), o contador fica
+    sempre oculto; a mensagem de limite continua."""
+    controle.counter = texto_contador(controle.value, limite) if mostrar_contador else None
     controle.error = erro_de_limite(campo, texto_para_limite(campo, controle.value), limite)
 
 
@@ -484,12 +486,17 @@ class LimiteDoCampo:
 
     Cada recusa também pede um som curto a `aviso` (por padrão
     `aviso_sonoro.aviso_limite`, melhor esforço, sem bloquear a interface).
+
+    `mostrar_contador=False` (5.46, nome do usuário no Cadastro e em Editar
+    nome) oculta o contador em todos os estados; limite, recusa, "Limite
+    atingido", som e mensagem de limite continuam iguais.
     """
 
-    def __init__(self, controle, campo, limite, ao_mudar=None, aviso=None):
+    def __init__(self, controle, campo, limite, ao_mudar=None, aviso=None, mostrar_contador=True):
         self.controle = controle
         self.campo = campo
         self.limite = limite
+        self.mostrar_contador = mostrar_contador
         self.ao_mudar = ao_mudar
         self.aviso = aviso if aviso is not None else aviso_sonoro.aviso_limite
         controle.on_change = self.tratar_mudanca
@@ -500,14 +507,14 @@ class LimiteDoCampo:
         formulário ou valor definido pelo código)."""
         self.ultimo_valor = self.controle.value or ""
         self.controle.helper = None
-        atualizar_contador_de_limite(self.controle, self.campo, self.limite)
+        atualizar_contador_de_limite(self.controle, self.campo, self.limite, self.mostrar_contador)
 
     def tratar_mudanca(self, e):
         novo = self.controle.value or ""
         if edicao_dentro_do_limite(self.ultimo_valor, novo, self.limite):
             self.ultimo_valor = novo
             self.controle.helper = None
-            atualizar_contador_de_limite(self.controle, self.campo, self.limite)
+            atualizar_contador_de_limite(self.controle, self.campo, self.limite, self.mostrar_contador)
             if self.ao_mudar is not None:
                 self.ao_mudar(e)
         else:
@@ -515,15 +522,16 @@ class LimiteDoCampo:
             self.controle.value = self.ultimo_valor
             self.controle.selection = ft.TextSelection(base_offset=cursor, extent_offset=cursor)
             self.controle.helper = MENSAGEM_LIMITE_ATINGIDO
-            atualizar_contador_de_limite(self.controle, self.campo, self.limite)
+            atualizar_contador_de_limite(self.controle, self.campo, self.limite, self.mostrar_contador)
             self.aviso.tocar()
         e.page.update()
 
 
-def ligar_contador_de_limite(controle, campo, limite, ao_mudar=None, aviso=None):
+def ligar_contador_de_limite(controle, campo, limite, ao_mudar=None, aviso=None, mostrar_contador=True):
     """Contador por grafemas e bloqueio do limite em `controle` (ver
-    `LimiteDoCampo`); `ao_mudar` só é chamado para edições aceitas."""
-    return LimiteDoCampo(controle, campo, limite, ao_mudar, aviso)
+    `LimiteDoCampo`); `ao_mudar` só é chamado para edições aceitas.
+    `mostrar_contador=False` só no nome do usuário (5.46)."""
+    return LimiteDoCampo(controle, campo, limite, ao_mudar, aviso, mostrar_contador)
 
 
 def resumo_do_mes(contas):
@@ -1472,7 +1480,9 @@ def main(page: ft.Page):
 
         campo_nome = ft.TextField(label="Nome completo", hint_text="Seu nome", width=330, visible=False,
                                    color=cores.texto_principal)
-        limite_nome_cadastro = ligar_contador_de_limite(campo_nome, "nome_usuario", limites.LIMITE_NOME_USUARIO)
+        # 5.46 (M5): contador do nome sempre oculto; limite, aviso e som mantidos.
+        limite_nome_cadastro = ligar_contador_de_limite(campo_nome, "nome_usuario", limites.LIMITE_NOME_USUARIO,
+                                                        mostrar_contador=False)
         campo_email = ft.TextField(label="E-mail", hint_text="voce@email.com", width=330, color=cores.texto_principal)
         campo_senha = ft.TextField(label="Senha", hint_text="********", password=True,
                                     can_reveal_password=True, width=330, color=cores.texto_principal)
@@ -5259,7 +5269,9 @@ def main(page: ft.Page):
                 mostrar_tela_ajustes()
 
             botao_salvar.on_click = salvar
-            ligar_contador_de_limite(campo, "nome_usuario", limites.LIMITE_NOME_USUARIO, ao_mudar=ao_mudar)
+            # 5.46 (M5): contador do nome sempre oculto; limite, aviso e som mantidos.
+            ligar_contador_de_limite(campo, "nome_usuario", limites.LIMITE_NOME_USUARIO, ao_mudar=ao_mudar,
+                                     mostrar_contador=False)
             atualizar_botao_salvar()
 
             page.show_dialog(ft.AlertDialog(

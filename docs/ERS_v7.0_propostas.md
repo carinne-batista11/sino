@@ -2,7 +2,7 @@
 
 **Situação (registro de 04/10/2026, preservado):** planejamento iniciado em 04/10/2026. Nada aqui está decidido nem implementado. A [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) continua sendo a especificação vigente, e o código atual não muda nesta fase.
 
-**Situação atual (16/10/2026):** as decisões deste documento estão consolidadas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md). Entregas concluídas: E1 (licença, M9), E2 (Sino 6.1, M12 técnica), E3 (Sino 6.2, restrição de destinatários) e E4 (Sino 6.3, envio real em produção restrita; encerrada em 15/10/2026 com ressalvas: P43 **não atendida**, com risco aceito só para a produção restrita; M8 **aberta** para a disponibilização a terceiros). M1–M7, M10 e M11 continuam **decididas e não implementadas** (E5–E12, E16–E18); M14 sem decisões (E13–E15); M13 (Faturas) continua **candidata**, sem aprovação. Revisão jurídica pendente. O Sino **não** está liberado ao público. As seções abaixo preservam o histórico de cada decisão e análise.
+**Situação atual (16/10/2026):** as decisões deste documento estão consolidadas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md). Entregas concluídas: E1 (licença, M9), E2 (Sino 6.1, M12 técnica), E3 (Sino 6.2, restrição de destinatários) e E4 (Sino 6.3, envio real em produção restrita; encerrada em 15/10/2026 com ressalvas: P43 **não atendida**, com risco aceito só para a produção restrita; M8 **aberta** para a disponibilização a terceiros). *Atualização (16/10/2026, E5):* M5 **implementada e validada** (E5, Sino 6.4; commit e publicação pendentes na data deste registro); M1–M4, M6, M7, M10 e M11 continuam **decididas e não implementadas** (E6–E12, E16–E18); M14 sem decisões (E13–E15); M13 (Faturas) continua **candidata**, sem aprovação. Revisão jurídica pendente. O Sino **não** está liberado ao público. As seções abaixo preservam o histórico de cada decisão e análise.
 
 **Organização vigente (06/10/2026, P33):** a ERS v7.0 consolidada é o planejamento geral, dividido em entregas publicadas separadamente (E1–E18 e F1, seção 15 da ERS). Prioridades: 1 licença; 2 envio real de e-mails; 3 UX; 4 disponibilização (M14); 5 comprovantes, Faturas e pendências. As ordens de implementação registradas mais abaixo neste documento são **histórico**.
 
@@ -16,7 +16,7 @@
 | M2 | Primeiro acesso sem nenhuma conta: mostrar "Registre suas primeiras contas e tenha tudo sob controle" em vez de "Suas contas estão em dia"; diferenciar usuário sem contas de mês vazio | **Decidida** (U1–U4); a implementar |
 | M3 | Em Início, clicar no mês/ano abre um seletor de mês e ano, mantendo as setas | **Decidida** (M3-1 a M3-4); a implementar |
 | M4 | Descrição da conta: limite de 500 para 1.000 caracteres | **Decidida** (M4-1, M4-2); a implementar |
-| M5 | Ocultar o contador "0/70" do nome do usuário, mantendo o limite e o aviso | **Decidida** (M5-A, M5-B); a implementar |
+| M5 | Ocultar o contador "0/70" do nome do usuário, mantendo o limite e o aviso | **Decidida** (M5-A, M5-B); ~~a implementar~~ **implementada e validada em 16/10/2026** (E5, Sino 6.4; ver "Implementação e validação" na M5) |
 | M6 | Calendário: corrigir o contraste do dia atual e traduzir para português | **Decidida** (M6-A, M6-B); a implementar |
 | M7 | Gráfico de colunas por categoria (nome, valor e cor), complementando a rosca | **Decidida** (M7-A a M7-D e critério de acessibilidade); a implementar |
 | M8 | Envio real de e-mails pela Resend e publicação do serviço de códigos | ~~**Planejada com condições e pendências** (domínio, remetente e responsável a definir); nada contratado~~ *Atualização (16/10/2026):* **produção restrita concluída** na E4 (15/10/2026; Sino 6.3), com envio real só para os endereços autorizados da autora, Workers Free e Resend Free, sem contratação paga; P43 não atendida, com risco aceito só para a produção restrita. **Disponibilização a terceiros pendente** (M8 aberta; ver "Encerramento formal da E4") |
@@ -399,7 +399,14 @@ Ocultar o contador "0/70" do nome do usuário, mantendo o limite e o aviso.
 * **M5-A:** contador oculto nos **dois** formulários (Cadastro e Editar nome, em Ajustes).
 * **M5-B:** contador **sempre oculto**, sem reaparecer perto do limite; limite de 70, aviso "Limite atingido" e som mantidos.
 
-**M5 decidida; a implementar.**
+**M5 decidida; a implementar.** *(registro de 04/10/2026)*
+
+### Implementação e validação (E5, 16/10/2026; Sino 6.4)
+
+* **Implementação:** o mecanismo de limite (`LimiteDoCampo`, em `backend/main.py`) ganhou a opção `mostrar_contador` (padrão: visível), conforme a decisão técnica do planejamento acima; ela é desligada só em "Nome completo" (Cadastro) e em "Nome" (Editar nome, em Ajustes). Limite de 70 caracteres percebidos, recusa do 71º, cursor, "Limite atingido", som, mensagem para nome antigo acima do limite e validação ao salvar continuam iguais; os demais contadores não mudam. Sem migração.
+* **Testes automatizados:** 1082 do aplicativo aprovados (12 novos: comportamento do mecanismo com o contador oculto e com o padrão; Cadastro, inclusive ao alternar entre Entrar e Criar conta; Editar nome no tema Escuro; regressão dos contadores de nome da conta, descrição e nome da categoria), em bancos temporários, sem rede e com bloqueio de acesso ao banco real.
+* **Validação manual:** em cópia isolada (banco próprio, serviço de códigos desativado, dois usuários fictícios), **7/7 cenários aprovados pela autora**: Cadastro sem contador; recusa do 71º com mensagem e som, sem deslocamento visual percebido; alternância Entrar/Criar conta; Editar nome nos temas Claro e Escuro; nome antigo com 75 caracteres; contadores dos demais campos. Banco real e backups preservados; cópia removida depois da validação.
+* **Situação:** implementada e validada; commit e publicação no GitHub pendentes na data deste registro (ERS v7.0, 15.3).
 
 ---
 

@@ -193,13 +193,17 @@ class TestEditarNome(TesteDeAjustes):
         self.assertEqual((self.nome_no_banco(self.bia), sessao.usuario["nome"]), ("Bia", "Bia"))
 
     def test_limite_por_caracteres_percebidos(self):
+        # ERS v7.0 5.46 (M5, CT134): contador sempre oculto; limite, aviso e som mantidos.
         pagina, _ = self.abrir_ajustes()
         campo, salvar = self.abrir_dialogo_nome(pagina)
-        self.assertEqual(campo.counter, "3/70")
+        self.assertIsNone(campo.counter)
         self.digitar(pagina, campo, "a" * 69 + "👩‍💻")
-        self.assertEqual(campo.counter, "70/70")
-        self.digitar(pagina, campo, "a" * 69 + "👩‍💻" + "b")   # 71º caractere: recusado
+        self.assertIsNone(campo.counter)
+        with mock.patch.object(main.aviso_sonoro.aviso_limite, "tocar", return_value=True) as tocar:
+            self.digitar(pagina, campo, "a" * 69 + "👩‍💻" + "b")   # 71º caractere: recusado
         self.assertEqual(campo.value, "a" * 69 + "👩‍💻")
+        self.assertEqual((campo.helper, campo.counter), ("Limite atingido", None))
+        tocar.assert_called_once_with()
         self.clicar(pagina, salvar)
         self.assertEqual(self.nome_no_banco(self.bia), "a" * 69 + "👩‍💻")
 
@@ -209,7 +213,10 @@ class TestEditarNome(TesteDeAjustes):
         pagina, sessao = self.abrir_ajustes()
         campo, salvar = self.abrir_dialogo_nome(pagina)
         self.assertEqual(campo.value, antigo)                # exibido sem corte (P4)
+        self.assertIsNone(campo.counter)                     # 5.46: oculto também acima do limite
+        self.assertIn("70", campo.error)
         self.digitar(pagina, campo, "n" * 74)                # reduzir é permitido
+        self.assertIsNone(campo.counter)
         with mock.patch.object(main.database, "alterar_nome_usuario") as alterar:
             self.clicar(pagina, salvar)
         alterar.assert_not_called()

@@ -5,9 +5,20 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.4 — E5: contador do nome do usuário oculto (16/10/2026)
+
+Quarta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.46, M5), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes.
+
+- **O que muda:** o contador "x/70" deixa de aparecer no campo de nome do **Cadastro** ("Nome completo") e de **Editar nome**, em Ajustes. Ele fica oculto o tempo todo, inclusive perto do limite.
+- **Continua igual:** o limite de 70 caracteres (cada emoji conta como um), a recusa de qualquer caractere além disso, o aviso "Limite atingido" e o som curto, a mensagem para um nome antigo acima do limite (que aparece inteiro e só pode ser salvo depois de reduzido) e a validação ao salvar.
+- **Outros campos:** os contadores do nome da conta, da descrição e do nome da categoria continuam visíveis.
+- **Testes:** 1082 testes automáticos do aplicativo aprovados (12 novos), em bancos temporários e sem acesso à rede. Validação manual numa cópia isolada, com banco próprio e dados fictícios: 7 de 7 cenários aprovados pela autora, nos temas Claro e Escuro, sem problema visual.
+- **Sem mudanças** no banco de dados (nenhuma migração), nos Termos de Uso, na Política de Privacidade ou no serviço de códigos.
+- **Continua valendo:** o Sino segue sem liberação pública; o envio de códigos continua restrito aos endereços autorizados da autora (Sino 6.3, abaixo).
+
 ## Sino 6.3 — E4: envio real em produção restrita (encerrada em 15/10/2026; versão registrada em 16/10/2026)
 
-Terceira entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.49, M8). A E4 foi **encerrada operacionalmente em 15/10/2026** pela autora, com ressalvas, e a versão **Sino 6.3** foi **registrada formalmente em 16/10/2026**. Ela corresponde ao código da E4 já publicado no GitHub (até o commit `db00f44`); o registro não envolve nova implantação.
+Terceira entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.49, M8). A E4 foi **encerrada operacionalmente em 15/10/2026** pela autora, com ressalvas, e a versão **Sino 6.3** foi **registrada formalmente em 16/10/2026**. Ela corresponde ao código da E4 já publicado no GitHub (até o commit `db00f44`); o registro não envolve nova implantação e foi publicado no GitHub em 16/10/2026 (`a57d73f`).
 
 - **O que muda para quem usa o Sino:** o aplicativo passa a confirmar e-mails pelo serviço de códigos definitivo, em **produção restrita**: só os endereços autorizados da autora recebem códigos. Para qualquer outro endereço, o cadastro e a troca de e-mail mostram "O envio de códigos está restrito nesta fase do Sino." e a recuperação de senha mantém a resposta neutra, sem envio. O login de contas existentes continua local.
 - **Sem liberação pública:** o Sino continua sendo um projeto de portfólio e de uso pessoal da autora; a disponibilização a outras pessoas (M8 para terceiros, M14) continua pendente.

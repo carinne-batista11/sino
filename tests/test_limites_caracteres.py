@@ -420,6 +420,77 @@ class TestLimiteDoCampo(unittest.TestCase):
         self.assertEqual(self.campo.value, "b")
 
 
+class TestContadorOculto(unittest.TestCase):
+    """ERS v7.0 5.46 (M5; CT134): `mostrar_contador=False`, usado só no nome
+    do usuário, oculta o contador em todos os estados; limite, recusa,
+    cursor, "Limite atingido", som, mensagem de limite e `ao_mudar` iguais."""
+
+    digitar = TestLimiteDoCampo.digitar
+
+    def ligar(self, valor, campo="nome_usuario", limite=70):
+        import flet as ft
+        self.chamadas = []
+        self.aviso = AvisoFalso()
+        self.campo = ft.TextField(value=valor)
+        self.limite = main.ligar_contador_de_limite(self.campo, campo, limite,
+                                                    ao_mudar=lambda e: self.chamadas.append(self.campo.value),
+                                                    aviso=self.aviso, mostrar_contador=False)
+        return self.campo
+
+    def test_oculto_ao_abrir(self):
+        self.ligar("Bia")
+        self.assertIsNone(self.campo.counter)
+        self.assertIsNone(self.campo.helper)
+        self.assertIsNone(self.campo.error)
+
+    def test_oculto_na_edicao_aceita_ate_70(self):
+        self.ligar("")
+        self.digitar("a" * 69 + EMOJI_COMPOSTO)   # 70 caracteres percebidos
+        self.assertEqual(self.campo.value, "a" * 69 + EMOJI_COMPOSTO)
+        self.assertIsNone(self.campo.counter)
+        self.assertEqual(self.chamadas, ["a" * 69 + EMOJI_COMPOSTO])
+        self.assertEqual(self.aviso.toques, 0)
+
+    def test_oculto_na_recusa_do_71o_com_aviso_e_som(self):
+        self.ligar("a" * 70)
+        evento = self.digitar("a" * 70 + "b")
+        self.assertEqual(self.campo.value, "a" * 70)
+        self.assertIsNone(self.campo.counter)
+        self.assertEqual(self.campo.helper, "Limite atingido")
+        self.assertEqual((self.campo.selection.base_offset, self.campo.selection.extent_offset), (70, 70))
+        self.assertEqual(self.chamadas, [])        # ao_mudar só para edições aceitas
+        self.assertEqual(self.aviso.toques, 1)
+        self.assertEqual(evento.atualizacoes, 1)
+
+    def test_nome_antigo_acima_do_limite(self):
+        antigo = "n" * 75
+        self.ligar(antigo)
+        self.assertEqual(self.campo.value, antigo)  # exibido sem corte (P4)
+        self.assertIsNone(self.campo.counter)
+        self.assertIn("70", self.campo.error)
+        self.digitar(antigo + "n")                  # não cresce
+        self.assertEqual((self.campo.value, self.aviso.toques), (antigo, 1))
+        self.assertIsNone(self.campo.counter)
+        self.digitar("n" * 74)                      # reduzir é permitido
+        self.assertEqual(self.campo.value, "n" * 74)
+        self.assertIsNone(self.campo.counter)
+        self.assertIn("70", self.campo.error)
+        self.digitar("n" * 70)
+        self.assertEqual((self.campo.counter, self.campo.error), (None, None))
+
+    def test_oculto_apos_sincronizar(self):
+        self.ligar("a" * 70)
+        self.campo.value = ""
+        self.limite.sincronizar()
+        self.assertEqual((self.campo.counter, self.campo.helper), (None, None))
+
+    def test_padrao_continua_mostrando_o_contador(self):
+        import flet as ft
+        campo = ft.TextField(value="Bia")
+        main.ligar_contador_de_limite(campo, "nome_usuario", 70, aviso=AvisoFalso())
+        self.assertEqual(campo.counter, "3/70")
+
+
 class ProcessoFalso:
     def __init__(self, tocando):
         self.tocando = tocando
