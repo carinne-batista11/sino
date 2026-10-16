@@ -208,6 +208,65 @@ class TestDescricaoNaSerie(BaseDescricao):
         self.assertEqual(self.descricao(self.id_por_data(serie_id, "2027-01-10")), "Modelo")
 
 
+class TestDescricao1000NosEscopos(BaseDescricao):
+    """ERS v7.0 5.45 (M4-1; CT133): o limite de 1000 caracteres percebidos vale
+    na conta única, no modelo e nas ocorrências da série, em "Somente este mês"
+    e em "Este mês em diante"; 1001 é recusado sem gravar nada."""
+
+    MIL = "m" * 999 + "👩‍💻"     # 1000 caracteres percebidos
+    MIL_E_UM = MIL + "x"
+
+    def estado(self, serie_id):
+        return (self.descricoes(serie_id), self.descricao_modelo(serie_id),
+                self.ocorrencias(serie_id), self.serie(serie_id))
+
+    def test_criar_serie_com_1000_propaga_para_modelo_e_ocorrencias(self):
+        serie_id = self.criar_serie(descricao=self.MIL, data_termino=None)
+        self.assertEqual(self.descricao_modelo(serie_id), self.MIL)
+        self.assertEqual(set(self.descricoes(serie_id)), {self.MIL})
+        for conta_id in db.gerar_ocorrencias_sob_demanda(serie_id, "2028-06"):
+            self.assertEqual(self.descricao(conta_id), self.MIL)
+
+    def test_somente_este_mes_aceita_1000_e_recusa_1001(self):
+        serie_id = self.criar_serie(descricao="Curta")
+        id_mar = self.id_por_data(serie_id, "2027-03-10")
+        self.assertTrue(db.editar_conta_ocorrencia(id_mar, descricao=self.MIL))
+        self.assertEqual(self.descricao(id_mar), self.MIL)
+        self.assertEqual(self.descricao_modelo(serie_id), "Curta")
+        antes = self.estado(serie_id)
+        with self.assertRaises(db.LimiteDeCaracteresError):
+            db.editar_conta_ocorrencia(id_mar, descricao=self.MIL_E_UM)
+        self.assertEqual(self.estado(serie_id), antes)
+
+    def test_este_mes_em_diante_aceita_1000_no_modelo_e_na_geracao(self):
+        serie_id = self.criar_serie(descricao="Curta", data_termino=None)
+        id_mar = self.id_por_data(serie_id, "2027-03-10")
+        self.assertTrue(db.editar_conta_serie(id_mar, descricao=self.MIL))
+        self.assertEqual(self.descricoes(serie_id)[:2], ["Curta", "Curta"])
+        self.assertEqual(set(self.descricoes(serie_id)[2:]), {self.MIL})
+        self.assertEqual(self.descricao_modelo(serie_id), self.MIL)
+        novos = db.gerar_ocorrencias_sob_demanda(serie_id, "2028-06")
+        self.assertTrue(novos)
+        for conta_id in novos:
+            self.assertEqual(self.descricao(conta_id), self.MIL)
+
+    def test_este_mes_em_diante_recusa_1001_sem_gravar(self):
+        serie_id = self.criar_serie(descricao="Curta")
+        id_mar = self.id_por_data(serie_id, "2027-03-10")
+        antes = self.estado(serie_id)
+        with self.assertRaises(db.LimiteDeCaracteresError):
+            db.editar_conta_serie(id_mar, descricao=self.MIL_E_UM, valor=1.0)
+        self.assertEqual(self.estado(serie_id), antes)
+
+    def test_conta_unica_editada_com_1000(self):
+        conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01")
+        self.assertTrue(db.editar_conta_ocorrencia(conta_id, descricao=self.MIL))
+        self.assertEqual(self.descricao(conta_id), self.MIL)
+        with self.assertRaises(db.LimiteDeCaracteresError):
+            db.editar_conta_serie(conta_id, descricao=self.MIL_E_UM)
+        self.assertEqual(self.descricao(conta_id), self.MIL)
+
+
 class TestCategoriaNoEscopo(BaseDescricao):
     def setUp(self):
         super().setUp()

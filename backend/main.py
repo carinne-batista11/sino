@@ -3266,12 +3266,13 @@ def main(page: ft.Page):
                     **estilo_campo_texto(),
                 )
                 # RF07/RF32 (5.22): descrição pode ser adicionada, editada ou
-                # removida (campo vazio = remover).
+                # removida (campo vazio = remover). v7.0 5.45 (M4-2): 2 a 8
+                # linhas, com rolagem interna depois.
                 descricao_original = conta.get("descricao")
                 campo_descricao_edit = ft.TextField(
                     label="Descrição (opcional)", value=descricao_original or "",
                     hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
-                    multiline=True, min_lines=2, max_lines=5, color=cores.texto_principal,
+                    multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
                     **estilo_campo_texto(),
                 )
                 campo_valor_edit = ft.TextField(
@@ -5968,9 +5969,10 @@ def main(page: ft.Page):
         )
         # RF04/RF32 (5.22): descrição opcional. 5.23: contador por grafemas e
         # mensagem ao passar do limite -- sem max_length (cortaria sem aviso).
+        # v7.0 5.45 (M4-2): 2 a 8 linhas, com rolagem interna depois.
         campo_descricao = ft.TextField(
             label="Descrição (opcional)", hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
-            multiline=True, min_lines=2, max_lines=5, color=cores.texto_principal,
+            multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
             counter=texto_contador("", limites.LIMITE_DESCRICAO),
             **estilo_campo_texto(),
         )

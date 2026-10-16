@@ -99,7 +99,7 @@ class TestDemaisContadoresVisiveis(TesteDeAjustes):
         self.clicar(pagina, fab)
         campos = self.campos_da_pagina(pagina)
         self.assertEqual(campos["Nome da conta"].counter, "0/30")
-        self.assertEqual(campos["Descrição (opcional)"].counter, "0/500")
+        self.assertEqual(campos["Descrição (opcional)"].counter, "0/1000")   # v7.0 5.45 (E6)
         self.digitar(pagina, campos["Nome da conta"], "Aluguel")
         self.assertEqual(campos["Nome da conta"].counter, "7/30")
 

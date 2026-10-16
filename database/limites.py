@@ -19,7 +19,8 @@ import regex
 LIMITE_NOME_USUARIO = 70
 LIMITE_NOME_CONTA = 30
 LIMITE_NOME_CATEGORIA = 30
-LIMITE_DESCRICAO = 500
+# ERS v7.0 5.45 (M4): descrição de até 1000 caracteres percebidos (antes 500).
+LIMITE_DESCRICAO = 1000
 
 # Rótulos usados nas mensagens amigáveis (sujeito da frase).
 ROTULOS_CAMPOS = {

@@ -48,7 +48,7 @@ class TestContarCaracteres(unittest.TestCase):
         self.assertEqual(
             (limites.LIMITE_NOME_USUARIO, limites.LIMITE_NOME_CONTA,
              limites.LIMITE_NOME_CATEGORIA, limites.LIMITE_DESCRICAO),
-            (70, 30, 30, 500),
+            (70, 30, 30, 1000),   # descrição: 1000 desde a ERS v7.0 (5.45, M4)
         )
 
     def test_interface_e_persistencia_usam_a_mesma_funcao(self):
@@ -127,21 +127,42 @@ class TestLimitesNaGravacao(TesteComBancoTemporario):
         self.assertEqual(self.total_contas(), 1)
         self.assertEqual(self.consultar("SELECT COUNT(*) FROM series_recorrencia")[0][0], 0)
 
-    def test_descricao_500_aceita_501_recusada(self):
-        conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01", descricao="d" * 500)
-        self.assertEqual(len(self.consultar("SELECT descricao FROM contas WHERE id = ?", (conta_id,))[0][0]), 500)
+    def test_descricao_1000_aceita_1001_recusada(self):  # CT133 (v7.0 5.45)
+        conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01", descricao="d" * 1000)
+        self.assertEqual(len(self.consultar("SELECT descricao FROM contas WHERE id = ?", (conta_id,))[0][0]), 1000)
         with self.assertRaises(limites.LimiteDeCaracteresError) as contexto:
-            db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01", descricao="d" * 501)
-        self.assertEqual(contexto.exception.campo, "descricao")
+            db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01", descricao="d" * 1001)
+        self.assertEqual((contexto.exception.campo, contexto.exception.limite, contexto.exception.contagem),
+                         ("descricao", 1000, 1001))
+        self.assertEqual(str(contexto.exception),
+                         "A descrição pode ter no máximo 1000 caracteres (atual: 1001).")  # Q1: sem separador
         with self.assertRaises(limites.LimiteDeCaracteresError):
-            db.criar_serie_recorrente(self.usuario_id, "Luz", 10.0, "2026-10-01", "mensal", descricao="d" * 501)
+            db.criar_serie_recorrente(self.usuario_id, "Luz", 10.0, "2026-10-01", "mensal", descricao="d" * 1001)
         self.assertEqual(self.total_contas(), 1)
+        self.assertEqual(self.consultar("SELECT COUNT(*) FROM series_recorrencia")[0][0], 0)
 
     def test_descricao_contada_depois_da_normalizacao(self):
         conta_id = db.criar_conta_unica(
-            self.usuario_id, "Luz", 10.0, "2026-10-01", descricao="  " + "d" * 500 + "\n\n",
+            self.usuario_id, "Luz", 10.0, "2026-10-01", descricao="  " + "d" * 1000 + "\n\n",
         )
-        self.assertEqual(self.consultar("SELECT descricao FROM contas WHERE id = ?", (conta_id,))[0][0], "d" * 500)
+        self.assertEqual(self.consultar("SELECT descricao FROM contas WHERE id = ?", (conta_id,))[0][0], "d" * 1000)
+
+    def test_descricao_1000_por_caracteres_percebidos(self):  # CT133, T5
+        compostos = EMOJI_COMPOSTO + "🇧🇷" + "é"           # 3 caracteres percebidos, 7 pontos de código
+        descricao = "a" * 997 + compostos
+        self.assertEqual((limites.contar_caracteres(descricao), len(descricao)), (1000, 1004))
+        conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01", descricao=descricao)
+        self.assertEqual(self.consultar("SELECT descricao FROM contas WHERE id = ?", (conta_id,))[0][0], descricao)
+        with self.assertRaises(limites.LimiteDeCaracteresError):
+            db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01", descricao=descricao + "👍🏽")
+        self.assertEqual(self.total_contas(), 1)
+
+    def test_descricao_1000_com_quebras_internas_preservadas(self):
+        descricao = ("linha\r\n" * 166) + "fim!"                  # 166 × 6 + 4 = 1000 (\r\n conta 1)
+        self.assertEqual(limites.contar_caracteres(descricao), 1000)
+        conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-01",
+                                        descricao="\n  " + descricao + " \n")
+        self.assertEqual(self.consultar("SELECT descricao FROM contas WHERE id = ?", (conta_id,))[0][0], descricao)
 
     def test_edicao_recusada_nao_grava_nada(self):
         serie_id, _ = db.criar_serie_recorrente(self.usuario_id, "Luz", 10.0, "2027-01-10", "mensal",
@@ -151,7 +172,9 @@ class TestLimitesNaGravacao(TesteComBancoTemporario):
         with self.assertRaises(limites.LimiteDeCaracteresError):
             db.editar_conta_serie(id_fev, valor=99.0, nome="n" * 31)
         with self.assertRaises(limites.LimiteDeCaracteresError):
-            db.editar_conta_ocorrencia(id_fev, valor=99.0, descricao="d" * 501)
+            db.editar_conta_ocorrencia(id_fev, valor=99.0, descricao="d" * 1001)
+        with self.assertRaises(limites.LimiteDeCaracteresError):
+            db.editar_conta_serie(id_fev, valor=99.0, descricao="d" * 1001)
         self.assertEqual((self.ocorrencias(serie_id), self.serie(serie_id)), antes)
 
     # CT108 -------------------------------------------------------------
@@ -171,7 +194,7 @@ class TestDadosLegadosAcimaDoLimite(TesteComBancoTemporario):
         super().setUp()
         self.usuario_id = self.criar_usuario()
         self.nome_longo = "Nome antigo muito longo de conta legado"  # 39
-        self.descricao_longa = "x" * 600
+        self.descricao_longa = "x" * 1100   # acima do limite de 1000 (v7.0 5.45)
 
     def test_conta_avulsa_legada(self):
         conta_id = self.executar(

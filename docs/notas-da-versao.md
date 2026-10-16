@@ -5,9 +5,22 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.5 — E6: descrição de até 1000 caracteres (16/10/2026)
+
+Quinta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.45, M4), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes.
+
+- **O que muda:** a descrição de uma conta pode ter até **1000 caracteres** (antes, 500). Cada caractere percebido conta como um, inclusive emojis compostos, bandeiras e letras acentuadas.
+- **Campo maior:** em Nova conta e Editar conta, o campo de descrição começa com 2 linhas e cresce até 8; depois da oitava linha, ele rola por dentro. O contador passa a mostrar "x/1000", e a dica, "Até 1000 caracteres".
+- **Em todas as contas:** vale para contas únicas e recorrentes, tanto em "Somente este mês" quanto em "Este mês em diante". Em Detalhes, a descrição continua aparecendo inteira, com as quebras de linha.
+- **Continua igual:** espaços e quebras de linha nas pontas são removidos ao salvar; nada é cortado automaticamente; além do limite, a digitação é recusada com o aviso "Limite atingido" e o som curto.
+- **Compatibilidade:** uma descrição com mais de 500 caracteres, salva nesta versão, aparece inteira se a conta for aberta numa versão anterior do Sino (limite de 500), mas só pode ser salva lá depois de reduzida a 500. Nesta versão, o limite é 1000: uma descrição antiga acima de 1000 continua aparecendo inteira e só pode ser salva depois de reduzida a 1000.
+- **Testes:** 1097 testes automáticos do aplicativo aprovados (15 novos), em bancos temporários e sem acesso à rede. Validação manual numa cópia isolada, com banco próprio e dados fictícios, depois removida: 7 de 7 cenários e 30 de 30 verificações aprovados pela autora, nos temas Claro e Escuro.
+- **Sem mudanças** no banco de dados (nenhuma migração), nos Termos de Uso, na Política de Privacidade ou no serviço de códigos.
+- **Continua valendo:** o Sino segue sem liberação pública; o envio de códigos continua restrito aos endereços autorizados da autora (Sino 6.3, abaixo).
+
 ## Sino 6.4 — E5: contador do nome do usuário oculto (16/10/2026)
 
-Quarta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.46, M5), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes.
+Quarta entrega com código da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regra 5.46, M5), implementada e validada em 16/10/2026. Na data deste registro, o commit e a publicação no GitHub ainda estavam pendentes. *Atualização (16/10/2026):* publicada no GitHub no commit `c2961587d7f7868efcb7b58ade1e7f73cf8178b3`.
 
 - **O que muda:** o contador "x/70" deixa de aparecer no campo de nome do **Cadastro** ("Nome completo") e de **Editar nome**, em Ajustes. Ele fica oculto o tempo todo, inclusive perto do limite.
 - **Continua igual:** o limite de 70 caracteres (cada emoji conta como um), a recusa de qualquer caractere além disso, o aviso "Limite atingido" e o som curto, a mensagem para um nome antigo acima do limite (que aparece inteiro e só pode ser salvo depois de reduzido) e a validação ao salvar.
