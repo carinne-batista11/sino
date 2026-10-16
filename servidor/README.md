@@ -6,13 +6,15 @@ a autorização que o aplicativo confere localmente. O contrato está em
 [`docs/contrato-servico-codigos.md`](../docs/contrato-servico-codigos.md).
 
 **Estado:** contrato v1.1 (restrição de destinatários da E3, ERS v7.0 5.49),
-validado localmente e publicado no repositório com a Sino 6.2. O serviço de
-produção **não foi publicado** nem validado. Na E4, o ambiente remoto de
+validado localmente e publicado no repositório com a Sino 6.2. **Produção
+restrita publicada e validada em 15/10/2026** (`sino-servico-codigos` em
+`https://sino-servico-codigos.appsino.workers.dev`, só para os dois
+destinatários autorizados da autora; ver "Produção restrita"). Na E4, o ambiente remoto de
 testes (T1, sem envio) foi usado e encerrado em 12/10/2026; o ambiente T2
 (primeiro envio real) foi usado em 13 e 14/10/2026 para testes restritos e
 **encerrado e desmontado em 14/10/2026**: oito e-mails reais, todos Delivered,
-só para um único destinatário autorizado (ver abaixo). A E4 continua
-pendente: faltam a produção restrita e a configuração da versão do aplicativo.
+só para um único destinatário autorizado (ver abaixo). O encerramento formal da
+E4 depende de decisão da autora (ver `docs/ERS_v7.0_propostas.md`).
 
 ## Organização
 
@@ -48,7 +50,18 @@ máquina. Os valores usados nos testes (`vitest.config.ts`) são fixos e não s�
 credenciais. Os segredos da produção são outros e nunca passam por `.dev.vars`
 (ver "Produção restrita").
 
-## Produção restrita (E4/M8; decisões 5 e 6 de 15/10/2026; ainda não publicada)
+## Produção restrita (E4/M8; decisões 5 e 6 de 15/10/2026; publicada em 15/10/2026)
+
+**Situação (15/10/2026):** publicada pela autora em
+`https://sino-servico-codigos.appsino.workers.dev` (Workers Free, Resend Free,
+dois destinatários autorizados), com o aplicativo configurado para ela
+(`backend/servico_codigos.py`, commit `db00f44`). Validada: teste fora da lista
+(403, sem envio), cadastro definitivo, CT138 e expiração no próprio serviço.
+CPU (P43): critério original não atendido, risco aceito só para a produção
+restrita. Pendentes: guarda das cópias de recuperação, depois a remoção dos
+arquivos da pasta de segredos um a um, e `npx wrangler logout`. Registro
+completo em `docs/ERS_v7.0_propostas.md`, "Implantação e validação da produção
+restrita (15/10/2026)".
 
 Configuração em `wrangler.jsonc` (fixada por `test/nucleo/ambiente_producao.test.ts`):
 Worker `sino-servico-codigos`, entrada `src/index.ts`, só

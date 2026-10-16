@@ -1020,7 +1020,21 @@ Critérios existentes, sem alteração: a definição da E4 (ERS v7.0, seção 1
 | **Produção restrita** (serviço definitivo publicado) | **Não feita**: o T2 era temporário e foi desmontado; nenhum deploy definitivo |
 | **Configuração da versão do app** (endereço e chave pública de produção) | **Não feita** |
 
-**Conclusão:** o **T2 está concluído** (testes executados e desmontagem técnica feita, com as ressalvas acima). A **E4 continua pendente**: faltam a produção restrita e a configuração da versão do app, e a validação com o serviço definitivo. Os critérios não foram alterados. A **M8 / produção** também continua pendente (implantação definitiva, revisão de segurança, política DMARC, limites e custos, retenção dos provedores e pendências legais).
+**Conclusão:** o **T2 está concluído** (testes executados e desmontagem técnica feita, com as ressalvas acima). A **E4 continua pendente**: faltam a produção restrita e a configuração da versão do app, e a validação com o serviço definitivo. Os critérios não foram alterados.
+
+**Atualização (15/10/2026, à noite; detalhes em "Implantação e validação da produção restrita (15/10/2026)"):**
+
+| Critério | Situação |
+|---|---|
+| Entrega real | Cumprida também na produção restrita: 2 envios Delivered (cadastro definitivo e teste da expiração) |
+| Expiração | **Cumprida**: recusa pelo próprio serviço (410) depois do vencimento, com o desafio ativo antes (decisão 8) |
+| Neutralidade da recuperação | Sem mudança: cumprida no T2 para endereço sem conta; a restrição da lista na recuperação, só nos testes automáticos e na segunda camada do serviço |
+| CT138 (fora da lista) | **Cumprido**: cadastro recusado (403 na produção e no T2) e alteração de e-mail recusada na produção (mensagem de restrição); nada enviado; recuperação neutra conforme a linha anterior |
+| CPU (P43) | **Critério original não atendido** (P90/P99/P99,9 de 14,4 ms em 11 invocações; 0 erros); risco aceito pela autora só para a produção restrita |
+| **Produção restrita** | **Feita**: `sino-servico-codigos` publicado em `workers.dev` (subdomínio `appsino`) e validado |
+| **Configuração da versão do app** | **Feita no código** (commit B, `db00f44`, publicado); lançamento formal de uma versão (numeração e notas) pendente |
+
+Os critérios da E4 ficam atendidos para a produção restrita, **com ressalvas** (P43 não atendida com risco aceito; restrição da lista na recuperação comprovada só por testes automáticos; DMARC pendente). Os critérios não foram alterados. O **encerramento formal da E4** depende de decisão da autora; a M8 continua pendente. A **M8 / produção** também continua pendente (implantação definitiva, revisão de segurança, política DMARC, limites e custos, retenção dos provedores e pendências legais).
 
 ### Pendências da M8 (não resolvidas)
 
@@ -1028,17 +1042,23 @@ Critérios existentes, sem alteração: a definição da E4 (ERS v7.0, seção 1
 * ~~Responsável pela operação e contato para titulares (M8-C).~~ Resolvido para o uso restrito em 08/10/2026 (Carinne; `sino.lembrete.contas@gmail.com`); redação nos Termos e na Política feita na versão de 13/10/2026 (P41).
 * Rastreamento de abertura e de cliques na Resend: conferido visualmente como desligado em 12/10/2026 (B1); em 13/10/2026, **antes** do primeiro envio real, sem configuração ativa e com TLS "Enforced" (relato da autora, recuperado do histórico das conversas em 14/10/2026); e de novo em 13/10/2026, **depois** dos testes (só "Configure"; TLS "Enforced"). Fontes oficiais da Política reconferidas em 14/10/2026, sem divergência (com as limitações registradas); passo 4 cumprido com ressalvas.
 * ~~T2 (envio real temporário).~~ **Encerrado em 14/10/2026** (ver "E4 — T2: execução e testes reais"): oito envios reais Delivered a um destinatário autorizado; invalidação do código antigo, esgotamento das tentativas e conteúdo dos e-mails aprovados; expiração aprovada em parte (recusa local do app; serviço coberto só pelos testes automáticos); alteração de e-mail fora do T2 por decisão da autora; desmontagem técnica concluída (cópia, Worker, chave da Resend, segredos, sessão e registros locais do Wrangler). Ressalvas que continuam: DMARC do primeiro e-mail inconclusivo; caso 8 com critério original não atendido (erros 1102 não auditados individualmente); capacidade e desempenho para produção não validados.
-* **Produção restrita (pendente):** serviço definitivo publicado e validado, configuração da versão do app, revisão de segurança antes da produção (ver "E4 — avaliação dos critérios").
+* ~~**Produção restrita:** serviço definitivo publicado e validado, configuração da versão do app.~~ Feitos em 15/10/2026 (ver "Implantação e validação da produção restrita (15/10/2026)"). Continua pendente a revisão de segurança antes de liberar a terceiros.
+* **Cópias de recuperação (decisão 5):** a autora preparou uma cópia de recuperação criptografada; **pendente** confirmar a guarda segura (gerenciador de senhas) e a cópia externa.
+* **Segredos locais da produção:** a pasta privada usada no deploy continua no computador; apagar os arquivos **um a um**, só **depois** da confirmação da recuperação.
+* **Sessão do Wrangler:** encerrar com `npx wrangler logout` (não confirmado nesta documentação); avaliar também a remoção dos registros locais do Wrangler criados nas rodadas de 15/10/2026, como no T2.
+* **Antes de liberar a terceiros:** reavaliar limites e cotas, CPU (P43), proteção contra abuso ("duas cotas", decisão 3) e observabilidade mínima (decisão 6, exigiria revisar a Política).
 * **DMARC:** política de `envios.appsino.com.br` (`p=none`, mantida) a rever antes da produção; investigação da ausência de `_dmarc.appsino.com.br` (o antigo `p=reject` do domínio principal), causa desconhecida.
 * Conferência de recursos, limites e custos dos planos da Cloudflare e da Resend, antes de configurar (M8-A).
 * Conferência dos prazos de retenção configuráveis e obrigatórios de cada provedor (M8-F).
 * Termos, Política e revisão jurídica antes de abrir a terceiros (M12).
-* **Decisões 7 a 9 da produção restrita e lançamento da versão do app (pendentes):** ver "E4 — produção restrita: planejamento, decisões e otimização O1". Decisões 5 e 6 aprovadas e implementadas localmente em 15/10/2026, sem commit nem deploy.
-* **CPU real na Cloudflare (P43):** a otimização O1 (14/10/2026) foi feita só com medições locais; o critério original da P43 continua **não atendido** e depende de medição real no serviço publicado.
+* **Decisão 9 (DMARC) e lançamento formal da versão do app (pendentes):** ver "E4 — produção restrita: planejamento, decisões e otimização O1". Decisões 7 e 8 executadas e aprovadas em 15/10/2026; decisões 5 e 6 implementadas e publicadas (`8a659cc`) e em uso no deploy de 15/10/2026.
+* **CPU real na Cloudflare (P43):** medida na produção restrita em 15/10/2026: o critério original continua **não atendido** (P90/P99/P99,9 de 14,4 ms; P50 de 5,54 ms; 11 invocações; 0 erros); **risco aceito pela autora só para a produção restrita**, com Workers Free mantido. Reavaliar se surgirem erros, se a mediana passar de 10 ms e antes da liberação a terceiros.
 
 ### E4 — produção restrita: planejamento, decisões e otimização O1 (14/10/2026; atualizada em 15/10/2026)
 
-**Situação:** só planejamento, decisões da autora e uma otimização de código publicada no GitHub (sem implantação na Cloudflare). **Nenhum deploy definitivo**, nenhuma alteração de DNS, nenhuma contratação. A E4 e a M8 **não estão concluídas**.
+**Situação (15/10/2026, à noite):** produção restrita **implantada e validada** na Cloudflare (Worker `sino-servico-codigos` em `workers.dev`, Workers Free e Resend Free, dois destinatários autorizados), com o aplicativo configurado para ela (commit B, `db00f44`). Sem alteração de DNS e sem contratação. Detalhes e ressalvas em "Implantação e validação da produção restrita (15/10/2026)", abaixo. A P43 continua **não atendida** (risco aceito pela autora só para a produção restrita). A M8 **não está concluída**; o encerramento formal da E4 depende de decisão da autora.
+
+*Texto anterior (14 e 15/10/2026, antes do deploy), mantido como histórico:* só planejamento, decisões da autora e uma otimização de código publicada no GitHub (sem implantação na Cloudflare). Nenhum deploy definitivo, nenhuma alteração de DNS, nenhuma contratação.
 
 #### Planejamento (diagnóstico só de leitura, 14/10/2026, depois de `e5ed03d`)
 
@@ -1058,15 +1078,17 @@ Critérios existentes, sem alteração: a definição da E4 (ERS v7.0, seção 1
 
 Escolhas da autora para a implantação (15/10/2026): subdomínio pretendido **`appsino`** (`https://sino-servico-codigos.appsino.workers.dev`), **sujeito à disponibilidade** na Cloudflare (conferida só no painel, na troca); lista de destinatários da produção restrita com o e-mail principal da autora e **um segundo endereço** dela, para o CT138 (alteração de e-mail).
 
-#### Decisões pendentes (nenhuma tomada)
+#### Decisões 7 a 9
 
-| # | Tema | Recomendação do planejamento (**não aprovada**) |
+| # | Tema | Situação |
 |---|---|---|
-| 7 | CT138 completo no envio real (alteração de e-mail, segundo endereço) | — *(segundo endereço já incluído na lista planejada, 15/10/2026)* |
-| 8 | Expiração verificada no próprio serviço, por script controlado | Sim, com um envio |
-| 9 | DMARC | Investigar o domínio principal antes; `p=none` em `envios` na fase restrita |
+| 7 | CT138 completo no envio real (alteração de e-mail) | **Executada em 15/10/2026** pelo plano mínimo aprovado pela autora: alteração de e-mail para um endereço **fictício fora da lista**, recusada com a mensagem de restrição; nenhum envio; o e-mail da conta definitiva não mudou. A alteração **positiva** para o segundo endereço autorizado **não** foi feita (ela não cobre o CT138 e mudaria a conta definitiva); o fluxo positivo fica coberto pela validação da E3 e pelos testes automáticos |
+| 8 | Expiração verificada no próprio serviço, por script controlado | **Executada e aprovada em 15/10/2026**, com um envio real (ver abaixo) |
+| 9 | DMARC | **Pendente.** Recomendação do planejamento (não aprovada): investigar o domínio principal antes; `p=none` em `envios` na fase restrita |
 
-Também pendente: o lançamento da versão do app configurada para a produção.
+*Planejamento anterior (15/10/2026):* 7 sem recomendação (segundo endereço incluído na lista); 8 "sim, com um envio".
+
+Também pendente: o lançamento formal de uma versão do app (numeração e notas da versão, seção 15.2 da ERS). A configuração de produção já está no código publicado (`db00f44`).
 
 #### Implementação das decisões 5 e 6 (15/10/2026; local, sem commit, sem deploy)
 
@@ -1075,7 +1097,8 @@ Também pendente: o lançamento da versão do app configurada para a produção.
 * **`.gitignore`:** `.env` e `.env.*` em qualquer pasta (o modelo `servidor/.dev.vars.example` continua versionado).
 * **Ferramenta `servidor/ferramentas/producao_segredos.py`** (comandos `preparar`, `chave-resend`, `conferir`, `descartar`), reaproveitando as operações de pasta e arquivo privado de `t2_segredos.py`: segredos novos; `segredos.json` (para `--secrets-file`), `recuperacao.json` (cópia de recuperação da `CHAVE_HMAC` e da semente, com KID e chave pública) e `app_producao.json` (só URL e chave pública `prod-1`); KID conferido contra `wrangler.jsonc`; `conferir` valida tudo sem mostrar valores, inclusive uma autorização fictícia assinada com a semente e verificada pelo código do aplicativo. Testes em `tests/test_producao_segredos.py` (30), só com dados fictícios. **Nenhum segredo real gerado.**
 * **Resultados:** typecheck OK; serviço **260/260** (eram 254); app **1064/1064** (eram 1034; mais 30 da ferramenta); `wrangler deploy --dry-run` local (4.146.0, sem login): 70,72 KiB, gzip 19,07 KiB, só as três variáveis públicas e os três Durable Objects. O pool de testes do simulador (Wrangler 4.124.0 embutido) avisa que não conhece o campo `observability.issues`; o Wrangler 4.146.0 do projeto aceita o campo sem aviso (o mesmo do T2).
-* **Pendentes:** commit B (URL e chave pública no aplicativo) depois da geração dos segredos; troca do subdomínio, chave da Resend de produção e cópias de recuperação (ações da autora); reconferência das fontes oficiais antes do deploy; deploy só com autorização.
+* **Pendentes (situação em 15/10/2026, à noite):** ~~commit B~~ feito e publicado (`db00f44`); ~~troca do subdomínio e chave da Resend de produção~~ feitas pela autora; ~~reconferência das fontes oficiais~~ feita pela autora; ~~deploy~~ feito pela autora com autorização (ver abaixo). Continua pendente a confirmação da guarda segura das cópias de recuperação (ver "Pendências da M8").
+* **Publicação:** commit A (`8a659cc794d37daf52678e5815538c399f661941`) publicado no GitHub em 15/10/2026.
 
 #### Otimização O1: assinatura Ed25519 nativa (commit `981d1e89888b85013cdbac2a8ba1341570a2e981`, publicado no GitHub em 14/10/2026; sem implantação na Cloudflare)
 
@@ -1100,6 +1123,28 @@ Também pendente: o lançamento da versão do app configurada para a produção.
   **Limitações:** são tamanhos do pacote gerado localmente, sem compressão, e não medições na Cloudflare. A redução indica menos código para carregar e inicializar, mas **não comprova** redução do tempo de CPU por requisição: não se sabe quanto a inicialização do módulo entra na CPU medida, nem o efeito real da assinatura nativa no runtime da Cloudflare.
 * **Teste de carga intermitente:** o teste antigo "100 fluxos simultâneos" (`servidor/test/workers/objetos.test.ts`, limite de 60 s) falhou por tempo em parte das execuções. Esse teste só faz pedidos de código, caminho que a O1 não altera. Numa comparação alternada, a base `e5ed03d` passou em **1 de 3** execuções e a O1 também em **1 de 3**, com durações iguais quando passaram. A hipótese é limitação de desempenho do simulador local e da máquina, **não comprovada**. Pode reaparecer em validações futuras.
 * **P43:** continua **pendente de medição real na Cloudflare**. O critério original (CPU abaixo de 10 ms por requisição) segue **não atendido** até nova medição no serviço publicado.
+
+#### Implantação e validação da produção restrita (15/10/2026)
+
+Cada passo com autorização da autora. Nenhum e-mail pessoal, código, token, chave ou segredo é registrado aqui.
+
+* **Ações da autora no painel:** subdomínio da conta trocado para `appsino` (endereço `https://sino-servico-codigos.appsino.workers.dev`); chave da Resend de produção `sino-producao` criada, só com permissão de envio e restrita a `envios.appsino.com.br`.
+* **Segredos:** gerados pela autora com `producao_segredos.py`, numa pasta privada fora do repositório, e conferidos pela ferramenta (`conferir`, sem mostrar valores); lista com **dois** destinatários autorizados (o e-mail principal da autora e um segundo endereço dela); chave da Resend digitada no terminal, sem eco. Cópia de recuperação criptografada preparada pela autora (não acessada nas rodadas técnicas). Só o arquivo público `app_producao.json` (URL e chave pública `prod-1`) foi lido para o commit B.
+* **Commit B** (`db00f4475efbba2e4022c600cd247ce0794f6535`, publicado no GitHub em 15/10/2026): `URL_PRODUCAO` e `CHAVES_PUBLICAS_PRODUCAO` (só a chave pública do KID `prod-1`) em `backend/servico_codigos.py`; `SINO_SERVICO_URL` e `SINO_SERVICO_CHAVES` continuam com precedência. Testes em `tests/test_servico_codigos_cliente.py` (URL e KID conferidos contra `wrangler.jsonc`, bytes da chave, nenhum token na produção, recusa de assinatura de outra chave). App **1070/1070**, executado com bloqueio de rede: **0 tentativas** de conexão (nenhum teste chega ao serviço real).
+* **Deploy:** feito pela autora, no terminal dela. Conferência visual no painel: configurações (variáveis e segredos) aparentemente corretas; Logs, Traces e Issues desativados; URL `workers.dev` ativada; Preview URLs desativadas; nenhuma rota nem domínio personalizado.
+* **Teste de fumaça (sem envio):** pedido de cadastro para um endereço fictício fora da lista → **HTTP 403**; a Resend não registrou envio. O corpo da resposta não foi registrado; vindo do Worker, esse 403 só ocorre com os segredos e as variáveis carregados (sem eles, a resposta seria 503).
+* **Incidente sem efeito:** a primeira abertura do app principal mostrou "A confirmação por e-mail não está disponível nesta instalação." **Causa confirmada:** o app foi aberto com o `python3` global (pyenv), que não tem o pacote `cryptography`; o cliente do serviço não foi carregado e **nenhuma requisição** foi feita. Resolvido abrindo pelo ambiente do projeto (`.venv/bin/python -E -s backend/main.py`), como o README já orienta (ativar o `.venv`). Sem defeito de código.
+* **Primeiro cadastro definitivo** (por volta das 20h44), no app principal: e-mail recebido, código validado, autorização `prod-1` aceita. Banco principal: 1 usuário, 1 autorização usada (cadastro), 2 aceites (Termos e Política, versão de 13/10/2026), 11 categorias padrão; sem migração (já estava na v9). Referência **ref8** registrada (`ref8_20261015_205009.txt`, ref7 preservada), com os cinco backups iguais à ref7.
+* **CT138 — alteração de e-mail fora da lista:** no app principal, alteração para um endereço fictício fora da lista → mensagem "O envio de códigos está restrito nesta fase do Sino.", que o app só mostra para a resposta 403 `destinatario_nao_permitido` (o campo `erro` é conferido exatamente). Nenhum envio; o e-mail da conta não mudou (no banco, a única autorização usada continua sendo a do cadastro). Com o cadastro recusado (teste de fumaça e T2) e a recuperação neutra (T2 e testes automáticos), o **CT138 fica atendido**; a restrição da lista na recuperação continua comprovada só pelos testes automáticos e pela segunda camada do serviço (`EnviadorRestrito`), porque o app pede a recuperação sem envio quando não existe conta.
+* **Decisão 8 — expiração no próprio serviço:** script controlado, fora do repositório (só biblioteca padrão; e-mail e código digitados sem eco e não gravados; no máximo três requisições; parada sem repetição em qualquer resposta inesperada), com a finalidade `alteracao_email` para o segundo endereço autorizado, sem usar o app nem o banco.
+  * Primeira execução: **HTTP 403 sem o campo `erro`** no pedido, parada imediata. Causa provável (não comprovada): bloqueio na borda da Cloudflare do User-Agent padrão `Python-urllib`, antes do Worker; o 403 do Worker sempre traz `erro`. Correção só no script: User-Agent próprio (`Sino-teste-B/1.0`) e diagnóstico que mostra só nomes de campos e códigos numéricos.
+  * Segunda execução, **aprovada**: pedido **201**, validade informada pelo servidor de **600 s**; código incorreto antes do vencimento → **422 `codigo_invalido`**, 4 tentativas restantes; código verdadeiro depois do vencimento (mais 30 s de margem) → **410 `desafio_encerrado`**. Como o desafio estava ativo, com uma tentativa usada e sem consumo, a recusa só se explica pela expiração. Um envio real.
+* **Resend:** **2 e-mails Delivered** desde o deploy (cadastro e teste B), nenhum para endereço fora da lista (conferência visual da autora).
+* **P43 — métricas finais da Cloudflare (agregadas):** **11 invocações** (compatível com 7 anteriores, mais 1 do CT138 e 3 do teste B, o que indica que a primeira execução do script não chegou ao Worker; não comprovado individualmente); CPU **P50 5,54 ms**; **P90, P99 e P99,9 14,4 ms**; **0 erros** totais, 0 erros de CPU e 0 exceções não tratadas. Leitura anterior (7 invocações): P50 5,6 ms; P90/P99/P99,9 14,1 ms.
+  * **Critério original** ("tempo de CPU por requisição abaixo de 10 ms nas métricas"): **NÃO ATENDIDO**.
+  * **Diagnóstico (só leitura, sem métricas por operação):** fatos — toda requisição, até um 404, lê os segredos e confere a lista com HMAC em JavaScript puro (`@noble/hashes`); pedidos e validações fazem mais HMAC e SHA-256; a assinatura Ed25519 já é nativa (O1). Hipótese mais provável, não comprovada: início a frio (pouco tráfego, instâncias novas, funções em JavaScript ainda não otimizadas). Nenhuma otimização simples avaliada garante o valor máximo abaixo de 10 ms; a troca do HMAC pelo nativo exigiria refatorar os Durable Objects (transações síncronas).
+  * **Decisão da autora (15/10/2026): aceitação formal do risco, exclusivamente para a produção restrita**, com Workers Free mantido e sem otimização imediata. A P43 **não** é registrada como aprovada. **Reavaliar** se aparecerem erros nas métricas ou falhas no app, se a mediana passar de 10 ms, e obrigatoriamente antes da liberação a terceiros (nova medição com mais amostras; otimização ou mudança de plano, com nova autorização).
+* **Banco e Git (conferência final, somente leitura):** banco principal íntegro (`integrity_check` ok, sem violações de chave estrangeira, schema v9, sem arquivos temporários do SQLite); cinco backups iguais à ref8. O hash do banco principal mudou depois da ref8 pelo **uso normal do aplicativo** pela autora (dados inseridos na conta), o que a ref8 já prevê; não se exige retorno ao hash antigo. Nenhuma alteração pelos testes. `main` = `origin/main` = `db00f44`.
 
 ### Pendência independente — item 8: repositório Git da pasta pessoal `/home/carinne` (registrada em 14/10/2026; atualizada no mesmo dia)
 

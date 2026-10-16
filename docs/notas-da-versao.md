@@ -4,7 +4,7 @@ Mudanças visíveis para quem usa o Sino e alterações nos Termos de Uso e na
 Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md).
 
-## E4 em andamento (13 e 14/10/2026): Termos e Política publicados; T2 concluído e desmontado
+## E4 em andamento (13 a 15/10/2026): Termos e Política publicados; T2 concluído e desmontado; produção restrita publicada
 
 Situação da E4: o **T1** (ambiente remoto de testes, sem Resend) está **encerrado** (12/10/2026). O **T2** (primeiro envio real de e-mail pela Resend) foi **implantado em 13/10/2026** num Worker temporário, e os e-mails reais foram entregues a **um único endereço autorizado**, numa cópia isolada do app. Os testes terminaram em 14/10/2026, e o ambiente temporário foi **desmontado no mesmo dia**. **A E4 não está concluída**: ainda faltam publicar o serviço definitivo, em uso restrito, e configurar o aplicativo para ele. O serviço não foi validado para uso amplo (produção). O aplicativo normal não mudou e nenhuma versão nova foi lançada.
 
@@ -60,7 +60,16 @@ Preparada e revisada em 13/10/2026 (P42), com auditoria de segurança e correç�
 - **Registros:** os registros detalhados e o rastreamento da Cloudflare continuam desligados, como já informa a Política de Privacidade; o acompanhamento usa só números agregados dos painéis.
 - **Ferramenta:** nova ferramenta local para preparar e conferir os segredos sem mostrá-los. Testada só com dados fictícios; nenhum segredo real foi gerado.
 - **Testes:** 260 do serviço e 1064 do aplicativo aprovados.
-- **Situação:** nada foi publicado; o endereço definitivo depende da disponibilidade do nome na Cloudflare. A E4 continua em andamento.
+- **Situação (na preparação):** nada foi publicado; o endereço definitivo dependia da disponibilidade do nome na Cloudflare. *Atualização:* publicado em 15/10/2026 (seção abaixo).
+
+### Produção restrita publicada e validada (15/10/2026; uso só da autora)
+
+- **Serviço definitivo:** o serviço de códigos foi publicado na Cloudflare em `https://sino-servico-codigos.appsino.workers.dev`, nos planos gratuitos da Cloudflare e da Resend. Por enquanto, só **dois endereços da autora** podem receber códigos; o Sino continua **sem liberação para outras pessoas**.
+- **Aplicativo:** passa a usar o serviço definitivo, com a chave pública própria da produção (commit `db00f44`, publicado no GitHub). Os ambientes de desenvolvimento e de teste continuam podendo indicar outro serviço pelas variáveis de ambiente. Para abrir o app, use o ambiente do projeto (`.venv`): sem o pacote `cryptography`, a confirmação por e-mail aparece como indisponível. Testes: 1070 do aplicativo aprovados, sem acesso à rede.
+- **Testes reais:** primeiro cadastro definitivo da autora, com o código recebido por e-mail e aceito; endereço fora da lista recusado no cadastro e na troca de e-mail, sem envio; código vencido recusado pelo próprio serviço depois de 10 minutos; dois e-mails entregues, confirmados no painel da Resend.
+- **Desempenho:** o tempo de CPU por requisição ficou acima da meta original do projeto em parte da pequena amostra (mediana abaixo da meta; nenhum erro). A autora aceitou esse risco só para o uso restrito atual, a reavaliar antes de qualquer liberação a terceiros.
+- **Sem mudanças** nos Termos de Uso, na Política de Privacidade ou no banco de dados (o primeiro cadastro usou o banco já existente, versão 9).
+- **Pendente:** DMARC do domínio principal, lançamento formal de uma versão do app, encerramentos operacionais (guarda das cópias de recuperação, limpeza de arquivos locais, saída do Wrangler) e revisões antes de terceiros (limites, desempenho, proteção contra abuso, revisão jurídica).
 
 ## Sino 6.2 — publicada em 07/10/2026 (E3: restrição de destinatários)
 
