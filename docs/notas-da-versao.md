@@ -5,9 +5,9 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
-## Sino 6.8 — E9 e E10: espaços invisíveis no e-mail e na senha; contas em janelas estreitas (aguardando publicação)
+## Sino 6.8 — E9 e E10: espaços invisíveis no e-mail e na senha; contas em janelas estreitas (16/10/2026)
 
-Entrega conjunta da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regras 5.40 a 5.42, M1, e 5.52, M11), implementada em 16/10/2026. **Ainda não publicada:** validação manual concluída em 16/10/2026 (15 de 15 testes aprovados); na data deste registro, o commit e a publicação no GitHub estavam pendentes.
+Entrega conjunta da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regras 5.40 a 5.42, M1, e 5.52, M11), implementada em 16/10/2026. ~~**Ainda não publicada:**~~ validação manual concluída em 16/10/2026 (15 de 15 testes aprovados); na data deste registro, o commit e a publicação no GitHub estavam pendentes. *Atualização (16/10/2026):* publicada no GitHub em 16/10/2026, no commit `cc2395c`.
 
 - **E-mail (E9):** espaços e caracteres invisíveis digitados sem querer no começo ou no fim do e-mail (por exemplo, ao colar o endereço) são removidos em Entrar, Criar conta, "Esqueci minha senha" e na troca de e-mail; ao enviar, o campo mostra o e-mail já limpo. Nada é removido do meio: se houver um desses caracteres no meio, aparece "Remova os espaços ou caracteres invisíveis do meio do e-mail.".
 - **Senha (E9):** a senha continua sendo conferida exatamente como foi digitada. Se ela for recusada e tiver um espaço ou caractere invisível no começo ou no fim, aparece também "Verifique se há espaços ou caracteres invisíveis no início ou no fim da senha.". Senhas novas não podem conter espaços nem caracteres invisíveis, em nenhuma posição.
