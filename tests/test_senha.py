@@ -68,7 +68,7 @@ class TestValidarNovaSenha(unittest.TestCase):
 
     def test_mensagens_amigaveis_e_hierarquia(self):
         self.assertEqual(str(db.SenhaCurtaError()), "A senha deve ter pelo menos 8 caracteres.")
-        self.assertEqual(str(db.SenhaComEspacosError()), "A senha não pode conter espaços.")
+        self.assertEqual(str(db.SenhaComEspacosError()), "A senha não pode conter espaços nem caracteres invisíveis.")
         self.assertEqual(str(db.SenhaAtualIncorretaError()), "A senha atual está incorreta.")
         self.assertEqual(str(db.SenhaIgualAtualError()), "A nova senha deve ser diferente da atual.")
         for classe in (db.SenhaCurtaError, db.SenhaComEspacosError, db.SenhaIgualAtualError):
@@ -97,7 +97,7 @@ class TestCadastroComSenhaMinima(TesteComBancoTemporario):
         for senha in SENHAS_COM_ESPACOS:
             with self.subTest(senha=repr(senha)):
                 sucesso, mensagem = db.criar_usuario("Ana", "ana@sino.com", senha, aceite_termos=True)
-                self.assertEqual((sucesso, mensagem), (False, "A senha não pode conter espaços."))
+                self.assertEqual((sucesso, mensagem), (False, "A senha não pode conter espaços nem caracteres invisíveis."))  # v7.0 5.42
         self.assertEqual(self.total_usuarios(), 0)
 
     def test_senha_gravada_exatamente_como_digitada(self):

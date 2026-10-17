@@ -11,6 +11,7 @@ import time
 from datetime import date, datetime, timedelta
 from calendar import monthrange
 
+import espacos
 from limites import (  # noqa: F401 -- reexportados para a interface (database.*)
     LIMITE_DESCRICAO,
     LIMITE_NOME_CATEGORIA,
@@ -1752,7 +1753,8 @@ def _verificar_senha(senha, senha_hash_armazenada):
 # ERS v6.0, 5.33/RF37 (Etapa 7): regras para toda senha DEFINIDA a partir da
 # v6.0 -- cadastro, alteração e, na Etapa 8, recuperação. A senha nunca é
 # transformada (sem strip nem normalização): uma nova senha com qualquer
-# espaço em branco é recusada como veio; o mínimo conta caracteres
+# caractere da lista E1 (ERS v7.0, 5.40/5.42: espaços em branco mais U+200B e
+# U+FEFF) é recusada como veio; o mínimo conta caracteres
 # percebidos, com o mesmo mecanismo dos limites de texto (T5). O login e a
 # conferência da senha atual NÃO aplicam estas regras: senhas anteriores,
 # mesmo curtas ou com espaços, continuam valendo (CT82).
@@ -1770,7 +1772,7 @@ class SenhaCurtaError(SenhaInvalidaError):
 
 class SenhaComEspacosError(SenhaInvalidaError):
     def __init__(self):
-        super().__init__("A senha não pode conter espaços.")
+        super().__init__(espacos.MENSAGEM_SENHA_NOVA_COM_INVISIVEL)  # v7.0 5.42 (S2)
 
 
 class SenhaAtualIncorretaError(ValueError):
@@ -1786,13 +1788,14 @@ class SenhaIgualAtualError(SenhaInvalidaError):
 def validar_nova_senha(senha):
     """
     5.33: levanta `SenhaInvalidaError` (ou uma subclasse) para entrada que
-    não é texto, senha com qualquer espaço em branco (espaço, tabulação,
-    quebra de linha, espaço não separável...; em qualquer posição) ou com
-    menos de `SENHA_MINIMO` caracteres percebidos. Devolve a senha intacta.
+    não é texto, senha com qualquer caractere da lista E1 (espaço, tabulação,
+    quebra de linha, espaço não separável, U+200B, U+FEFF...; em qualquer
+    posição; ERS v7.0 5.42) ou com menos de `SENHA_MINIMO` caracteres
+    percebidos. Devolve a senha intacta.
     """
     if not isinstance(senha, str):
         raise SenhaInvalidaError("A senha precisa ser um texto.")
-    if any(caractere.isspace() for caractere in senha):
+    if espacos.contem_caractere_e1(senha):
         raise SenhaComEspacosError()
     if contar_caracteres(senha) < SENHA_MINIMO:
         raise SenhaCurtaError()

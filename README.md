@@ -40,7 +40,8 @@ A [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md) é o plano em andamento, divid
 - **E6 (M4) concluída:** descrição das contas com até 1000 caracteres percebidos, em campo de 2 a 8 linhas (Sino 6.5, publicada em 16/10/2026).
 - **E7 (M2) concluída:** orientação "Registre suas primeiras contas e tenha tudo sob controle." em Início para quem ainda não tem contas (Sino 6.6, publicada em 16/10/2026).
 - **E8 (M6) e E11 (M3) concluídas:** calendários em português, com o dia de hoje legível, e seletor de mês e ano em Início (Sino 6.7, publicada em 16/10/2026).
-- **E9, E10 e E12 pendentes:** demais melhorias de experiência de uso.
+- **E9 (M1) e E10 (M11) implementadas e validadas:** espaços e caracteres invisíveis no e-mail e nas senhas, e linhas de conta legíveis em janelas estreitas (Sino 6.8, aguardando publicação).
+- **E12 pendente:** comparativo por categoria em colunas.
 - **E13–E15 pendentes:** avaliação e preparação da disponibilização para outras pessoas.
 - **E16–E18 pendentes:** comprovantes em imagem e backup completo.
 - **Faturas (M13):** proposta ainda candidata, sem aprovação.

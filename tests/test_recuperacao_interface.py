@@ -105,11 +105,15 @@ class TestRecuperacao(BaseRecuperacao):
     def test_formato_recusado_antes_de_consultar_a_conta(self):
         with mock.patch.object(main.database, "existe_conta_verificada",
                                side_effect=AssertionError("consultou a conta")):
-            for email in ("josé@sino.com", "sem-arroba", "bia@sino.com "):
+            # v7.0 5.41 (E3): caractere da lista E1 no meio tem mensagem própria;
+            # nas pontas ele é limpo (test_email_espacos_m1.py).
+            for email, mensagem in (("josé@sino.com", "Informe um e-mail válido."),
+                                    ("sem-arroba", "Informe um e-mail válido."),
+                                    ("bia\u00a0@sino.com", "Remova os espaços ou caracteres invisíveis do meio do e-mail.")):
                 with self.subTest(email=repr(email)):
                     pagina, _ = self.abrir_recuperacao()
                     self.pedir(pagina, email)
-                    self.assertIn("Informe um e-mail válido.", self.textos_visiveis(pagina))
+                    self.assertIn(mensagem, self.textos_visiveis(pagina))
                     self.assertTrue(self.passo_visivel(pagina)["E-mail"])
         self.assertEqual(self.servidor.pedidos, [])
 

@@ -84,7 +84,9 @@ class TestCadastroComCodigo(BaseCadastro):
     def test_recusas_antes_do_pedido_nao_pedem_codigo(self):
         casos = [("ANA@sino.com", "Já existe uma conta com esse e-mail."),
                  ("josé@sino.com", "Informe um e-mail válido."),
-                 ("carla@sino.com ", "Informe um e-mail válido.")]
+                 # v7.0 5.41 (E3): U+00A0 no meio tem mensagem própria; nas pontas
+                 # ele é limpo (test_email_espacos_m1.py).
+                 ("carla\u00a0@sino.com", "Remova os espaços ou caracteres invisíveis do meio do e-mail.")]
         for email, mensagem in casos:
             with self.subTest(email=repr(email)):
                 pagina, _ = self.abrir_cadastro()

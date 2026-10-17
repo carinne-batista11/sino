@@ -19,7 +19,7 @@ from test_tela_principal import Evento
 
 EMOJI_COMPOSTO = "👩‍💻"  # 3 pontos de código, 1 caractere percebido
 MENSAGEM_CURTA = "A senha deve ter pelo menos 8 caracteres."
-MENSAGEM_ESPACOS = "A senha não pode conter espaços."
+MENSAGEM_ESPACOS = "A senha não pode conter espaços nem caracteres invisíveis."  # v7.0 5.42 (S2)
 MENSAGEM_ACEITE = "Você precisa aceitar os Termos de Uso e a Política de Privacidade para criar sua conta."
 
 

@@ -5,6 +5,17 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.8 — E9 e E10: espaços invisíveis no e-mail e na senha; contas em janelas estreitas (aguardando publicação)
+
+Entrega conjunta da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regras 5.40 a 5.42, M1, e 5.52, M11), implementada em 16/10/2026. **Ainda não publicada:** validação manual concluída em 16/10/2026 (15 de 15 testes aprovados); na data deste registro, o commit e a publicação no GitHub estavam pendentes.
+
+- **E-mail (E9):** espaços e caracteres invisíveis digitados sem querer no começo ou no fim do e-mail (por exemplo, ao colar o endereço) são removidos em Entrar, Criar conta, "Esqueci minha senha" e na troca de e-mail; ao enviar, o campo mostra o e-mail já limpo. Nada é removido do meio: se houver um desses caracteres no meio, aparece "Remova os espaços ou caracteres invisíveis do meio do e-mail.".
+- **Senha (E9):** a senha continua sendo conferida exatamente como foi digitada. Se ela for recusada e tiver um espaço ou caractere invisível no começo ou no fim, aparece também "Verifique se há espaços ou caracteres invisíveis no início ou no fim da senha.". Senhas novas não podem conter espaços nem caracteres invisíveis, em nenhuma posição.
+- **Contas em janelas estreitas (E10):** em Início, Ver status e Contas em atraso, quando a janela fica estreita, cada conta passa a mostrar o nome numa linha própria, inteiro, e o valor, o status e os botões logo abaixo. No tamanho padrão da janela, nada muda.
+- **Testes:** 1188 testes automáticos do aplicativo aprovados (42 novos), em bancos temporários e sem acesso à rede. Validação manual numa cópia isolada, com banco próprio e dados fictícios, feita pela autora: **15 de 15 testes aprovados** (e-mail e senha com espaços e caracteres invisíveis; contas em janelas estreitas, nos temas Claro e Escuro).
+- **Sem mudanças** no banco de dados (nenhuma migração), nos e-mails e senhas já gravados, no serviço de códigos, nos Termos de Uso ou na Política de Privacidade.
+- **Continua valendo:** o Sino segue sem liberação pública; o envio de códigos continua restrito aos endereços autorizados da autora (Sino 6.3, abaixo).
+
 ## Sino 6.7 — E8 e E11: calendários em português e seletor de mês e ano (16/10/2026)
 
 Entrega conjunta da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regras 5.47, M6, e 5.44, M3), implementada em 16/10/2026. ~~**Ainda não publicada:**~~ validação manual concluída em 16/10/2026 (24 de 24 testes aprovados); na data deste registro, o commit e a publicação no GitHub estavam pendentes. *Atualização (16/10/2026):* publicada no GitHub em 16/10/2026, no commit `feat: release Sino 6.7 calendars and month selector` (identificador no histórico do Git).

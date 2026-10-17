@@ -20,6 +20,7 @@ import db as database
 import aviso_sonoro
 import cores as modulo_cores
 import documentos
+import espacos
 import fluxos_codigo
 import limites
 
@@ -412,6 +413,48 @@ def erro_de_nova_senha(senha):
     return None
 
 
+def ler_email_digitado(campo):
+    """
+    v7.0 5.41 (M1: E1, E2, E4): limpeza única do e-mail digitado nas quatro
+    telas -- tira os caracteres da lista E1 só das extremidades -- e, ao enviar
+    o formulário, o campo passa a mostrar essa versão limpa (mesmo que outra
+    validação impeça o envio). Nada do meio é removido.
+    """
+    limpo = espacos.limpar_email_digitado(campo.value or "")
+    campo.value = limpo
+    return limpo
+
+
+def validar_email_digitado(limpo):
+    """
+    v7.0 5.41 (E3): (e-mail, None) para um novo endereço válido (Cadastro,
+    "Esqueci minha senha" e novo e-mail em Ajustes) ou (None, mensagem). Um
+    caractere da lista E1 no meio tem mensagem própria; o resto segue a regra
+    compartilhada de formato, que não muda. Nada é consultado aqui.
+    """
+    if espacos.contem_caractere_e1(limpo):
+        return None, espacos.MENSAGEM_EMAIL_COM_INVISIVEL_NO_MEIO
+    try:
+        return database.validar_email_novo(limpo), None
+    except database.EmailInvalidoError as erro:
+        return None, str(erro)
+
+
+def mensagem_de_senha_recusada(mensagem, senha_digitada, email_digitado=None):
+    """
+    v7.0 5.42 (S1) e 5.41 (E3, só no login): orientações acrescentadas à
+    mensagem de recusa, sem repeti-la -- caractere da lista E1 no meio do
+    e-mail digitado e no início ou no fim da senha digitada. Dependem só do
+    que foi digitado (nunca da existência da conta); a senha não é alterada.
+    """
+    linhas = [mensagem]
+    if email_digitado is not None and espacos.email_com_invisivel_no_meio(email_digitado):
+        linhas.append(espacos.MENSAGEM_EMAIL_COM_INVISIVEL_NO_MEIO)
+    if espacos.tem_caractere_e1_nas_pontas(senha_digitada):
+        linhas.append(espacos.MENSAGEM_SENHA_COM_INVISIVEL_NAS_PONTAS)
+    return "\n".join(linhas)
+
+
 def texto_contador(texto, limite):
     """Contador exibido junto ao campo, por grafemas (ex.: "12/30")."""
     return f"{limites.contar_caracteres(texto)}/{limite}"
@@ -766,6 +809,32 @@ LARGURA_ROTULO_DETALHES = 100
 def rotulo_ao_lado_em_detalhes(largura_pagina):
     """True: rótulo à esquerda do conteúdo; False: acima. Largura desconhecida conta como larga."""
     return not isinstance(largura_pagina, (int, float)) or largura_pagina >= LARGURA_MINIMA_ROTULO_AO_LADO
+
+
+# v7.0 5.52 (M11): linha de conta em Início, Ver status e Contas em atraso.
+# Lado a lado, o nome divide a linha com a coluna de valor e status (92 px) e
+# com os botões de ação (40 px cada), com o espaçamento padrão da linha
+# (10 px), dentro do cartão (12 px de cada lado mais 4 px da borda) e da lista
+# (20 px de cada lado). Abaixo de LARGURA_MINIMA_NOME_NA_LINHA px para o nome,
+# a linha se empilha: nome e subtítulo em cima, com toda a largura; valor,
+# status e botões embaixo. Sem largura mínima de janela. Decisão técnica da
+# implementação: com 100 px, o tamanho padrão do app (380 px) continua lado a
+# lado em Início (sobram 110 px) e a linha só empilha abaixo de 370 px em
+# Início e de 270 px em Ver status e Contas em atraso.
+LARGURA_MINIMA_NOME_NA_LINHA = 100
+_MARGENS_DA_LINHA = 2 * 20 + 2 * 12 + 4
+_LARGURA_VALOR_STATUS = 92
+_LARGURA_ACAO_NA_LINHA = 40
+_ESPACO_NA_LINHA = 10
+
+
+def linha_de_conta_empilhada(largura_pagina, quantidade_de_acoes=0):
+    """True: a linha de conta se empilha (5.52). Largura desconhecida conta como larga."""
+    if not isinstance(largura_pagina, (int, float)):
+        return False
+    ocupado = (_MARGENS_DA_LINHA + _LARGURA_VALOR_STATUS + _ESPACO_NA_LINHA
+               + quantidade_de_acoes * (_LARGURA_ACAO_NA_LINHA + _ESPACO_NA_LINHA))
+    return largura_pagina - ocupado < LARGURA_MINIMA_NOME_NA_LINHA
 
 
 def ano_inicial_anual(anos_com_historico, ano_atual):
@@ -1598,7 +1667,7 @@ def main(page: ft.Page):
             # uma nova senha com espaços é recusada como veio. No login, as
             # regras de nova senha não se aplicam (senhas anteriores, mesmo
             # curtas ou com espaços, continuam entrando, CT82).
-            email = campo_email.value.strip() if campo_email.value else ""
+            email = ler_email_digitado(campo_email)  # v7.0 5.41: limpeza única
             senha = campo_senha.value if campo_senha.value else ""
 
             if modo_cadastro[0]:
@@ -1632,10 +1701,9 @@ def main(page: ft.Page):
                 else:
                     # Etapa 8 (RF01/5.31): a conta só é criada depois de confirmar
                     # o e-mail por código. O formato vale para todo novo endereço.
-                    try:
-                        email_cadastro = database.validar_email_novo(campo_email.value or "")
-                    except database.EmailInvalidoError as ex:
-                        mensagem.value = str(ex)
+                    email_cadastro, erro_email = validar_email_digitado(email)
+                    if erro_email:
+                        mensagem.value = erro_email
                         mensagem.color = cores.texto_erro
                     else:
                         iniciar_pedido_cadastro(nome, email_cadastro, senha)
@@ -1651,7 +1719,10 @@ def main(page: ft.Page):
                         entrar_conferindo_documentos(usuario)
                         return
                     else:
-                        mensagem.value = "E-mail ou senha incorretos."
+                        # v7.0 5.41 (E3) e 5.42 (S1): consulta com o e-mail limpo
+                        # só nas extremidades e senha exata; as orientações só
+                        # aparecem depois da recusa.
+                        mensagem.value = mensagem_de_senha_recusada("E-mail ou senha incorretos.", senha, email)
                         mensagem.color = cores.texto_erro
 
             page.update()
@@ -2068,10 +2139,10 @@ def main(page: ft.Page):
             servico = obter_servico()
             passo = estado["passo"]
             if passo == 1:
-                try:
-                    email = database.validar_email_novo(campo_email.value or "")  # antes de consultar a conta
-                except database.EmailInvalidoError as ex:
-                    liberar((str(ex), True))
+                # v7.0 5.41: limpeza única e formato antes de consultar a conta.
+                email, erro_email = validar_email_digitado(ler_email_digitado(campo_email))
+                if erro_email:
+                    liberar((erro_email, True))
                     return
                 if servico is None:
                     liberar((fluxos_codigo.MENSAGEM_NAO_CONFIGURADO, True))
@@ -4019,6 +4090,10 @@ def main(page: ft.Page):
                     partes_subtitulo.append(texto_parcela)
             subtitulo = " · ".join(partes_subtitulo)
 
+            # v7.0 5.52 (M11): nome sempre inteiro (sem reticências nem limite
+            # de linhas), quebrando entre palavras; uma palavra que não caiba
+            # quebra entre caracteres percebidos (quebra de linha do Flutter).
+            empilhada = linha_de_conta_empilhada(page.width, int(acao_editar) + int(acao_rapida_pagamento))
             controles_linha = [
                 ft.Column(
                     controls=[
@@ -4033,7 +4108,7 @@ def main(page: ft.Page):
                                  color=cores.texto_principal),
                         ft.Text(rotulo_status, size=12, color=cor),
                     ],
-                    horizontal_alignment=ft.CrossAxisAlignment.END,
+                    horizontal_alignment=ft.CrossAxisAlignment.START if empilhada else ft.CrossAxisAlignment.END,
                     spacing=2,
                 ),
             ]
@@ -4041,8 +4116,11 @@ def main(page: ft.Page):
             # Layout: colunas de largura fixa para valor/status e para a ação, para
             # que o texto do status não se desloque conforme o tamanho do valor --
             # a coluna da esquerda (nome/subtítulo) absorve o espaço restante.
+            # Empilhada, o nome ocupa a primeira linha inteira e valor/status
+            # ficam à esquerda da segunda, com os botões à direita.
             controles_linha[0].expand = True
-            controles_linha[1].width = 92
+            if not empilhada:
+                controles_linha[1].width = _LARGURA_VALOR_STATUS
 
             if acao_editar:
                 # RF30/5.15 (Etapa 3): atalho para Editar conta, só na Tela
@@ -4102,17 +4180,35 @@ def main(page: ft.Page):
                     ft.Container(width=40, alignment=ft.Alignment.CENTER, content=icone_pagamento)
                 )
 
+            if empilhada:
+                nome_e_subtitulo, valor_e_status, *acoes = controles_linha
+                nome_e_subtitulo.expand = False
+                conteudo_linha = ft.Column(
+                    spacing=8,
+                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    controls=[
+                        nome_e_subtitulo,
+                        ft.Row(
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[valor_e_status, ft.Row(spacing=_ESPACO_NA_LINHA, tight=True, controls=acoes)],
+                        ),
+                    ],
+                )
+            else:
+                conteudo_linha = ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=controles_linha,
+                )
             return ft.Container(
                 bgcolor=cores.fundo_card,
                 border_radius=10,
                 padding=12,
                 border=ft.Border(left=ft.BorderSide(4, cor)),
                 on_click=lambda e, c=conta: abrir_detalhe_conta(c),
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=controles_linha,
-                ),
+                data="linha_conta_empilhada" if empilhada else "linha_conta",
+                content=conteudo_linha,
             )
 
         def garantir_ocorrencias_geradas(ano_mes):
@@ -4200,6 +4296,17 @@ def main(page: ft.Page):
                     )
 
             page.update()
+
+        def refazer_linhas_ao_redimensionar(tela, lista, recompor):
+            """v7.0 5.52 (M11): em Ver status e Contas em atraso (linhas sem
+            botões), recompõe a lista só se o empilhamento mudar e só enquanto
+            a tela estiver aberta."""
+            linhas = [c for c in lista.controls
+                      if getattr(c, "data", None) in ("linha_conta", "linha_conta_empilhada")]
+            if tela in page.controls and linhas and (
+                    (linhas[0].data == "linha_conta_empilhada") != linha_de_conta_empilhada(page.width, 0)):
+                recompor()
+                page.update()
 
         def mostrar_tela_ver_status(ano_mes):
             # RF09/5.21 (Etapa 3): "Ver status" -- consulta das contas do mês de
@@ -4292,16 +4399,17 @@ def main(page: ft.Page):
                 ),
             )
 
-            page.add(
-                ft.Column(
-                    expand=True,
-                    controls=[
-                        cabecalho_ver_status,
-                        ft.Container(padding=ft.Padding(20, 16, 20, 8), content=linha_filtros),
-                        lista_ver_status,
-                    ],
-                )
+            tela_ver_status = ft.Column(
+                expand=True,
+                controls=[
+                    cabecalho_ver_status,
+                    ft.Container(padding=ft.Padding(20, 16, 20, 8), content=linha_filtros),
+                    lista_ver_status,
+                ],
             )
+            page.add(tela_ver_status)
+            page.on_resize = lambda e: refazer_linhas_ao_redimensionar(tela_ver_status, lista_ver_status,
+                                                                       recompor_lista)
             page.update()
 
         def mostrar_tela_atrasadas():
@@ -4318,18 +4426,23 @@ def main(page: ft.Page):
             atrasadas_todas = database.listar_contas_atrasadas(usuario_atual["id"])
 
             lista_atrasadas_tela = ft.ListView(expand=True, spacing=8, padding=ft.Padding(20, 0, 20, 24))
-            if not atrasadas_todas:
-                lista_atrasadas_tela.controls.append(
-                    ft.Container(
-                        content=ft.Text("Nenhuma conta atrasada.", color=cores.texto_secundario, size=13),
-                        padding=16,
-                    )
-                )
-            else:
-                for c in atrasadas_todas:
+
+            def compor_atrasadas():
+                lista_atrasadas_tela.controls.clear()
+                if not atrasadas_todas:
                     lista_atrasadas_tela.controls.append(
-                        linha_conta(c, categorias_atuais.get(c["categoria_id"], ""))
+                        ft.Container(
+                            content=ft.Text("Nenhuma conta atrasada.", color=cores.texto_secundario, size=13),
+                            padding=16,
+                        )
                     )
+                else:
+                    for c in atrasadas_todas:
+                        lista_atrasadas_tela.controls.append(
+                            linha_conta(c, categorias_atuais.get(c["categoria_id"], ""))
+                        )
+
+            compor_atrasadas()
 
             cabecalho_atrasadas_tela = ft.Container(
                 padding=ft.Padding(20, 40, 20, 0),
@@ -4344,12 +4457,13 @@ def main(page: ft.Page):
                 ),
             )
 
-            page.add(
-                ft.Column(
-                    expand=True,
-                    controls=[cabecalho_atrasadas_tela, ft.Container(height=8), lista_atrasadas_tela],
-                )
+            tela_atrasadas = ft.Column(
+                expand=True,
+                controls=[cabecalho_atrasadas_tela, ft.Container(height=8), lista_atrasadas_tela],
             )
+            page.add(tela_atrasadas)
+            page.on_resize = lambda e: refazer_linhas_ao_redimensionar(tela_atrasadas, lista_atrasadas_tela,
+                                                                       compor_atrasadas)
             page.update()
 
         fab = ft.Container(
@@ -4404,13 +4518,22 @@ def main(page: ft.Page):
             ],
         )
 
-        page.add(
-            ft.Column(
-                expand=True,
-                controls=[corpo, barra_navegacao("inicio")],
-            )
+        tela_inicio = ft.Column(
+            expand=True,
+            controls=[corpo, barra_navegacao("inicio")],
         )
+        page.add(tela_inicio)
 
+        def ao_redimensionar_inicio(e):
+            # v7.0 5.52 (M11): refaz as linhas só se o empilhamento mudar e só
+            # enquanto Início estiver na tela.
+            if tela_inicio in page.controls and lista_contas.controls and any(
+                    getattr(linha, "data", None) in ("linha_conta", "linha_conta_empilhada")
+                    and (linha.data == "linha_conta_empilhada") != linha_de_conta_empilhada(page.width, 2)
+                    for linha in lista_contas.controls):
+                atualizar_dados()
+
+        page.on_resize = ao_redimensionar_inicio
         atualizar_dados()
 
     # ======================================================
@@ -5541,8 +5664,11 @@ def main(page: ft.Page):
                     return
                 try:
                     alterada = database.alterar_senha(usuario_atual["id"], atual, nova)
-                except (database.SenhaAtualIncorretaError, database.SenhaInvalidaError) as ex:
-                    mostrar_erro(str(ex))  # atual incorreta, nova inválida ou igual à atual
+                except database.SenhaAtualIncorretaError as ex:
+                    mostrar_erro(mensagem_de_senha_recusada(str(ex), atual))  # v7.0 5.42 (S1)
+                    return
+                except database.SenhaInvalidaError as ex:
+                    mostrar_erro(str(ex))  # nova inválida ou igual à atual
                     return
                 except Exception as ex:
                     # Só o tipo da falha vai para o terminal: nenhuma senha em logs.
@@ -5661,7 +5787,11 @@ def main(page: ft.Page):
             async def pedir(servico, senha, novo):
                 try:
                     pendencia = await controle.em_thread(database.conferir_senha_atual, usuario_id, senha)
-                except (database.SenhaAtualIncorretaError, database.ContaNaoEncontradaError) as ex:
+                except database.SenhaAtualIncorretaError as ex:
+                    if controle.ativo:
+                        liberar((mensagem_de_senha_recusada(str(ex), senha), True))  # v7.0 5.42 (S1)
+                    return
+                except database.ContaNaoEncontradaError as ex:
                     if controle.ativo:
                         liberar((str(ex), True))
                     return
@@ -5755,14 +5885,13 @@ def main(page: ft.Page):
             def clique_principal(ev):
                 servico = obter_servico()
                 if estado["passo"] == 1:
-                    senha, novo_digitado = campo_atual.value or "", campo_novo.value or ""
+                    senha, novo_digitado = campo_atual.value or "", ler_email_digitado(campo_novo)  # v7.0 5.41
                     if not senha or not novo_digitado:
                         liberar(("Preencha a senha atual e o novo e-mail.", True))
                         return
-                    try:
-                        novo = database.validar_email_novo(novo_digitado)
-                    except database.EmailInvalidoError as ex:
-                        liberar((str(ex), True))
+                    novo, erro_email = validar_email_digitado(novo_digitado)
+                    if erro_email:
+                        liberar((erro_email, True))
                         return
                     if servico is None:
                         liberar((fluxos_codigo.MENSAGEM_NAO_CONFIGURADO, True))
@@ -5949,7 +6078,7 @@ def main(page: ft.Page):
                     try:
                         pendencia = database.conferir_senha_para_exclusao(usuario_id, senha)
                     except database.SenhaAtualIncorretaError as ex:
-                        mostrar_erro(str(ex))
+                        mostrar_erro(mensagem_de_senha_recusada(str(ex), senha))  # v7.0 5.42 (S1)
                         return
                     except database.ContaNaoEncontradaError:
                         mostrar_erro("Não encontramos a sua conta. Saia e entre novamente.")

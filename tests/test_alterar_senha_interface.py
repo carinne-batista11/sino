@@ -172,7 +172,7 @@ class TestErros(TesteDeAlterarSenha):
                 pagina, sessao = self.abrir_ajustes()
                 dialogo = self.abrir_dialogo(pagina)
                 self.preencher(pagina, dialogo, SENHA_BIA, nova)
-                self.assert_recusa(pagina, sessao, dialogo, "A senha não pode conter espaços.", False,
+                self.assert_recusa(pagina, sessao, dialogo, "A senha não pode conter espaços nem caracteres invisíveis.", False,
                                    [SENHA_BIA, nova])
 
     def test_senha_atual_antiga_com_espacos_e_substituida(self):
