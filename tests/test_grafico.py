@@ -8,6 +8,7 @@ e o fluxo real da tela com uma página falsa sobre um banco temporário v7.
 Hoje fixo em 15/09/2026. Nenhuma janela é aberta.
 """
 
+import asyncio
 import os
 import sys
 import unittest
@@ -15,7 +16,8 @@ from unittest import mock
 
 import apoio_banco
 from apoio_banco import DataFixa, TesteComBancoTemporario, db
-from test_tela_principal import Evento, percorrer
+from test_tela_principal import Evento
+from test_tela_principal import percorrer as percorrer_tudo
 
 sys.path.insert(0, os.path.join(apoio_banco.RAIZ_PROJETO, "backend"))
 
@@ -23,6 +25,24 @@ import cores  # noqa: E402
 import flet as ft  # noqa: E402
 import flet_charts as fch  # noqa: E402
 import main  # noqa: E402
+
+
+def percorrer(controle):
+    """
+    Controles VISÍVEIS da árvore: como test_tela_principal.percorrer, sem a faixa
+    de medição invisível do comparativo (Sino 6.9, F6), que repete os nomes e
+    os valores só para medi-los. A faixa é examinada à parte (faixa_de_medicao).
+    """
+    if isinstance(controle, ft.Container) and controle.data == main.MARCA_MEDICAO_INVISIVEL:
+        return
+    yield controle
+    for atributo in ("controls", "content", "actions"):
+        filho = getattr(controle, atributo, None)
+        if isinstance(filho, list):
+            for item in filho:
+                yield from percorrer(item)
+        elif isinstance(filho, ft.Control):
+            yield from percorrer(filho)
 
 
 class TestFuncoesDoGrafico(unittest.TestCase):
@@ -365,6 +385,470 @@ class TestTelaGrafico(TesteComBancoTemporario):
         self.assertIn("Ainda não há dados para exibir neste período.", textos)
         self.assertEqual(self.controles(fch.PieChart), [])  # sem dados artificiais
         self.assertIn("▼ 100%", textos)
+
+    def rosca_e_legenda(self):
+        """[(valor da fatia, cor)] da rosca e nomes da legenda, na ordem da tela."""
+        rosca = self.controles(fch.PieChart)[0]
+        nomes = [t for t in self.textos() if t in ("Casa", "Lazer", "Sem categoria")]
+        return [(s.value, s.color) for s in rosca.sections], nomes
+
+    def distribuicao_esperada(self, modo, ano, mes=None):
+        itens = db.gastos_por_categoria(self.uid, *main.intervalo_do_periodo(modo, ano, mes))
+        return main.distribuicao_por_categoria(
+            itens, db.cores_de_exibicao(db.listar_categorias(self.uid)), cores.sem_categoria)
+
+    def test_rosca_usa_a_base_comum_no_mensal_e_no_anual(self):  # Sino 6.9, F3-A
+        self.entrar_e_abrir_grafico()
+        for modo, ano, mes in (("mensal", 2026, 9), ("anual", 2026, None)):
+            with self.subTest(modo=modo):
+                if modo == "anual":
+                    self.clicar(self.clicavel_com_texto("Anual"))
+                esperada = self.distribuicao_esperada(modo, ano, mes)
+                secoes, nomes = self.rosca_e_legenda()
+                self.assertEqual(secoes, [(i["total"], i["cor_exibicao"]) for i in esperada])
+                self.assertEqual(nomes, [i["nome"] for i in esperada])
+                self.assertEqual(nomes[-1], "Sem categoria")
+                self.assertEqual(secoes[-1][1], cores.sem_categoria)
+
+    # ------------------------------------------- comparativo (5.48; Sino 6.9, F3-B; um gráfico por categoria, F7-A2)
+    def cartao_do_comparativo(self):
+        return next((c for c in self.controles(ft.Container)
+                     if getattr(c.content, "data", None) == "comparativo_por_categoria"), None)
+
+    def graficos_do_comparativo(self):
+        """Um BarChart por categoria (F7-A2), na ordem da tela."""
+        return [c for c in percorrer(self.cartao_do_comparativo()) if isinstance(c, fch.BarChart)]
+
+    def colunas_do_comparativo(self):
+        graficos = self.graficos_do_comparativo()
+        botoes = [g.bottom_axis.labels[0].label.content for g in graficos]   # Container -> TextButton (F4)
+        return graficos, [g.groups[0].rods[0] for g in graficos], [b.content.value for b in botoes]
+
+    def botoes_do_comparativo(self):
+        return [g.bottom_axis.labels[0].label.content for g in self.graficos_do_comparativo()]
+
+    def test_comparativo_logo_depois_de_gastos_por_categoria(self):
+        self.entrar_e_abrir_grafico()
+        cartao = self.cartao_do_comparativo()
+        self.assertIsNotNone(cartao)
+        secoes = next(c.controls for c in self.controles(ft.Column) if cartao in c.controls)
+        posicao = secoes.index(cartao)
+        anterior = list(percorrer(secoes[posicao - 1]))
+        self.assertTrue(any(isinstance(c, fch.PieChart) for c in anterior))
+        self.assertIn("Gastos por categoria", [getattr(c, "value", None) for c in anterior])
+        self.assertIn("Comparado a agosto", [getattr(c, "value", None) for c in percorrer(secoes[posicao + 1])])
+        textos_do_cartao = [getattr(c, "value", None) for c in percorrer(cartao)]
+        self.assertIn("Comparativo por categoria", textos_do_cartao)
+
+    def test_comparativo_com_os_dados_ordem_e_cores_da_rosca_no_mensal_e_no_anual(self):
+        self.entrar_e_abrir_grafico()
+        for modo, subtitulo in (("mensal", "Total de cada categoria no mês"),
+                                ("anual", "Total de cada categoria no ano")):
+            with self.subTest(modo=modo):
+                if modo == "anual":
+                    self.clicar(self.clicavel_com_texto("Anual"))
+                secoes_da_rosca, nomes_da_legenda = self.rosca_e_legenda()
+                _, colunas, rotulos = self.colunas_do_comparativo()
+                self.assertEqual([(c.to_y, c.color) for c in colunas], secoes_da_rosca)
+                self.assertEqual(rotulos, nomes_da_legenda)
+                self.assertEqual((rotulos[-1], colunas[-1].color), ("Sem categoria", cores.sem_categoria))
+                self.assertIn(subtitulo, [getattr(c, "value", None) for c in percorrer(self.cartao_do_comparativo())])
+        # Totais esperados: setembro (Casa 1000, Lazer 490, Sem 60) e 2026 (Casa 2000).
+        _, colunas, _ = self.colunas_do_comparativo()
+        self.assertEqual([c.to_y for c in colunas], [2000.0, 490.0, 60.0])
+
+    def test_comparativo_totais_do_mes(self):
+        self.entrar_e_abrir_grafico()
+        _, colunas, rotulos = self.colunas_do_comparativo()
+        self.assertEqual(list(zip(rotulos, [c.to_y for c in colunas])),
+                         [("Casa", 1000.0), ("Lazer", 490.0), ("Sem categoria", 60.0)])
+
+    def test_um_grafico_por_categoria_com_a_mesma_escala(self):  # F7-A2
+        self.entrar_e_abrir_grafico()
+        graficos, colunas, _ = self.colunas_do_comparativo()
+        self.assertEqual(len(graficos), 3)
+        for g in graficos:
+            self.assertEqual((len(g.groups), len(g.groups[0].rods), len(g.bottom_axis.labels)), (1, 1, 1))
+            self.assertEqual(g.group_alignment, ft.MainAxisAlignment.CENTER)
+            self.assertFalse(g.interactive)
+        self.assertEqual(len({g.max_y for g in graficos}), 1)                  # escala compartilhada
+        self.assertEqual(len({g.height for g in graficos}), 1)                 # mesma base e mesma altura
+        self.assertTrue(all(g.horizontal_grid_lines.interval == g.max_y for g in graficos))
+
+    def test_comparativo_colunas_com_contorno_e_sem_interacao(self):
+        self.entrar_e_abrir_grafico()
+        graficos, colunas, _ = self.colunas_do_comparativo()
+        for coluna in colunas:
+            self.assertEqual((coluna.border_side.width, coluna.border_side.color), (1, cores.texto_principal))
+            self.assertNotEqual(coluna.color, cores.texto_principal)   # preenchimento é a cor da categoria
+        evolucao = self.controles(fch.BarChart)[0]
+        self.assertNotIn(evolucao, graficos)
+        self.assertTrue(all(g.rods[0].border_side is None for g in evolucao.groups))   # evolução inalterada
+
+    # ------------------------------------------- rótulos acessíveis (5.48; Sino 6.9, F4)
+    def test_rotulos_sao_botoes_com_nome_acessivel_e_dica(self):
+        self.entrar_e_abrir_grafico()
+        botoes = self.botoes_do_comparativo()
+        esperado = [("Casa", "R$ 1.000,00"), ("Lazer", "R$ 490,00"), ("Sem categoria", "R$ 60,00")]
+        self.assertEqual(len(botoes), 3)
+        for botao, (nome, valor) in zip(botoes, esperado):
+            with self.subTest(nome=nome):
+                self.assertIsInstance(botao, ft.TextButton)                          # alternativa A
+                self.assertEqual(botao.content.value, nome)                          # nome completo
+                self.assertEqual(botao.content.semantics_label, f"{nome}, {valor}")  # nome acessível
+                self.assertEqual(botao.tooltip, f"{nome}: {valor}")                  # dica do mouse
+                self.assertEqual(botao.style.side[ft.ControlState.FOCUSED].color, cores.acao_primaria)  # foco visível
+        sem_categoria = botoes[-1]
+        self.assertEqual((sem_categoria.content.color, sem_categoria.style.color),
+                         (cores.texto_sem_categoria, cores.texto_sem_categoria))
+        self.assertEqual(botoes[0].content.color, cores.texto_principal)
+
+    def test_rotulos_sem_semantics_externo_e_com_espaco_acima(self):
+        # `percorrer` não desce nos eixos do gráfico: confere o eixo diretamente.
+        self.entrar_e_abrir_grafico()
+        for g in self.graficos_do_comparativo():
+            caixa = g.bottom_axis.labels[0].label
+            self.assertIsInstance(caixa, ft.Container)                  # só o espaço acima do botão (F7-A2)
+            self.assertEqual(caixa.padding, ft.Padding(0, main.COMPARATIVO_ESPACO_ACIMA_DO_ROTULO, 0, 0))
+            self.assertIsInstance(caixa.content, ft.TextButton)
+            self.assertIsInstance(caixa.content.content, ft.Text)        # sem Semantics por dentro
+        self.assertEqual(main.COMPARATIVO_ESPACO_ACIMA_DO_ROTULO, 5)
+        self.assertEqual([c for c in percorrer(self.cartao_do_comparativo()) if isinstance(c, ft.Semantics)], [])
+
+    def test_ordem_dos_rotulos_segue_as_colunas(self):  # ordem de foco pelo Tab
+        self.entrar_e_abrir_grafico()
+        self.assertEqual([b.data for b in self.botoes_do_comparativo()],
+                         [("rotulo_do_comparativo", self.casa), ("rotulo_do_comparativo", self.lazer),
+                          ("rotulo_do_comparativo", None)])
+
+    def test_ativar_rotulo_mostra_o_aviso_com_nome_e_valor(self):  # D2; clique, toque e Enter chamam on_click
+        self.entrar_e_abrir_grafico()
+        for botao, texto in zip(self.botoes_do_comparativo(),
+                                ("Casa: R$ 1.000,00", "Lazer: R$ 490,00", "Sem categoria: R$ 60,00")):
+            with self.subTest(texto=texto):
+                self.pagina.show_dialog.reset_mock()
+                self.clicar(botao)
+                aviso = self.pagina.show_dialog.call_args[0][0]
+                self.assertIsInstance(aviso, ft.SnackBar)
+                self.assertEqual(aviso.content.value, texto)
+                self.assertEqual((aviso.content.color, aviso.bgcolor), (cores.fundo_card, cores.texto_principal))
+
+    def test_rotulos_acompanham_o_periodo_anual(self):
+        self.entrar_e_abrir_grafico()
+        self.clicar(self.clicavel_com_texto("Anual"))
+        casa = self.botoes_do_comparativo()[0]
+        self.assertEqual((casa.content.semantics_label, casa.tooltip), ("Casa, R$ 2.000,00", "Casa: R$ 2.000,00"))
+        self.pagina.show_dialog.reset_mock()
+        self.clicar(casa)
+        self.assertEqual(self.pagina.show_dialog.call_args[0][0].content.value, "Casa: R$ 2.000,00")
+
+    # ------------------------------------------- valores acima das colunas (5.48; Sino 6.9, F5)
+    def test_valor_em_reais_acima_de_cada_coluna(self):
+        self.entrar_e_abrir_grafico()
+        _, colunas, rotulos = self.colunas_do_comparativo()
+        self.assertEqual([(r, c.tooltip.text) for r, c in zip(rotulos, colunas)],
+                         [("Casa", "R$ 1.000,00"), ("Lazer", "R$ 490,00"), ("Sem categoria", "R$ 60,00")])
+        for coluna in colunas:
+            self.assertTrue(coluna.selected)                                   # valor fixo, sem passar o mouse
+            self.assertEqual(coluna.tooltip.text, main.formatar_moeda(coluna.to_y))   # texto vem do mesmo total
+            estilo = coluna.tooltip.text_style
+            self.assertEqual((estilo.size, estilo.weight, estilo.color),
+                             (13, ft.FontWeight.BOLD, cores.texto_principal))
+        for valor in ("R$ 1.000,00", "R$ 490,00", "R$ 60,00"):                # os mesmos valores da legenda
+            self.assertIn(valor, self.textos())
+
+    def test_valores_do_ano(self):
+        self.entrar_e_abrir_grafico()
+        self.clicar(self.clicavel_com_texto("Anual"))
+        _, colunas, _ = self.colunas_do_comparativo()
+        self.assertEqual([c.tooltip.text for c in colunas], ["R$ 2.000,00", "R$ 490,00", "R$ 60,00"])
+
+    def test_g4_largura_posicionamento_e_reserva_vertical(self):
+        self.entrar_e_abrir_grafico()
+        graficos, colunas, _ = self.colunas_do_comparativo()
+        maior = max(c.to_y for c in colunas)
+        for g, botao in zip(graficos, self.botoes_do_comparativo()):
+            balao = g.tooltip
+            # F7-A2: max_width = largura do gráfico da categoria = rótulo + espaço entre grupos.
+            self.assertEqual((balao.max_width, balao.fit_inside_horizontally, balao.fit_inside_vertically),
+                             (round(botao.width + main.COMPARATIVO_ESPACO_ENTRE_GRUPOS, 1), True, True))
+            self.assertEqual(g.width, balao.max_width)
+            self.assertEqual((balao.bgcolor, balao.padding, balao.margin), (ft.Colors.TRANSPARENT, 0, 4))
+            # Reserva: acima da coluna mais alta sobram ao menos 28 px dos 200 px da área.
+            area = g.height - g.bottom_axis.label_size
+            self.assertEqual(area, 200)
+            self.assertGreaterEqual(round((g.max_y - maior) / g.max_y * area, 6), 28)
+            self.assertEqual(g.horizontal_grid_lines.interval, g.max_y)
+
+    def test_evolucao_dos_gastos_inalterada(self):
+        self.entrar_e_abrir_grafico()
+        evolucao = self.controles(fch.BarChart)[0]
+        self.assertIsNone(evolucao.tooltip.max_width)
+        self.assertFalse(evolucao.tooltip.fit_inside_horizontally or evolucao.tooltip.fit_inside_vertically)
+        self.assertEqual(evolucao.max_y, 1550.0 * 1.3)
+        self.assertTrue(all(g.rods[0].border_side is None for g in evolucao.groups))
+
+    def test_valores_pequenos_e_extremos_sem_alteracao(self):
+        db.criar_conta_unica(self.uid, "Grande", 1234567890123.45, "2026-11-05", categoria_id=self.casa)
+        db.criar_conta_unica(self.uid, "Pequena", 0.01, "2026-11-06", categoria_id=self.lazer)
+        antes = self.consultar("SELECT COUNT(*) FROM contas")
+        self.entrar_e_abrir_grafico()
+        for _ in range(2):
+            self.clicar(self.seta(ft.Icons.CHEVRON_RIGHT))                # novembro de 2026
+        _, colunas, rotulos = self.colunas_do_comparativo()
+        self.assertEqual(list(zip(rotulos, [c.tooltip.text for c in colunas])),
+                         [("Casa", "R$ 1.234.567.890.123,45"), ("Lazer", "R$ 0,01")])
+        self.assertEqual([c.to_y for c in colunas], [1234567890123.45, 0.01])
+        self.assertIn("R$ 1.234.567.890.123,45", self.textos())        # o mesmo texto da legenda
+        casa = self.botoes_do_comparativo()[0]
+        self.assertEqual(casa.content.semantics_label, "Casa, R$ 1.234.567.890.123,45")
+        self.assertEqual(self.consultar("SELECT COUNT(*) FROM contas"), antes)
+
+    # ------------------------------------------- medição invisível e largura (5.48; Sino 6.9, F6/F7-A2)
+    def faixa_de_medicao(self):
+        return next(c for c in percorrer_tudo(self.cartao_do_comparativo())
+                    if isinstance(c, ft.Container) and c.data == main.MARCA_MEDICAO_INVISIVEL)
+
+    def textos_de_medicao(self):
+        return [c for c in percorrer_tudo(self.faixa_de_medicao()) if isinstance(c, ft.Text)]
+
+    @staticmethod
+    def medida_ficticia(texto):
+        """Medição determinística: 7 px por caractere, linha de 16 px (valor: 17)."""
+        return mock.Mock(width=7.0 * len(texto.value), height=17.0 if texto.weight else 16.0)
+
+    def medir_tudo(self, medida=None):
+        for texto in self.textos_de_medicao():
+            texto.on_size_change((medida or self.medida_ficticia)(texto))
+
+    def test_faixa_invisivel_fora_da_acessibilidade_e_sem_foco(self):  # DF3 (estrutura)
+        self.entrar_e_abrir_grafico()
+        faixa = self.faixa_de_medicao()
+        self.assertEqual((faixa.opacity, faixa.height, faixa.clip_behavior), (0, 0, ft.ClipBehavior.HARD_EDGE))
+        self.assertIsInstance(faixa.content, ft.Semantics)
+        self.assertTrue(faixa.content.exclude_semantics)
+        tipos = {type(c) for c in percorrer_tudo(faixa)}
+        self.assertLessEqual(tipos, {ft.Container, ft.Semantics, ft.Column, ft.Row, ft.Text})   # nada focável
+        for texto in self.textos_de_medicao():
+            self.assertEqual((texto.no_wrap, texto.max_lines, texto.size_change_interval), (True, 1, 0))
+            self.assertIsNone(texto.semantics_label)
+            self.assertIsNotNone(texto.on_size_change)
+        medidos = {(("valor" if t.weight else "texto"), t.value) for t in self.textos_de_medicao()}
+        self.assertEqual(medidos, {("texto", "Casa"), ("texto", "Lazer"), ("texto", "Sem categoria"),
+                                   ("texto", "Sem"), ("texto", "categoria"),
+                                   ("valor", "R$ 1.000,00"), ("valor", "R$ 490,00"), ("valor", "R$ 60,00")})
+        # A faixa fica fora da coluna espaçada do cartão (sem 16 px a mais).
+        pai = next(c for c in percorrer_tudo(self.cartao_do_comparativo())
+                   if isinstance(c, ft.Column) and faixa in c.controls)
+        self.assertEqual(pai.spacing, 0)
+
+    def test_largura_estimada_antes_da_medicao_por_categoria(self):
+        self.entrar_e_abrir_grafico()
+        graficos = self.graficos_do_comparativo()
+        esperadas = [main.largura_estimada_do_rotulo(n, v) for n, v in
+                     (("Casa", "R$ 1.000,00"), ("Lazer", "R$ 490,00"), ("Sem categoria", "R$ 60,00"))]
+        self.assertEqual([b.width for b in self.botoes_do_comparativo()], esperadas)
+        for g in graficos:
+            self.assertEqual(g.bottom_axis.label_size, 48 + 5)              # 2 x 18 (< 40) -> 40 + 8, + 5 acima
+            self.assertEqual(g.height - g.bottom_axis.label_size, 200)
+
+    def test_largura_medida_atualiza_no_lugar_uma_vez(self):  # F7-A2: botões e gráficos preservados
+        self.entrar_e_abrir_grafico()
+        graficos_antes, botoes_antes = self.graficos_do_comparativo(), self.botoes_do_comparativo()
+        self.pagina.update.reset_mock()
+        self.medir_tudo()
+        self.assertEqual(self.pagina.update.call_count, 1)                   # só quando a última medição chega
+        graficos, botoes = self.graficos_do_comparativo(), self.botoes_do_comparativo()
+        self.assertTrue(all(a is b for a, b in zip(graficos_antes, graficos)))    # mesmos objetos: foco preservado
+        self.assertTrue(all(a is b for a, b in zip(botoes_antes, botoes)))
+        # T, L e valor fictícios (7 px/caractere): as três categorias ficam no mínimo de 100 + 8.
+        self.assertEqual([b.width for b in botoes], [108.0, 108.0, 108.0])
+        for g in graficos:
+            self.assertEqual(g.tooltip.max_width, 120.0)
+            self.assertEqual(g.bottom_axis.label_size, 48 + 5)               # 2 x 16 < 40 -> 40 + 8, + 5 acima
+            self.assertAlmostEqual(g.max_y, 1000.0 * 200 / (200 - 27))         # valor medido 17 + 10
+        self.medir_tudo()                                                     # mesmas medidas de novo
+        self.medir_tudo()
+        self.assertEqual(self.pagina.update.call_count, 1)
+
+    def test_larguras_individuais_e_largura_total(self):  # F7-A2
+        db.editar_categoria(self.uid, self.casa, nome="Alimentação e mercado do mês")
+        self.entrar_e_abrir_grafico()
+        self.medir_tudo()
+        graficos, botoes = self.graficos_do_comparativo(), self.botoes_do_comparativo()
+        longa = main.largura_do_rotulo(7.0 * 28, 7.0 * len("Alimentação"), 7.0 * len("R$ 1.000,00"))
+        self.assertEqual([b.width for b in botoes], [longa, 108.0, 108.0])  # cada uma com a sua largura
+        self.assertGreater(longa, 108.0)
+        self.assertEqual([g.width for g in graficos], [round(b.width + 12, 1) for b in botoes])
+        self.assertEqual(sum(g.width for g in graficos), round(longa + 12 + 120 + 120, 1))
+
+    def test_nomes_longos_e_altura_de_duas_linhas(self):
+        db.editar_categoria(self.uid, self.casa, nome="Alimentação e mercado do mês")
+        self.entrar_e_abrir_grafico()
+        self.medir_tudo(lambda t: mock.Mock(width=7.0 * len(t.value), height=22.0))
+        graficos, _, rotulos = self.colunas_do_comparativo()
+        nome = "Alimentação e mercado do mês"
+        self.assertEqual(rotulos[0], nome)                                    # inteiro, sem reticências
+        self.assertEqual(self.botoes_do_comparativo()[0].width,
+                         main.largura_do_rotulo(7.0 * len(nome), 7.0 * len("Alimentação"), 7.0 * len("R$ 1.000,00")))
+        for g in graficos:
+            self.assertEqual(g.bottom_axis.label_size, 2 * 22 + 8 + 5)        # duas linhas medidas + folga + 5
+            self.assertEqual(g.height - g.bottom_axis.label_size, 200)        # área das colunas mantida
+        texto = self.botoes_do_comparativo()[0].content
+        self.assertIsNone(texto.max_lines)                                    # sem corte por linhas
+        self.assertNotEqual(texto.overflow, ft.TextOverflow.ELLIPSIS)
+        self.assertEqual(texto.semantics_label, f"{nome}, R$ 1.000,00")       # nome acessível completo
+
+    def test_redesenhos_limitados_se_as_medidas_oscilarem(self):
+        self.entrar_e_abrir_grafico()
+        self.pagina.update.reset_mock()
+        for passo in range(6):
+            self.medir_tudo(lambda t, passo=passo: mock.Mock(width=200.0 + passo * 10, height=16.0))
+        self.assertEqual(self.pagina.update.call_count, 3)
+
+    def test_periodo_ja_medido_nao_volta_a_estimativa(self):
+        self.entrar_e_abrir_grafico()
+        self.medir_tudo()
+        medida = self.botoes_do_comparativo()[0].width
+        self.clicar(self.seta(ft.Icons.CHEVRON_LEFT))                        # agosto (só Casa)
+        self.clicar(self.seta(ft.Icons.CHEVRON_RIGHT))                       # setembro de novo
+        self.pagina.update.reset_mock()
+        self.assertEqual(self.botoes_do_comparativo()[0].width, medida)       # já medida ao montar
+        self.medir_tudo()
+        self.assertEqual(self.pagina.update.call_count, 0)
+
+    # ------------------------------------------- rolagem horizontal (5.48; Sino 6.9, F7-A2, híbrida)
+    def area_rolavel(self):
+        return next(c for c in percorrer_tudo(self.cartao_do_comparativo())
+                    if isinstance(c, ft.Row) and c.data == "rolagem_do_comparativo")
+
+    def focar(self, botao):
+        asyncio.run(botao.on_focus(Evento(self.pagina, botao)))
+
+    def criar_muitas_categorias(self, quantidade=12):
+        for n in range(quantidade):
+            categoria = db.criar_categoria(self.uid, f"Categoria fictícia {n:02d}")
+            db.criar_conta_unica(self.uid, f"Conta {n}", 100.0 + n, "2026-09-10", categoria_id=categoria)
+
+    def limites_do_botao(self, indice):
+        """[início, fim] do botão `indice` na área rolável: grupos acumulados + metade do espaço entre grupos."""
+        graficos, botoes = self.graficos_do_comparativo(), self.botoes_do_comparativo()
+        inicio = round(sum(g.width for g in graficos[:indice]) + main.COMPARATIVO_ESPACO_ENTRE_GRUPOS / 2, 1)
+        return inicio, round(inicio + botoes[indice].width, 1)
+
+    def test_area_rolavel_so_no_comparativo_com_espaco_para_a_barra(self):
+        self.entrar_e_abrir_grafico()
+        area = self.area_rolavel()
+        self.assertEqual(area.scroll, ft.ScrollMode.AUTO)
+        self.assertEqual(len(area.controls), 1)
+        caixa = area.controls[0]
+        self.assertEqual(caixa.padding, ft.Padding(0, 0, 0, main.COMPARATIVO_ESPACO_DA_BARRA_DE_ROLAGEM))
+        self.assertEqual(main.COMPARATIVO_ESPACO_DA_BARRA_DE_ROLAGEM, 10)
+        self.assertEqual(caixa.content.controls, self.graficos_do_comparativo())
+        self.assertEqual(caixa.content.spacing, 0)
+        self.assertNotIn(self.faixa_de_medicao(), list(percorrer_tudo(area)))   # faixa fora da rolagem
+        rolaveis = [c for c in self.controles(ft.Row) if c.scroll is not None]
+        self.assertEqual(rolaveis, [area])                                        # rosca e evolução sem rolagem
+        self.assertIsNone(self.controles(fch.BarChart)[0].width)                  # evolução inalterada
+
+    def test_muitas_categorias_sem_comprimir(self):
+        self.criar_muitas_categorias()
+        self.entrar_e_abrir_grafico()
+        graficos, colunas, rotulos = self.colunas_do_comparativo()
+        self.assertEqual(len(colunas), 15)
+        self.assertEqual(rotulos[-1], "Sem categoria")
+        botoes = self.botoes_do_comparativo()
+        self.assertEqual([g.width for g in graficos], [round(b.width + 12, 1) for b in botoes])  # nenhuma comprimida
+        self.assertGreater(sum(g.width for g in graficos), 380)
+        # Coluna, valor e rótulo continuam juntos, na ordem da rosca.
+        secoes, nomes = self.rosca_e_legenda_completa()
+        self.assertEqual([(c.to_y, c.color) for c in colunas], secoes)
+        self.assertEqual(rotulos, nomes)
+        self.assertEqual([c.tooltip.text for c in colunas], [main.formatar_moeda(c.to_y) for c in colunas])
+        for botao, coluna in zip(botoes, colunas):
+            self.assertEqual(botao.content.semantics_label,
+                             f"{botao.content.value}, {main.formatar_moeda(coluna.to_y)}")
+
+    def rosca_e_legenda_completa(self):
+        rosca = self.controles(fch.PieChart)[0]
+        nomes = [t.value for t in self.controles(ft.Text)
+                 if t.value in {"Casa", "Lazer", "Sem categoria"} or str(t.value).startswith("Categoria fictícia")]
+        return [(s.value, s.color) for s in rosca.sections], nomes
+
+    def test_rolagem_hibrida_so_quando_o_botao_nao_esta_inteiro(self):
+        self.criar_muitas_categorias()
+        self.entrar_e_abrir_grafico()
+        area, botoes = self.area_rolavel(), self.botoes_do_comparativo()
+        self.pagina.show_dialog.reset_mock()
+        with mock.patch.object(main, "COMPARATIVO_ESPERA_ROLAGEM_DO_FLUTTER", 0), \
+                mock.patch.object(area, "scroll_to", new=mock.AsyncMock()) as rolar:
+            self.focar(botoes[0])                                    # já no início: não rola
+            self.focar(botoes[5])                                    # largura visível ainda desconhecida: não rola
+            rolar.assert_not_called()
+            area.on_size_change(mock.Mock(width=300.0))               # área de ~300 px
+            inicio5, _ = self.limites_do_botao(5)
+            area.on_scroll(mock.Mock(pixels=inicio5, viewport_dimension=300.0))   # o Flutter já trouxe o 5 (Tab)
+            self.focar(botoes[5])                                    # inteiro: não rola (sem rolagem dupla)
+            rolar.assert_not_called()
+            _, fim9 = self.limites_do_botao(9)
+            self.focar(botoes[9])                                    # fora da vista (ex.: foco pelo AT-SPI)
+            rolar.assert_awaited_once_with(offset=fim9 - 300.0, duration=150)   # mínimo: até a borda do botão
+            rolar.reset_mock()
+            area.on_scroll(mock.Mock(pixels=fim9 - 300.0, viewport_dimension=300.0))
+            inicio2, _ = self.limites_do_botao(2)
+            self.focar(botoes[2])                                    # à esquerda: alinha o início do botão
+            rolar.assert_awaited_once_with(offset=inicio2, duration=150)
+        self.pagina.show_dialog.assert_not_called()                  # foco não abre o aviso (D2)
+
+    def test_rolagem_hibrida_ignora_foco_que_ja_mudou(self):
+        self.criar_muitas_categorias()
+        self.entrar_e_abrir_grafico()
+        area, botoes = self.area_rolavel(), self.botoes_do_comparativo()
+        area.on_size_change(mock.Mock(width=1000.0))
+        area.on_scroll(mock.Mock(pixels=0.0, viewport_dimension=1000.0))
+
+        async def dois_focos():
+            # O foco vai ao 9 e, antes do fim da espera, ao 2: só o último conta.
+            await asyncio.gather(botoes[9].on_focus(Evento(self.pagina, botoes[9])),
+                                 botoes[2].on_focus(Evento(self.pagina, botoes[2])))
+
+        with mock.patch.object(main, "COMPARATIVO_ESPERA_ROLAGEM_DO_FLUTTER", 0.05), \
+                mock.patch.object(area, "scroll_to", new=mock.AsyncMock()) as rolar:
+            asyncio.run(dois_focos())
+        _, fim2 = self.limites_do_botao(2)
+        _, fim9 = self.limites_do_botao(9)
+        self.assertLessEqual(fim2, 1000.0)                            # o 2 já está inteiro: ninguém rola
+        self.assertGreater(fim9, 1000.0)                              # (o 9 teria exigido rolagem)
+        rolar.assert_not_called()
+
+    def test_clique_mostra_o_aviso_sem_rolar(self):  # F7-A2 (D): clique não desloca o gráfico
+        self.criar_muitas_categorias()
+        self.entrar_e_abrir_grafico()
+        area, botoes = self.area_rolavel(), self.botoes_do_comparativo()
+        area.on_size_change(mock.Mock(width=300.0))
+        with mock.patch.object(area, "scroll_to", new=mock.AsyncMock()) as rolar:
+            self.pagina.show_dialog.reset_mock()
+            self.clicar(botoes[12])                                   # rótulo fora da vista
+            rolar.assert_not_called()
+        self.assertIsInstance(self.pagina.show_dialog.call_args[0][0], ft.SnackBar)
+
+    def test_ordem_de_foco_segue_as_colunas_com_rolagem(self):
+        self.criar_muitas_categorias()
+        self.entrar_e_abrir_grafico()
+        botoes = self.botoes_do_comparativo()
+        self.assertTrue(all(b.on_focus is not None for b in botoes))
+        self.assertEqual([b.data[1] for b in botoes][-1], None)                  # "Sem categoria" por último
+        self.assertEqual(botoes, [g.bottom_axis.labels[0].label.content for g in self.graficos_do_comparativo()])
+
+    def test_comparativo_some_sem_contas_e_nao_gera_ocorrencias(self):
+        antes = self.consultar("SELECT COUNT(*) FROM contas")
+        self.entrar_e_abrir_grafico()
+        for _ in range(3):
+            self.clicar(self.seta(ft.Icons.CHEVRON_RIGHT))             # outubro a dezembro, sem contas
+            self.assertIsNone(self.cartao_do_comparativo())
+            self.assertNotIn("Comparativo por categoria", self.textos())
+            self.assertEqual(len(self.controles(fch.BarChart)), 1)     # só a evolução
+        self.assertEqual(self.consultar("SELECT COUNT(*) FROM contas"), antes)
 
     # ---------------------------------------------------------------- anual
     def test_modo_anual_e_navegacao_so_entre_anos_com_contas(self):

@@ -744,6 +744,131 @@ def ordenar_distribuicao(itens):
     return com_categoria + [i for i in itens if i["categoria_id"] is None]
 
 
+def distribuicao_por_categoria(itens, cores_exibicao, cor_sem_categoria):
+    """
+    Sino 6.9 (E12, F3-A): base comum da rosca de "Gastos por categoria" e do
+    comparativo por categoria (5.48) -- os itens de gastos_por_categoria na
+    ordem de RF22 (ordenar_distribuicao), cada um com `cor_exibicao`: o cinza
+    de "Sem categoria" do tema; senão a cor de exibição da categoria
+    (cores_de_exibicao) ou, sem ela, a gravada. Função pura: devolve
+    dicionários novos, sem alterar os de entrada.
+    """
+    return [
+        {**item, "cor_exibicao": cor_sem_categoria if item["categoria_id"] is None
+         else cores_exibicao.get(item["categoria_id"]) or item["cor"]}
+        for item in ordenar_distribuicao(itens)
+    ]
+
+
+# 5.48 (E12, F6; decisão D1): largura de cada categoria no comparativo, pela
+# medição real dos textos (prova v3, 22/10/2026). Para um nome em até duas
+# linhas, sem cortar palavras: T = largura do nome inteiro numa linha; L = da
+# palavra mais longa (nenhuma linha pode ser menor que L); W = (T + L) / 2 +
+# margem é um meio-termo entre T / 2 (quebra exata ao meio) e L. É uma
+# HEURÍSTICA: funcionou nos 26 casos da prova, NÃO é garantia universal (fontes
+# sem glifo, escala de texto e quebras do Flutter podem pedir uma 3ª linha).
+COMPARATIVO_MARGEM = 2              # margem de arredondamento da fórmula (px)
+COMPARATIVO_PADDING_ROTULO = 4      # padding horizontal do botão do rótulo, de cada lado (px)
+COMPARATIVO_LARGURA_MINIMA = 100    # largura mínima do texto do rótulo (px), como na prova v3
+COMPARATIVO_ESPACO_ENTRE_GRUPOS = 12
+COMPARATIVO_TAMANHO_NOME = 12
+COMPARATIVO_TAMANHO_VALOR = 13
+COMPARATIVO_LINHA_ESTIMADA = 18     # altura de uma linha (nome ou valor) antes da medição (px)
+COMPARATIVO_AREA_DAS_COLUNAS = 200  # altura da área das colunas, sem o eixo (px)
+# Prova complementar A2 (23/10/2026): espaço entre a base das colunas e o botão
+# do rótulo (o contorno de foco tocava a coluna) e espaço abaixo dos gráficos
+# para a barra de rolagem horizontal não cobrir os rótulos.
+COMPARATIVO_ESPACO_ACIMA_DO_ROTULO = 5
+COMPARATIVO_ESPACO_DA_BARRA_DE_ROLAGEM = 10
+# Rolagem híbrida (F7-A2): Tab e Shift+Tab já são trazidos à vista pelo próprio
+# Flutter; depois desta espera (s), só rola se o botão focado não estiver inteiro
+# (foco pela tecnologia assistiva ou por código).
+COMPARATIVO_ESPERA_ROLAGEM_DO_FLUTTER = 0.25
+# DF3: marca (`data`) da faixa de medição invisível; a varredura de contraste
+# só a ignora com esta marca E opacity 0 E fora da acessibilidade.
+MARCA_MEDICAO_INVISIVEL = "medicao_invisivel"
+
+
+def palavras_do_nome(nome):
+    """Palavras separadas por espaço (o nome sem espaço é uma palavra só)."""
+    return [p for p in nome.split(" ") if p] or [nome]
+
+
+def chaves_de_medicao_do_comparativo(distribuicao):
+    """(tipo, texto) medidos pela faixa invisível: cada nome, cada palavra e cada valor."""
+    chaves = set()
+    for item in distribuicao:
+        chaves.add(("nome", item["nome"]))
+        chaves.update(("palavra", p) for p in palavras_do_nome(item["nome"]))
+        chaves.add(("valor", formatar_moeda(item["total"])))
+    return chaves
+
+
+def largura_do_rotulo(t, l, largura_do_valor):
+    """Largura do botão do rótulo: max((T + L) / 2 + margem, valor + 4, mínimo) + padding dos dois lados."""
+    return round(max((t + l) / 2 + COMPARATIVO_MARGEM, largura_do_valor + 4, COMPARATIVO_LARGURA_MINIMA)
+                 + 2 * COMPARATIVO_PADDING_ROTULO, 1)
+
+
+def largura_estimada_do_rotulo(nome, texto_do_valor):
+    """Antes da medição (prova v3): ~1,3 x tamanho por grafema no nome, 0,75 x no valor."""
+    t = limites.contar_caracteres(nome) * 1.3 * COMPARATIVO_TAMANHO_NOME
+    v = len(texto_do_valor) * 0.75 * COMPARATIVO_TAMANHO_VALOR
+    return round(max(t / 2 + COMPARATIVO_MARGEM, v + 4, COMPARATIVO_LARGURA_MINIMA)
+                 + 2 * COMPARATIVO_PADDING_ROTULO, 1)
+
+
+def geometria_do_comparativo(distribuicao, medidas):
+    """
+    Medidas do comparativo para `distribuicao`, com `medidas` {(tipo, texto):
+    (largura, altura)} da faixa invisível. Sino 6.9 (F7-A2): uma largura POR
+    CATEGORIA (fórmula da F6 para cada uma) e as posições acumuladas de cada
+    grupo (largura + espaço entre grupos), para a rolagem. Enquanto falta alguma
+    medição, tudo é estimado. `altura_rotulos`: duas linhas do nome, no mínimo a
+    altura do botão (40), + folga e o espaço acima do rótulo.
+    """
+    medida = chaves_de_medicao_do_comparativo(distribuicao) <= medidas.keys()
+    if medida:
+        larguras = [largura_do_rotulo(
+            medidas[("nome", i["nome"])][0],
+            max(medidas[("palavra", p)][0] for p in palavras_do_nome(i["nome"])),
+            medidas[("valor", formatar_moeda(i["total"]))][0]) for i in distribuicao]
+        linha = max((medidas[("nome", i["nome"])][1] for i in distribuicao), default=COMPARATIVO_LINHA_ESTIMADA)
+        altura_do_valor = max((medidas[("valor", formatar_moeda(i["total"]))][1] for i in distribuicao),
+                              default=COMPARATIVO_LINHA_ESTIMADA)
+    else:
+        larguras = [largura_estimada_do_rotulo(i["nome"], formatar_moeda(i["total"])) for i in distribuicao]
+        linha = altura_do_valor = COMPARATIVO_LINHA_ESTIMADA
+    grupos = [round(w + COMPARATIVO_ESPACO_ENTRE_GRUPOS, 1) for w in larguras]
+    inicios, x = [], 0.0
+    for g in grupos:
+        inicios.append(round(x, 1))
+        x += g
+    return {
+        "medida": medida,
+        "larguras_rotulo": larguras,
+        "larguras_grupo": grupos,
+        "inicios": inicios,
+        "largura_total": round(x, 1),
+        "altura_rotulos": int(max(2 * linha, 40) + 8) + COMPARATIVO_ESPACO_ACIMA_DO_ROTULO,
+        "altura_valor": altura_do_valor,
+    }
+
+
+def deslocamento_para_mostrar(inicio, fim, posicao, visivel):
+    """
+    Rolagem híbrida (F7-A2): menor posição de rolagem que mostra inteiro o botão
+    em [inicio, fim] numa área de largura `visivel` hoje rolada até `posicao`;
+    None se ele já está inteiro (ou a largura visível ainda é desconhecida e o
+    botão começa dentro dela). Botão à esquerda: alinha o início; à direita, o fim.
+    """
+    if visivel is None:
+        return None if inicio >= posicao else max(0.0, inicio)
+    if posicao - 0.5 <= inicio and fim <= posicao + visivel + 0.5:
+        return None
+    return max(0.0, inicio if inicio < posicao else fim - visivel)
+
+
 def comparacao_com_anterior(atual, anterior):
     """
     RF23 (5.29): variação do período em relação ao anterior, pelos totais.
@@ -5163,7 +5288,8 @@ def main(page: ft.Page):
                         ft.Text("Ainda não há dados para exibir.", size=13, color=cores.texto_secundario))
             return cartao(ft.Column(spacing=16, controls=[cabecalho, conteudo]))
 
-        def bloco_categorias(total, itens):
+        def bloco_categorias(total, distribuicao):
+            """`distribuicao`: distribuicao_por_categoria do período (a mesma do comparativo)."""
             modo, ano, mes = periodo_atual()
             titulo = ft.Column(spacing=2, controls=[
                 ft.Text("Gastos por categoria", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
@@ -5177,16 +5303,10 @@ def main(page: ft.Page):
                 ]))
             layout = layout_gastos_por_categoria(page.width)
             tamanho = layout["tamanho_rosca"]
-            cores_exibicao = database.cores_de_exibicao(database.listar_categorias(usuario_atual["id"]))
-
-            def cor_do_item(item):
-                if item["categoria_id"] is None:
-                    return cores.sem_categoria
-                return cores_exibicao.get(item["categoria_id"]) or item["cor"]
 
             secoes, linhas = [], []
-            for item in itens:
-                cor = cor_do_item(item)
+            for item in distribuicao:
+                cor = item["cor_exibicao"]
                 fatia = item["total"] / total
                 # Percentuais só na legenda (nenhum título nas fatias).
                 secoes.append(fch.PieChartSection(value=item["total"], color=cor,
@@ -5244,6 +5364,183 @@ def main(page: ft.Page):
                 ]),
             ]))
 
+        # F6: medições da faixa invisível do comparativo, {(tipo, texto): (largura,
+        # altura)}, guardadas enquanto o Gráfico está aberto -- voltar a um
+        # período já medido não redesenha nada.
+        medidas_do_comparativo = {}
+
+        def bloco_comparativo_categorias(distribuicao):
+            """
+            5.48 (M7; Sino 6.9, E12 -- F3-B, cartão mínimo): uma coluna vertical por
+            categoria, com os dados, a ordem e as cores da rosca (`distribuicao`),
+            e contorno na cor do texto principal; o preenchimento segue a cor da
+            categoria. Rótulos acessíveis desde a F4; valor em R$ acima de cada
+            coluna desde a F5 (G4); largura e altura pela medição desde a F6;
+            rolagem horizontal desde a F7 (cada categoria mantém a sua largura,
+            sem comprimir; o rótulo que recebe foco é trazido para a vista).
+            """
+            modo, _, _ = periodo_atual()
+            maior = max((item["total"] for item in distribuicao), default=0) or 1
+            geometria = {"atual": geometria_do_comparativo(distribuicao, medidas_do_comparativo), "redesenhos": 0}
+
+            def aplicar(geo):
+                # F5 (G4, DF1): o valor fica no balão fixo de cada coluna
+                # (selected), limitado a `max_width` (a largura do seu gráfico) e
+                # mantido dentro dele (fit_inside_*); max_y -- O MESMO em todos os
+                # gráficos (escala compartilhada) -- reserva, acima da coluna mais
+                # alta, uma linha do valor mais uma folga, numa área de colunas de
+                # altura fixa. F6/F7-A2: cada categoria com a SUA largura (nome em
+                # até duas linhas) e altura do eixo pela medição. Atualiza NO LUGAR:
+                # gráficos e botões não são recriados (o foco é preservado). O
+                # texto vem do total (formatar_moeda); nada é recalculado do gráfico.
+                area = COMPARATIVO_AREA_DAS_COLUNAS
+                max_y = maior * area / (area - (geo["altura_valor"] + 10))
+                for grafico, botao, largura, grupo in zip(graficos, botoes, geo["larguras_rotulo"],
+                                                          geo["larguras_grupo"]):
+                    grafico.max_y = max_y
+                    grafico.horizontal_grid_lines.interval = max_y
+                    grafico.bottom_axis.label_size = geo["altura_rotulos"]
+                    grafico.height = area + geo["altura_rotulos"]
+                    grafico.width = grupo
+                    grafico.tooltip.max_width = grupo
+                    botao.width = largura
+
+            # F7: posição da rolagem, largura visível e rótulo focado.
+            rolagem = {"posicao": 0.0, "visivel": None, "foco": None}
+
+            def ao_rolar(e):
+                rolagem["posicao"], rolagem["visivel"] = e.pixels, e.viewport_dimension
+
+            def ao_redimensionar_area(e):
+                rolagem["visivel"] = e.width
+
+            async def trazer_para_a_vista(indice):
+                # F7-A2, rolagem híbrida: com Tab e Shift+Tab o próprio Flutter já
+                # traz o botão focado à vista; espera por ele e só rola se o BOTÃO
+                # ainda não estiver inteiro (foco pela tecnologia assistiva ou por
+                # código), o mínimo necessário, até a borda do botão (sem salto).
+                await asyncio.sleep(COMPARATIVO_ESPERA_ROLAGEM_DO_FLUTTER)
+                if rolagem["foco"] != indice:
+                    return   # o foco já foi para outro rótulo
+                geo = geometria["atual"]
+                inicio = geo["inicios"][indice] + COMPARATIVO_ESPACO_ENTRE_GRUPOS / 2
+                alvo = deslocamento_para_mostrar(inicio, inicio + geo["larguras_rotulo"][indice],
+                                                 rolagem["posicao"], rolagem["visivel"])
+                if alvo is not None and alvo != rolagem["posicao"]:
+                    rolagem["posicao"] = alvo
+                    await area_rolavel.scroll_to(offset=alvo, duration=150)
+
+            def ao_focar(indice):
+                async def tratar(e):   # só rola; o aviso (D2) continua só no clique/Enter
+                    rolagem["foco"] = indice
+                    await trazer_para_a_vista(indice)
+                return tratar
+
+            def ao_medir(chave):
+                def tratar(e):
+                    # Só atualiza quando a medição muda a geometria; no máximo
+                    # 3 vezes por cartão (proteção contra ciclo de medições).
+                    medidas_do_comparativo[chave] = (e.width, e.height)
+                    nova = geometria_do_comparativo(distribuicao, medidas_do_comparativo)
+                    if not nova["medida"] or nova == geometria["atual"] or geometria["redesenhos"] >= 3:
+                        return
+                    geometria["atual"] = nova
+                    geometria["redesenhos"] += 1
+                    aplicar(nova)
+                    page.update()
+                return tratar
+
+            def faixa_de_medicao():
+                # DF3: textos técnicos -- invisíveis (opacity 0, altura 0, recortados),
+                # fora da árvore de acessibilidade (exclude_semantics) e sem foco
+                # (só Text). Numa linha só (no_wrap), nos estilos dos rótulos e dos
+                # valores. Marcados para a varredura de contraste os reconhecer.
+                textos = []
+                for tipo, texto in sorted(chaves_de_medicao_do_comparativo(distribuicao)):
+                    estilo = (dict(size=COMPARATIVO_TAMANHO_VALOR, weight=ft.FontWeight.BOLD) if tipo == "valor"
+                              else dict(size=COMPARATIVO_TAMANHO_NOME))
+                    textos.append(ft.Row(tight=True, controls=[ft.Text(
+                        texto, color=cores.texto_principal, max_lines=1, no_wrap=True, size_change_interval=0,
+                        on_size_change=ao_medir((tipo, texto)), **estilo)]))
+                return ft.Container(
+                    data=MARCA_MEDICAO_INVISIVEL, height=0, opacity=0, clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                    content=ft.Semantics(exclude_semantics=True, content=ft.Column(spacing=0, controls=textos)),
+                )
+
+            def rotulo(indice, item):
+                # F4 (alternativa A): TextButton no eixo -- recebe foco pelo Tab;
+                # clique, toque ou Enter mostram "Casa: R$ 1.450,00" num aviso (D2),
+                # sem rolar. Nome acessível no texto do próprio botão, sem
+                # Semantics externo (como no seletor de mês da E11).
+                nome, valor = item["nome"], formatar_moeda(item["total"])
+                cor = cores.texto_sem_categoria if item["categoria_id"] is None else cores.texto_principal
+                completo = f"{nome}: {valor}"
+                # Nome inteiro, sem reticências nem limite de linhas no texto: a
+                # largura (F6) é que o leva a caber em até duas linhas.
+                return ft.TextButton(
+                    content=ft.Text(nome, size=COMPARATIVO_TAMANHO_NOME, text_align=ft.TextAlign.CENTER, color=cor,
+                                    semantics_label=f"{nome}, {valor}"),
+                    tooltip=completo,
+                    style=ft.ButtonStyle(color=cor, padding=ft.Padding(4, 0, 4, 0),
+                                         side={ft.ControlState.FOCUSED: ft.BorderSide(2, cores.acao_primaria)}),
+                    data=("rotulo_do_comparativo", item["categoria_id"]),
+                    on_click=lambda e: page.show_dialog(ft.SnackBar(
+                        ft.Text(completo, color=cores.fundo_card), bgcolor=cores.texto_principal)),
+                    on_focus=ao_focar(indice),
+                )
+
+            # F7-A2: um gráfico por categoria, lado a lado, cada um com a largura
+            # da sua categoria; o botão do rótulo fica num Container com espaço
+            # acima (o contorno de foco não toca a coluna).
+            botoes = [rotulo(i, item) for i, item in enumerate(distribuicao)]
+            graficos = [
+                fch.BarChart(
+                    groups=[fch.BarChartGroup(x=0, rods=[fch.BarChartRod(
+                        from_y=0, to_y=item["total"], width=28, color=item["cor_exibicao"],
+                        border_side=ft.BorderSide(1, cores.texto_principal),
+                        border_radius=ft.BorderRadius.only(top_left=6, top_right=6),
+                        selected=True,  # valor fixo acima da coluna (gráfico não interativo)
+                        tooltip=fch.BarChartRodTooltip(
+                            text=formatar_moeda(item["total"]),
+                            text_style=ft.TextStyle(size=COMPARATIVO_TAMANHO_VALOR, weight=ft.FontWeight.BOLD,
+                                                    color=cores.texto_principal),
+                        ),
+                    )])],
+                    interactive=False, min_y=0,
+                    group_alignment=ft.MainAxisAlignment.CENTER,
+                    tooltip=fch.BarChartTooltip(bgcolor=ft.Colors.TRANSPARENT, padding=0, margin=4,
+                                                fit_inside_horizontally=True, fit_inside_vertically=True),
+                    bottom_axis=fch.ChartAxis(labels=[fch.ChartAxisLabel(value=0, label=ft.Container(
+                        padding=ft.Padding(0, COMPARATIVO_ESPACO_ACIMA_DO_ROTULO, 0, 0), content=botao))]),
+                    left_axis=fch.ChartAxis(show_labels=False),
+                    right_axis=fch.ChartAxis(show_labels=False),
+                    top_axis=fch.ChartAxis(show_labels=False),
+                    horizontal_grid_lines=fch.ChartGridLines(color=cores.divisor, width=1),
+                )
+                for item, botao in zip(distribuicao, botoes)
+            ]
+            # F7: rolagem horizontal só neste cartão; a área ocupa a largura do
+            # cartão e os gráficos somam a largura de todas as categorias, com
+            # espaço abaixo para a barra de rolagem.
+            area_rolavel = ft.Row(
+                data="rolagem_do_comparativo", scroll=ft.ScrollMode.AUTO,
+                alignment=ft.MainAxisAlignment.CENTER,
+                controls=[ft.Container(padding=ft.Padding(0, 0, 0, COMPARATIVO_ESPACO_DA_BARRA_DE_ROLAGEM),
+                                       content=ft.Row(spacing=0, controls=graficos))],
+                on_scroll=ao_rolar, on_size_change=ao_redimensionar_area,
+            )
+            aplicar(geometria["atual"])   # estimada, ou já medida num período anterior
+            return cartao(ft.Column(data="comparativo_por_categoria", spacing=16, controls=[
+                ft.Column(spacing=2, controls=[
+                    ft.Text("Comparativo por categoria", size=20, weight=ft.FontWeight.BOLD,
+                            color=cores.texto_principal),
+                    ft.Text("Total de cada categoria no ano" if modo == "anual" else "Total de cada categoria no mês",
+                            size=14, color=cores.texto_secundario),
+                ]),
+                # A faixa fica junto da área, fora da rolagem e sem o espaçamento do cartão.
+                ft.Column(spacing=0, controls=[area_rolavel, faixa_de_medicao()]),
+            ]))
+
         def bloco_comparacao(total):
             modo, ano, mes = periodo_atual()
             if modo == "anual":
@@ -5289,7 +5586,12 @@ def main(page: ft.Page):
             modo, ano, mes = periodo_atual()
             inicio, fim = intervalo_do_periodo(modo, ano, mes)
             total, pago = database.resumo_do_periodo(usuario_atual["id"], inicio, fim)
-            itens = ordenar_distribuicao(database.gastos_por_categoria(usuario_atual["id"], inicio, fim))
+            # Rosca e comparativo (5.48) com os mesmos dados, ordem e cores.
+            distribuicao = distribuicao_por_categoria(
+                database.gastos_por_categoria(usuario_atual["id"], inicio, fim),
+                database.cores_de_exibicao(database.listar_categorias(usuario_atual["id"])),
+                cores.sem_categoria,
+            ) if total else []
             corpo.controls = [
                 ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
                     alternador((("mensal", "Mensal"), ("anual", "Anual")), estado["modo"], escolher_modo),
@@ -5297,7 +5599,8 @@ def main(page: ft.Page):
                 bloco_navegacao(),
                 bloco_totais(total, pago),
                 bloco_evolucao(),
-                bloco_categorias(total, itens),
+                bloco_categorias(total, distribuicao),
+                *([bloco_comparativo_categorias(distribuicao)] if total else []),   # some sem contas
                 bloco_comparacao(total),
             ]
             if not total:

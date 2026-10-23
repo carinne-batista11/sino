@@ -81,14 +81,29 @@ def fundo_do_botao(botao):
     return cor or None
 
 
+def e_medicao_invisivel(controle):
+    """
+    Sino 6.9 (F6, DF3): faixa técnica de medição do comparativo -- ignorada na
+    varredura SÓ se tiver a marca E opacity 0 E estiver fora da árvore de
+    acessibilidade (Semantics com exclude_semantics). Qualquer outro controle,
+    inclusive uma faixa marcada mas visível, continua sendo verificado.
+    """
+    return (isinstance(controle, ft.Container) and controle.data == main.MARCA_MEDICAO_INVISIVEL
+            and controle.opacity == 0 and isinstance(controle.content, ft.Semantics)
+            and controle.content.exclude_semantics is True)
+
+
 def percorrer_com_fundo(controle, fundo):
     """
     (controle, fundo efetivo) em pré-ordem, combinando os fundos translúcidos.
     O conteúdo de um Button/TextButton com fundo próprio é medido sobre esse
     fundo; o próprio botão continua recebendo o fundo de fora (a verificação
-    do botão combina o `bgcolor` dele sobre esse fundo).
+    do botão combina o `bgcolor` dele sobre esse fundo). A faixa de medição
+    invisível (e_medicao_invisivel) é a única subárvore ignorada.
     """
-    if isinstance(controle, (ft.Container, ft.AlertDialog)) and controle.bgcolor:
+    if e_medicao_invisivel(controle):
+        return
+    if isinstance(controle, (ft.Container, ft.AlertDialog, ft.SnackBar)) and controle.bgcolor:
         fundo = cor_solida(controle.bgcolor, fundo)
     yield controle, fundo
     if isinstance(controle, (ft.Button, ft.TextButton)) and fundo_do_botao(controle):
@@ -245,6 +260,13 @@ class TesteDeLegibilidade(TesteDeSessao):
 
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Gráfico"))
         self.registrar(pagina, "Gráfico mensal", paleta)
+        # Sino 6.9 (F8): aviso do comparativo (SnackBar) ao ativar um rótulo.
+        rotulo = next(c for c in self.todos(pagina) if isinstance(c, ft.TextButton)
+                      and isinstance(c.data, tuple) and c.data[0] == "rotulo_do_comparativo")
+        self.clicar(pagina, rotulo)
+        self.assertTrue(any(isinstance(d, ft.SnackBar) and d.open for d in pagina.dialogos))
+        self.registrar(pagina, "Gráfico/aviso do comparativo", paleta)
+        self.fechar_dialogos(pagina)
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Anual"))
         self.registrar(pagina, "Gráfico anual", paleta)
 
@@ -349,6 +371,12 @@ class TesteDeLegibilidade(TesteDeSessao):
                         razao = contraste(cor_solida(cor, base), base)
                         if razao < MINIMO_TEXTO:
                             problemas.append(f"{local}: botão {razao:.2f}:1: {controle.content!r}")
+                    # Sino 6.9 (F8): contorno de foco visível (3:1 sobre o fundo de fora).
+                    lados = controle.style.side if controle.style else None
+                    foco = lados.get(ft.ControlState.FOCUSED) if isinstance(lados, dict) else None
+                    if verificar_contraste and foco is not None and foco.color and \
+                            contraste(cor_solida(foco.color, fundo), fundo) < MINIMO_NAO_TEXTO:
+                        problemas.append(f"{local}: foco do botão abaixo de 3:1: {controle.content!r}")
                 elif isinstance(controle, (ft.TextField, ft.Dropdown)):
                     exigidos = ("color",) if estilo_do_tema else ("color", "border_color", "label_style")
                     for atributo in exigidos:
@@ -362,7 +390,15 @@ class TesteDeLegibilidade(TesteDeSessao):
                 elif isinstance(controle, fch.BarChart) and verificar_contraste:
                     for grupo in controle.groups:
                         for barra in grupo.rods:
-                            if contraste(cor_solida(barra.color, fundo), fundo) < MINIMO_NAO_TEXTO:
+                            # 5.48 (Sino 6.9, F8): com contorno visível, é o CONTORNO que
+                            # delimita a coluna contra o fundo (3:1) e o preenchimento (cor
+                            # da categoria) é decorativo; sem contorno (ou com espessura 0),
+                            # o preenchimento continua obrigado a 3:1.
+                            contorno = barra.border_side
+                            if contorno is not None and contorno.color and (contorno.width or 0) > 0:
+                                if contraste(cor_solida(contorno.color, fundo), fundo) < MINIMO_NAO_TEXTO:
+                                    problemas.append(f"{local}: contorno da barra abaixo de 3:1: {contorno.color}")
+                            elif contraste(cor_solida(barra.color, fundo), fundo) < MINIMO_NAO_TEXTO:
                                 problemas.append(f"{local}: barra abaixo de 3:1: {barra.color}")
                             estilo = barra.tooltip.text_style if barra.tooltip else None
                             if estilo is not None and contraste(cor_solida(estilo.color, fundo), fundo) < MINIMO_TEXTO:
@@ -541,6 +577,181 @@ class TestFundoDosBotoes(TesteDeLegibilidade):
         problemas = self.problemas(self.dialogo_com(botao, paleta=CLARO), CLARO)
         self.assertEqual(len(problemas), 1)
         self.assertIn("'Nov'", problemas[0])
+
+
+class TestMedicaoInvisivel(TesteDeLegibilidade):
+    """
+    Sino 6.9 (F6, DF3): só a faixa técnica de medição -- marcada, opacity 0 e
+    fora da acessibilidade -- sai da varredura; texto visível continua medido.
+    Controles montados à mão, no Claro (texto da cor do fundo: 1,00:1).
+    """
+
+    def faixa(self, texto, marca=main.MARCA_MEDICAO_INVISIVEL, opacidade=0, excluir=True):
+        return ft.Container(data=marca, height=0, opacity=opacidade,
+                            content=ft.Semantics(exclude_semantics=excluir, content=ft.Column(controls=[texto])))
+
+    def problemas(self, *controles):
+        raiz = ft.Container(bgcolor=CLARO["fundo_card"], content=ft.Column(controls=list(controles)))
+        return self.problemas_das_vistas([("teste", CLARO, raiz, CLARO["fundo_pagina"])], True)
+
+    def ilegivel(self, valor="Casa"):
+        return ft.Text(valor, color=CLARO["fundo_card"])
+
+    def test_faixa_invisivel_e_ignorada(self):
+        self.assertEqual(self.problemas(self.faixa(self.ilegivel())), [])
+
+    def test_texto_visivel_continua_verificado(self):
+        problemas = self.problemas(self.faixa(ft.Text("Lazer", color=CLARO["texto_principal"])), self.ilegivel())
+        self.assertEqual(len(problemas), 1)
+        self.assertIn("'Casa'", problemas[0])
+
+    def test_faixa_marcada_mas_visivel_nao_e_ignorada(self):
+        for opacidade in (1, 0.5, None):
+            with self.subTest(opacidade=opacidade):
+                problemas = self.problemas(self.faixa(self.ilegivel(), opacidade=opacidade))
+                self.assertEqual(len(problemas), 1)
+                self.assertIn("texto 1.00:1: 'Casa'", problemas[0])
+
+    def test_faixa_na_acessibilidade_ou_sem_marca_nao_e_ignorada(self):
+        for faixa in (self.faixa(self.ilegivel(), excluir=False),
+                      self.faixa(self.ilegivel(), marca=None),
+                      self.faixa(self.ilegivel(), marca="outra")):
+            with self.subTest(marca=faixa.data, excluir=faixa.content.exclude_semantics):
+                self.assertEqual(len(self.problemas(faixa)), 1)
+        # Opacity 0 sem a marca (um aviso escondido, por exemplo) também é verificado.
+        escondido = ft.Container(opacity=0, content=self.ilegivel())
+        self.assertEqual(len(self.problemas(escondido)), 1)
+
+    def test_faixa_do_comparativo_no_app(self):
+        # A faixa real do Gráfico atende às três condições e não tem nada focável;
+        # é a única subárvore que a varredura deixa de percorrer.
+        def arvore(controle):
+            yield controle
+            for filho in filhos(controle):
+                yield from arvore(filho)
+
+        self.popular(self.bia)
+        pagina, _ = self.abrir_app()
+        self.entrar(pagina, "bia@sino.com", "senha5678")
+        self.clicar(pagina, self.clicavel_com_texto(pagina, "Gráfico"))
+        tudo = [c for raiz in pagina.controls for c in arvore(raiz)]
+        faixas = [c for c in tudo if isinstance(c, ft.Container) and c.data == main.MARCA_MEDICAO_INVISIVEL]
+        self.assertEqual(len(faixas), 1)
+        self.assertTrue(e_medicao_invisivel(faixas[0]))
+        dentro = list(arvore(faixas[0]))
+        self.assertTrue(any(isinstance(c, ft.Text) for c in dentro))
+        self.assertFalse(any(isinstance(c, (ft.Button, ft.TextButton, ft.IconButton, ft.OutlinedButton,
+                                            ft.TextField, ft.Dropdown)) for c in dentro))
+        ignorados = {id(c) for c in tudo} - {id(c) for raiz in pagina.controls for c, _ in percorrer_com_fundo(raiz, "#000000")}
+        self.assertEqual(ignorados, {id(c) for c in dentro})
+
+
+class TestContrasteDoComparativo(TesteDeLegibilidade):
+    """
+    Sino 6.9 (F8; 5.48): contorno das colunas (3:1), preenchimento decorativo só
+    com contorno, valores e rótulos (4,5:1), foco (3:1) e aviso (4,5:1), nos dois
+    temas. Controles montados à mão: a regra precisa ACUSAR cada defeito.
+    """
+    PASTEL = "#FFD54F"   # cor de categoria abaixo de 3:1 sobre o cartão do Claro
+
+    def coluna(self, paleta, cor=PASTEL, contorno=None, valor_cor=None):
+        return fch.BarChartRod(
+            to_y=10, color=cor, border_side=contorno, selected=True,
+            tooltip=fch.BarChartRodTooltip(text="R$ 10,00", text_style=ft.TextStyle(
+                color=valor_cor or paleta["texto_principal"])))
+
+    def problemas(self, paleta, *controles):
+        raiz = ft.Container(bgcolor=paleta["fundo_card"], content=ft.Column(controls=list(controles)))
+        return self.problemas_das_vistas([("teste", paleta, raiz, paleta["fundo_pagina"])], True)
+
+    def grafico(self, *colunas):
+        return fch.BarChart(groups=[fch.BarChartGroup(x=i, rods=[c]) for i, c in enumerate(colunas)])
+
+    def test_preenchimento_pastel_aceito_so_com_contorno_contrastante(self):
+        for nome, paleta in (("claro", CLARO), ("escuro", ESCURO)):
+            with self.subTest(tema=nome):
+                contorno = ft.BorderSide(1, paleta["texto_principal"])
+                self.assertEqual(self.problemas(paleta, self.grafico(self.coluna(paleta, contorno=contorno))), [])
+
+    def test_contorno_abaixo_de_3_para_1_e_acusado(self):
+        problemas = self.problemas(CLARO, self.grafico(self.coluna(CLARO, contorno=ft.BorderSide(1, "#DDDDDD"))))
+        self.assertEqual(len(problemas), 1)
+        self.assertIn("contorno da barra abaixo de 3:1: #DDDDDD", problemas[0])
+
+    def test_sem_contorno_o_preenchimento_volta_a_ser_exigido(self):
+        for contorno in (None, ft.BorderSide(0, CLARO["texto_principal"])):
+            with self.subTest(contorno=contorno):
+                problemas = self.problemas(CLARO, self.grafico(self.coluna(CLARO, contorno=contorno)))
+                self.assertEqual(len(problemas), 1)
+                self.assertIn(f"barra abaixo de 3:1: {self.PASTEL}", problemas[0])
+
+    def test_contorno_do_tema_errado_e_acusado_no_escuro(self):
+        contorno = ft.BorderSide(1, CLARO["texto_principal"])   # escuro sobre o cartão escuro
+        self.assertEqual(self.problemas(CLARO, self.grafico(self.coluna(CLARO, contorno=contorno))), [])
+        problemas = self.problemas(ESCURO, self.grafico(self.coluna(ESCURO, contorno=contorno)))
+        self.assertTrue(any("contorno da barra abaixo de 3:1" in p for p in problemas))
+
+    def test_valor_e_rotulo_abaixo_de_4_5_para_1_sao_acusados(self):
+        contorno = ft.BorderSide(1, CLARO["texto_principal"])
+        coluna = self.coluna(CLARO, contorno=contorno, valor_cor="#AAAAAA")
+        rotulo = ft.TextButton(content=ft.Text("Casa", color="#AAAAAA"), style=ft.ButtonStyle(color="#AAAAAA"))
+        problemas = self.problemas(CLARO, self.grafico(coluna), rotulo)
+        self.assertTrue(any("valor da barra abaixo de 4,5:1" in p for p in problemas))
+        self.assertTrue(any("texto" in p and "'Casa'" in p for p in problemas))
+        self.assertTrue(any(p.split(": ", 1)[1].startswith("botão ") for p in problemas))
+
+    def test_foco_abaixo_de_3_para_1_e_acusado(self):
+        for nome, paleta, ruim in (("claro", CLARO, "#EEEEEE"), ("escuro", ESCURO, "#202825")):
+            with self.subTest(tema=nome):
+                botao = ft.TextButton(content=ft.Text("Casa", color=paleta["texto_principal"]),
+                                      style=ft.ButtonStyle(color=paleta["texto_principal"],
+                                                           side={ft.ControlState.FOCUSED: ft.BorderSide(2, ruim)}))
+                problemas = self.problemas(paleta, botao)
+                self.assertEqual(len(problemas), 1)
+                self.assertIn("foco do botão abaixo de 3:1", problemas[0])
+                botao.style.side[ft.ControlState.FOCUSED] = ft.BorderSide(2, paleta["acao_primaria"])
+                self.assertEqual(self.problemas(paleta, botao), [])
+
+    def test_aviso_medido_sobre_o_proprio_fundo(self):
+        for nome, paleta in (("claro", CLARO), ("escuro", ESCURO)):
+            with self.subTest(tema=nome):
+                bom = ft.SnackBar(ft.Text("Casa: R$ 10,00", color=paleta["fundo_card"]), bgcolor=paleta["texto_principal"])
+                ruim = ft.SnackBar(ft.Text("Casa: R$ 10,00", color=paleta["texto_principal"]),
+                                   bgcolor=paleta["texto_principal"])
+                vistas = lambda aviso: [("teste", paleta, aviso, paleta["fundo_pagina"])]
+                self.assertEqual(self.problemas_das_vistas(vistas(bom), True), [])
+                self.assertEqual(len(self.problemas_das_vistas(vistas(ruim), True)), 1)
+
+    def test_botao_visivel_marcado_como_medicao_nao_escapa(self):
+        botao = ft.TextButton(content=ft.Text("Casa", color="#FFFFFF"), style=ft.ButtonStyle(color="#FFFFFF"))
+        faixa = ft.Container(data=main.MARCA_MEDICAO_INVISIVEL, opacity=1,
+                             content=ft.Semantics(exclude_semantics=True, content=botao))
+        problemas = self.problemas(CLARO, faixa)
+        self.assertEqual(len(problemas), 2)   # o botão e o texto dentro dele
+
+    def test_vistas_reais_cobrem_colunas_com_contorno_e_aviso(self):
+        # A aprovação das telas não é vazia: o Gráfico real tem o comparativo,
+        # com contorno em todas as colunas, e o aviso entra nas vistas.
+        self.popular(self.bia)
+        pagina, _ = self.abrir_app()
+        self.entrar(pagina, "bia@sino.com", "senha5678")
+        self.percorrer_app(pagina, CLARO)
+        locais = {local for local, _, _, _ in self.vistas}
+        self.assertIn("Gráfico/aviso do comparativo [diálogo]", locais)
+        graficos = [c for local, _, raiz, fundo in self.vistas if local == "Gráfico mensal"
+                    for c, _ in percorrer_com_fundo(raiz, fundo) if isinstance(c, fch.BarChart)]
+        comparativo = [g for g in graficos if g.groups and g.groups[0].rods[0].border_side is not None]
+        # Sino 6.9 (F7-A2): um gráfico por categoria, todos varridos, com a mesma escala.
+        self.assertGreaterEqual(len(comparativo), 2)
+        self.assertTrue(all(len(g.groups) == 1 and len(g.groups[0].rods) == 1 for g in comparativo))
+        self.assertEqual(len({g.max_y for g in comparativo}), 1)
+        self.assertTrue(all(r.border_side.width >= 1 and r.border_side.color == CLARO["texto_principal"]
+                            for g in comparativo for grupo in g.groups for r in grupo.rods))
+        rotulos = [l.label for g in comparativo for l in g.bottom_axis.labels]
+        self.assertTrue(all(isinstance(c, ft.Container) and isinstance(c.content, ft.TextButton) for c in rotulos))
+        abaixo = [r.color for g in comparativo for grupo in g.groups for r in grupo.rods
+                  if contraste(cor_solida(r.color, "#FFFFFF"), "#FFFFFF") < MINIMO_NAO_TEXTO]
+        self.assertTrue(abaixo)   # há preenchimento pastel: o contorno é que garante os 3:1
 
 
 class TestTemaDoFlet(unittest.TestCase):
