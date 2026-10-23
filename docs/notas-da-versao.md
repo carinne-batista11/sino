@@ -5,6 +5,15 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.9 — em preparação (23/10/2026)
+
+**Ainda não publicada.** Inclui a correção da E11 ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), regra 5.44, M3) e, depois, a E12 (gráfico de colunas, M7), ainda não iniciada.
+
+- **Seletor de mês e ano (correção da E11):** o botão que abre o seletor e cada mês do diálogo passam a informar o próprio nome no próprio botão, em vez de num elemento separado em volta dele. O nome do botão de abertura acompanha o mês exibido; cada mês informa também se é o mês exibido (selecionado). Nada muda na aparência nem no uso.
+- **Testes:** 1197 testes automáticos do aplicativo aprovados, em bancos temporários e sem acesso à rede; a verificação de contraste passou a considerar o fundo dos próprios botões. Validação manual numa cópia isolada, com dados fictícios: testes 1 a 6 aprovados pela autora. A inspeção com a ferramenta de acessibilidade do Linux (AT-SPI) confirmou o nome do botão de abertura, mas **não** conseguiu verificar diretamente os nomes nem a seleção dos 12 meses dentro do diálogo; a causa (possível limitação do Flet/Flutter no Linux) não foi confirmada, e não houve teste com leitor de tela real. Essa verificação continua pendente. Evidência bruta não preservada; resultado consta do checkpoint de 22/10/2026.
+- **Continua pendente (anterior a esta correção):** as setas de mês anterior e próximo, em Início, ainda não têm nome para leitores de tela.
+- **Sem mudanças** no banco de dados (nenhuma migração), nos Termos de Uso ou na Política de Privacidade.
+
 ## Sino 6.8 — E9 e E10: espaços invisíveis no e-mail e na senha; contas em janelas estreitas (16/10/2026)
 
 Entrega conjunta da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (regras 5.40 a 5.42, M1, e 5.52, M11), implementada em 16/10/2026. ~~**Ainda não publicada:**~~ validação manual concluída em 16/10/2026 (15 de 15 testes aprovados); na data deste registro, o commit e a publicação no GitHub estavam pendentes. *Atualização (16/10/2026):* publicada no GitHub em 16/10/2026, no commit `cc2395c`.

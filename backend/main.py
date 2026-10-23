@@ -2299,19 +2299,30 @@ def main(page: ft.Page):
                     # coincidem, o contorno usa a cor do texto principal.
                     lado[ft.ControlState.DEFAULT] = ft.BorderSide(
                         2, cores.texto_principal if exibido else cores.acao_primaria)
-                return ft.Semantics(
-                    label=nome_do_mes_no_seletor(ano, mes, exibido, de_hoje),
-                    button=True, selected=exibido, expand=True,   # a largura vem da linha
-                    content=ft.Button(
-                        content=MESES_PT[mes - 1][:3], elevation=0,
-                        bgcolor=cores.acao_primaria if exibido else cores.fundo_dialogo,
-                        color=cores.texto_sobre_acao if exibido else cores.texto_principal,
-                        style=ft.ButtonStyle(
-                            side=lado, padding=0,
-                            shape=ft.RoundedRectangleBorder(radius=8),
+                # Sino 6.9 (E11, variante EB): nome acessível e estado
+                # "selecionado" no próprio botão focável -- MergeSemantics junta
+                # o `selected` do Semantics interno, o papel de botão do Button e
+                # o semantics_label do texto num único elemento (sem um pai com
+                # o nome repetido). O texto herda o estilo do botão (tamanho e
+                # peso); só a cor é explícita.
+                cor_do_texto = cores.texto_sobre_acao if exibido else cores.texto_principal
+                return ft.MergeSemantics(
+                    expand=True,   # a largura vem da linha
+                    content=ft.Semantics(
+                        selected=exibido,
+                        content=ft.Button(
+                            content=ft.Text(MESES_PT[mes - 1][:3], color=cor_do_texto,
+                                            semantics_label=nome_do_mes_no_seletor(ano, mes, exibido, de_hoje)),
+                            elevation=0,
+                            bgcolor=cores.acao_primaria if exibido else cores.fundo_dialogo,
+                            color=cor_do_texto,
+                            style=ft.ButtonStyle(
+                                side=lado, padding=0,
+                                shape=ft.RoundedRectangleBorder(radius=8),
+                            ),
+                            data=("mes_do_seletor", ano, mes),
+                            on_click=lambda e, mes=mes: ir_para_mes(ano_no_dialogo["valor"], mes),
                         ),
-                        data=("mes_do_seletor", ano, mes),
-                        on_click=lambda e, mes=mes: ir_para_mes(ano_no_dialogo["valor"], mes),
                     ),
                 )
 
@@ -2367,24 +2378,22 @@ def main(page: ft.Page):
         # v7.0 5.44 (M3-3): mês e ano com seta para baixo, uma única área
         # clicável (botão: recebe foco pelo Tab e abre com Enter ou Espaço),
         # separada das setas; contorno visível no foco; nome acessível com o
-        # período (atualizado em atualizar_dados).
-        abrir_periodo = ft.Semantics(
-            button=True,
-            content=ft.TextButton(
-                content=ft.Row(
-                    tight=True, spacing=0,
-                    controls=[texto_mes,
-                              ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=20, color=cores.texto_principal)],
-                ),
-                tooltip="Escolher mês e ano",
-                style=ft.ButtonStyle(
-                    color=cores.texto_principal,
-                    side={ft.ControlState.FOCUSED: ft.BorderSide(2, cores.acao_primaria)},
-                    padding=ft.Padding(8, 4, 4, 4),
-                ),
-                data="escolher_mes_e_ano",
-                on_click=abrir_seletor_de_mes,
+        # período no próprio botão (Sino 6.9: semantics_label de texto_mes,
+        # atualizado em atualizar_dados; sem Semantics externo duplicado).
+        abrir_periodo = ft.TextButton(
+            content=ft.Row(
+                tight=True, spacing=0,
+                controls=[texto_mes,
+                          ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=20, color=cores.texto_principal)],
             ),
+            tooltip="Escolher mês e ano",
+            style=ft.ButtonStyle(
+                color=cores.texto_principal,
+                side={ft.ControlState.FOCUSED: ft.BorderSide(2, cores.acao_primaria)},
+                padding=ft.Padding(8, 4, 4, 4),
+            ),
+            data="escolher_mes_e_ano",
+            on_click=abrir_seletor_de_mes,
         )
 
         seletor_mes = ft.Row(
@@ -4230,7 +4239,7 @@ def main(page: ft.Page):
 
         def atualizar_dados():
             texto_mes.value = f"{MESES_PT[mes_atual[1] - 1]} {mes_atual[0]}"
-            abrir_periodo.label = f"Escolher mês e ano, {rotulo_periodo('mensal', *mes_atual)}"
+            texto_mes.semantics_label = f"Escolher mês e ano, {rotulo_periodo('mensal', *mes_atual)}"
             # RF05 (5.15): título da lista acompanha o mês selecionado no
             # seletor -- "Suas contas de setembro" -- sem alterar texto_mes
             # (seletor continua "Setembro 2026", tela separada).

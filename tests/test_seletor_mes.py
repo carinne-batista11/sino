@@ -15,6 +15,7 @@ leitor de tela só se confirmam na validação manual.
 """
 
 import unittest
+from collections import namedtuple
 from unittest import mock
 
 import test_tela_principal
@@ -24,6 +25,10 @@ from test_sessao_tema import CLARO, ESCURO, PaginaFalsa
 from test_tela_principal import Evento, ft, main, percorrer
 
 ABREVIADOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+# Sino 6.9 (E11, variante EB): cada mês é MergeSemantics -> Semantics(selected)
+# -> Button -> Text(semantics_label); nome e estado no próprio botão focável.
+Mes = namedtuple("Mes", "merge semantica botao texto")
 
 
 class TestFuncoesDoSeletor(unittest.TestCase):
@@ -71,8 +76,10 @@ class BaseSeletor(TesteComBancoTemporario):
     def abertura(self):
         return next(c for c in self.controles(ft.TextButton) if c.data == "escolher_mes_e_ano")
 
-    def semantica_da_abertura(self):
-        return next(c for c in self.controles(ft.Semantics) if c.content is self.abertura())
+    def nome_da_abertura(self):
+        """Nome acessível do botão de abertura (semantics_label do texto do mês)."""
+        texto, _ = self.abertura().content.controls
+        return texto.semantics_label
 
     def abrir(self):
         self.clicar(self.abertura())
@@ -98,11 +105,16 @@ class BaseSeletor(TesteComBancoTemporario):
         self.clicar(self.seta_de_ano(self.dialogo(), dica))
 
     def meses(self, dialogo):
-        """{abreviação: (Semantics, Button)} na ordem da grade."""
-        return {s.content.content: (s, s.content) for s in self.no_dialogo(dialogo, ft.Semantics)}
+        """{abreviação: Mes(merge, semantica, botao, texto)} na ordem da grade."""
+        resultado = {}
+        for merge in self.no_dialogo(dialogo, ft.MergeSemantics):
+            semantica = merge.content
+            botao = semantica.content
+            resultado[botao.content.value] = Mes(merge, semantica, botao, botao.content)
+        return resultado
 
     def escolher(self, abreviacao):
-        self.clicar(self.meses(self.dialogo())[abreviacao][1])
+        self.clicar(self.meses(self.dialogo())[abreviacao].botao)
 
     def acao(self, dialogo, rotulo):
         return next(a for a in dialogo.actions if a.content == rotulo)
@@ -126,18 +138,20 @@ class TestAbertura(BaseSeletor):
         self.assertEqual((icone.icon, icone.color), (ft.Icons.ARROW_DROP_DOWN, CLARO["texto_principal"]))
         self.assertEqual(texto.color, CLARO["texto_principal"])
         self.assertEqual(abertura.style.side[ft.ControlState.FOCUSED].color, CLARO["acao_primaria"])
-        semantica = self.semantica_da_abertura()
-        self.assertTrue(semantica.button)
-        self.assertEqual(semantica.label, "Escolher mês e ano, Setembro de 2026")
+        # Sino 6.9: o nome acessível fica no próprio botão (texto do mês), sem
+        # um Semantics externo que repetiria o elemento.
+        self.assertEqual(texto.semantics_label, "Escolher mês e ano, Setembro de 2026")
+        self.assertFalse(any(isinstance(c, ft.Semantics) and c.content is abertura for c in self.controles()))
 
     def test_setas_preservadas_e_separadas(self):
         self.entrar()
-        linha = next(c for c in self.controles(ft.Row) if self.semantica_da_abertura() in c.controls)
+        linha = next(c for c in self.controles(ft.Row) if self.abertura() in c.controls)
         esquerda, abertura, direita = linha.controls
+        self.assertIs(abertura, self.abertura())
         self.assertEqual((esquerda.icon, direita.icon), (ft.Icons.CHEVRON_LEFT, ft.Icons.CHEVRON_RIGHT))
         self.clicar(direita)
         self.assertIn("Outubro 2026", self.textos())
-        self.assertEqual(self.semantica_da_abertura().label, "Escolher mês e ano, Outubro de 2026")
+        self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Outubro de 2026")
         self.assertTrue(self.sem_dialogo_aberto())
         self.clicar(self.seta_de_inicio(ft.Icons.CHEVRON_LEFT))
         self.assertIn("Setembro 2026", self.textos())
@@ -149,16 +163,22 @@ class TestAbertura(BaseSeletor):
         self.assertEqual(self.ano_do_dialogo(dialogo), "2026")
         linhas = dialogo.content.controls[1:]
         self.assertEqual([len(linha.controls) for linha in linhas], [3, 3, 3, 3])
-        self.assertEqual([s.content.content for linha in linhas for s in linha.controls], ABREVIADOS)
+        self.assertTrue(all(isinstance(m, ft.MergeSemantics) and m.expand for linha in linhas for m in linha.controls))
+        self.assertEqual([m.content.content.content.value for linha in linhas for m in linha.controls], ABREVIADOS)
         self.assertEqual([a.content for a in dialogo.actions], ["Mês atual", "Cancelar"])
 
     def test_controles_do_dialogo_focaveis(self):  # CT132 (parte automatizável)
         self.entrar()
         dialogo = self.abrir()
-        for semantica, botao in self.meses(dialogo).values():
-            self.assertIsInstance(botao, ft.Button)
-            self.assertTrue(semantica.button)
-            self.assertEqual(botao.style.side[ft.ControlState.FOCUSED].color, CLARO["texto_principal"])
+        meses = self.meses(dialogo)
+        self.assertEqual(list(meses), ABREVIADOS)
+        for mes in meses.values():
+            self.assertIsInstance(mes.merge, ft.MergeSemantics)
+            self.assertIsInstance(mes.semantica, ft.Semantics)
+            self.assertIsInstance(mes.botao, ft.Button)               # o papel de botão vem do próprio Button
+            self.assertFalse(mes.semantica.button)                    # sem um segundo elemento de botão
+            self.assertIsNone(mes.semantica.label)                    # o nome fica no texto do botão
+            self.assertEqual(mes.botao.style.side[ft.ControlState.FOCUSED].color, CLARO["texto_principal"])
         self.assertEqual(len(self.no_dialogo(dialogo, ft.IconButton)), 2)
         self.assertTrue(all(isinstance(a, ft.TextButton) for a in dialogo.actions))
 
@@ -184,10 +204,11 @@ class TestCancelarETrocarAno(BaseSeletor):
         self.entrar()
         self.abrir()
         self.trocar_ano("Próximo ano")
-        for semantica, botao in self.meses(self.dialogo()).values():
-            self.assertEqual(botao.bgcolor, CLARO["fundo_dialogo"])
-            self.assertNotIn(ft.ControlState.DEFAULT, botao.style.side)
-            self.assertFalse(semantica.selected)
+        for mes in self.meses(self.dialogo()).values():
+            self.assertEqual(mes.botao.bgcolor, CLARO["fundo_dialogo"])
+            self.assertNotIn(ft.ControlState.DEFAULT, mes.botao.style.side)
+            self.assertFalse(mes.semantica.selected)
+            self.assertNotIn(",", mes.texto.semantics_label)
 
 
 class TestEscolherMes(BaseSeletor):
@@ -250,7 +271,7 @@ class TestEscolherMes(BaseSeletor):
         self.clicar(self.icones("Editar conta")[0])
         self.clicar(self.botao("Cancelar"))
         self.assertIn("Novembro 2026", self.textos())
-        self.assertEqual(self.semantica_da_abertura().label, "Escolher mês e ano, Novembro de 2026")
+        self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Novembro de 2026")
 
 
 class TestFaixaNoDialogo(BaseSeletor):
@@ -290,8 +311,10 @@ class TestFaixaNoDialogo(BaseSeletor):
         dialogo = self.abrir()
         self.assertEqual(self.ano_do_dialogo(dialogo), "2025")
         self.assertTrue(self.seta_de_ano(dialogo, "Ano anterior").disabled)
-        semantica, botao = self.meses(dialogo)["Dez"]
-        self.assertEqual(botao.bgcolor, CLARO["acao_primaria"])
+        dezembro = self.meses(dialogo)["Dez"]
+        self.assertEqual(dezembro.botao.bgcolor, CLARO["acao_primaria"])
+        self.assertTrue(dezembro.semantica.selected)
+        self.assertEqual(dezembro.texto.semantics_label, "Dezembro de 2025, exibido")
         self.assertEqual(self.percorrer_ate_o_limite("Próximo ano"), "2031")
 
 
@@ -299,27 +322,34 @@ class TestDestaquesEMesAtual(BaseSeletor):
     def assert_destaques(self, paleta):
         self.clicar(self.seta_de_inicio(ft.Icons.CHEVRON_RIGHT))      # Outubro exibido; hoje = setembro
         meses = self.meses(self.abrir())
-        exibido_s, exibido = meses["Out"]
-        hoje_s, hoje = meses["Set"]
-        self.assertEqual((exibido.bgcolor, exibido.color), (paleta["acao_primaria"], paleta["texto_sobre_acao"]))
-        self.assertNotIn(ft.ControlState.DEFAULT, exibido.style.side)
-        self.assertEqual((exibido_s.selected, exibido_s.label), (True, "Outubro de 2026, exibido"))
-        self.assertEqual((hoje.bgcolor, hoje.color), (paleta["fundo_dialogo"], paleta["texto_principal"]))
-        self.assertEqual(hoje.style.side[ft.ControlState.DEFAULT].color, paleta["acao_primaria"])
-        self.assertEqual((hoje_s.selected, hoje_s.label), (False, "Setembro de 2026, mês atual"))
+        exibido = meses["Out"]
+        hoje = meses["Set"]
+        self.assertEqual((exibido.botao.bgcolor, exibido.botao.color),
+                         (paleta["acao_primaria"], paleta["texto_sobre_acao"]))
+        self.assertEqual(exibido.texto.color, paleta["texto_sobre_acao"])
+        self.assertNotIn(ft.ControlState.DEFAULT, exibido.botao.style.side)
+        self.assertEqual((exibido.semantica.selected, exibido.texto.semantics_label), (True, "Outubro de 2026, exibido"))
+        self.assertEqual((hoje.botao.bgcolor, hoje.botao.color), (paleta["fundo_dialogo"], paleta["texto_principal"]))
+        self.assertEqual(hoje.texto.color, paleta["texto_principal"])
+        self.assertEqual(hoje.botao.style.side[ft.ControlState.DEFAULT].color, paleta["acao_primaria"])
+        self.assertEqual((hoje.semantica.selected, hoje.texto.semantics_label), (False, "Setembro de 2026, mês atual"))
         for abreviacao in set(ABREVIADOS) - {"Out", "Set"}:
-            semantica, botao = meses[abreviacao]
-            self.assertEqual((botao.bgcolor, botao.color), (paleta["fundo_dialogo"], paleta["texto_principal"]))
-            self.assertNotIn(ft.ControlState.DEFAULT, botao.style.side)
-            self.assertNotIn(",", semantica.label)
+            mes = meses[abreviacao]
+            self.assertEqual((mes.botao.bgcolor, mes.botao.color), (paleta["fundo_dialogo"], paleta["texto_principal"]))
+            self.assertEqual(mes.texto.color, paleta["texto_principal"])
+            self.assertNotIn(ft.ControlState.DEFAULT, mes.botao.style.side)
+            self.assertFalse(mes.semantica.selected)
+            self.assertNotIn(",", mes.texto.semantics_label)
         self.pagina.pop_dialog()
 
         self.clicar(self.seta_de_inicio(ft.Icons.CHEVRON_LEFT))       # os dois juntos
-        juntos_s, juntos = self.meses(self.abrir())["Set"]
-        self.assertEqual((juntos.bgcolor, juntos.color), (paleta["acao_primaria"], paleta["texto_sobre_acao"]))
-        anel = juntos.style.side[ft.ControlState.DEFAULT]
+        juntos = self.meses(self.abrir())["Set"]
+        self.assertEqual((juntos.botao.bgcolor, juntos.botao.color),
+                         (paleta["acao_primaria"], paleta["texto_sobre_acao"]))
+        anel = juntos.botao.style.side[ft.ControlState.DEFAULT]
         self.assertEqual(anel.color, paleta["texto_principal"])     # visível em volta do fundo preenchido
-        self.assertEqual(juntos_s.label, "Setembro de 2026, exibido, mês atual")
+        self.assertEqual((juntos.semantica.selected, juntos.texto.semantics_label),
+                         (True, "Setembro de 2026, exibido, mês atual"))
 
     def test_destaques_no_claro(self):  # M3-4
         self.entrar()
@@ -367,6 +397,59 @@ class TestDestaquesEMesAtual(BaseSeletor):
         self.assertTrue(self.sem_dialogo_aberto())
         self.assertIn("Setembro 2026", self.textos())
         self.assertEqual(self.ocorrencias(serie_id), antes)
+
+
+class TestAcessibilidadeVarianteEB(BaseSeletor):
+    """
+    Sino 6.9 (correção da E11, variante EB validada na prova isolada v3): nome
+    acessível e estado "selecionado" no próprio botão focável, sem Semantics
+    externo com o nome repetido. Leitor de tela e AT-SPI: só na validação manual.
+    """
+
+    def test_nenhum_semantics_com_nome_em_volta_da_abertura_e_dos_meses(self):
+        self.entrar()
+        self.assertEqual([c for c in self.controles(ft.Semantics) if c.label], [])
+        dialogo = self.abrir()
+        semanticas = self.no_dialogo(dialogo, ft.Semantics)
+        self.assertEqual(len(semanticas), 12)
+        for semantica in semanticas:
+            self.assertIsNone(semantica.label)
+            self.assertFalse(semantica.button)
+            self.assertIsInstance(semantica.content, ft.Button)
+        self.assertEqual(len(self.no_dialogo(dialogo, ft.MergeSemantics)), 12)
+
+    def test_nome_e_estado_de_cada_mes_vem_do_seletor(self):
+        self.entrar()
+        meses = self.meses(self.abrir())
+        for numero, abreviacao in enumerate(ABREVIADOS, start=1):
+            mes = meses[abreviacao]
+            exibido = de_hoje = numero == 9                          # setembro de 2026 exibido e hoje
+            self.assertEqual(mes.texto.semantics_label, main.nome_do_mes_no_seletor(2026, numero, exibido, de_hoje))
+            self.assertEqual(mes.semantica.selected, exibido)
+            self.assertEqual(mes.texto.color, mes.botao.color)       # a cor do texto acompanha o botão
+            self.assertEqual(mes.botao.data, ("mes_do_seletor", 2026, numero))
+        self.assertEqual([a for a, m in meses.items() if m.semantica.selected], ["Set"])
+
+    def test_nome_da_abertura_acompanha_a_navegacao(self):
+        self.entrar()
+        self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Setembro de 2026")
+        self.clicar(self.seta_de_inicio(ft.Icons.CHEVRON_RIGHT))
+        self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Outubro de 2026")
+        self.abrir()
+        self.trocar_ano("Próximo ano")
+        self.escolher("Mar")
+        self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Março de 2027")
+        self.clicar(self.acao(self.abrir(), "Mês atual"))
+        self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Setembro de 2026")
+        self.assertIn("Setembro 2026", self.textos())
+
+    def test_estado_selecionado_acompanha_o_ano_do_dialogo(self):
+        self.entrar()
+        self.abrir()
+        self.trocar_ano("Próximo ano")
+        self.assertEqual([a for a, m in self.meses(self.dialogo()).items() if m.semantica.selected], [])
+        self.trocar_ano("Ano anterior")
+        self.assertEqual([a for a, m in self.meses(self.dialogo()).items() if m.semantica.selected], ["Set"])
 
 
 class TestUsuarioSemContas(BaseSeletor):

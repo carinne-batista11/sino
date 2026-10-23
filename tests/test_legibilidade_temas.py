@@ -69,11 +69,30 @@ def filhos(controle):
                     yield rotulo.label
 
 
+def fundo_do_botao(botao):
+    """
+    Sino 6.9 (F2.1): fundo exibido por um `ft.Button`/`ft.TextButton` -- o
+    `bgcolor` do Button ou o `style.bgcolor` (por estado: o DEFAULT). None
+    quando o botão não tem fundo próprio (o conteúdo fica sobre o fundo herdado).
+    """
+    cor = getattr(botao, "bgcolor", None) or (botao.style.bgcolor if botao.style else None)
+    if isinstance(cor, dict):
+        cor = cor.get(ft.ControlState.DEFAULT)
+    return cor or None
+
+
 def percorrer_com_fundo(controle, fundo):
-    """(controle, fundo efetivo) em pré-ordem, combinando os fundos translúcidos."""
+    """
+    (controle, fundo efetivo) em pré-ordem, combinando os fundos translúcidos.
+    O conteúdo de um Button/TextButton com fundo próprio é medido sobre esse
+    fundo; o próprio botão continua recebendo o fundo de fora (a verificação
+    do botão combina o `bgcolor` dele sobre esse fundo).
+    """
     if isinstance(controle, (ft.Container, ft.AlertDialog)) and controle.bgcolor:
         fundo = cor_solida(controle.bgcolor, fundo)
     yield controle, fundo
+    if isinstance(controle, (ft.Button, ft.TextButton)) and fundo_do_botao(controle):
+        fundo = cor_solida(fundo_do_botao(controle), fundo)
     for filho in filhos(controle):
         yield from percorrer_com_fundo(filho, fundo)
 
@@ -446,6 +465,82 @@ class TestCodigoDasTelas(unittest.TestCase):
                 continue  # glifo de emoji: a cor não se aplica
             faltando.append((n.lineno, n.func.attr))
         self.assertEqual(faltando, [])
+
+
+class TestFundoDosBotoes(TesteDeLegibilidade):
+    """
+    Sino 6.9 (F2.1): o texto dentro de um botão é medido sobre o fundo que o
+    botão exibe (por exemplo, o mês selecionado do seletor: texto_sobre_acao
+    sobre acao_primaria), e não sobre o fundo do diálogo; sem fundo próprio,
+    vale o fundo herdado. Controles montados à mão, nos dois temas.
+    """
+
+    def dialogo_com(self, *controles, paleta):
+        return ft.AlertDialog(bgcolor=paleta["fundo_dialogo"], content=ft.Row(controls=list(controles)))
+
+    @staticmethod
+    def fundo_do_dialogo(paleta):
+        # Normalizado como na varredura ("white" -> "#FFFFFF").
+        return cor_solida(paleta["fundo_dialogo"], paleta["fundo_pagina"])
+
+    def fundos(self, raiz, fundo_inicial):
+        return {id(c): f for c, f in percorrer_com_fundo(raiz, fundo_inicial)}
+
+    def problemas(self, raiz, paleta):
+        return self.problemas_das_vistas([("teste", paleta, raiz, paleta["fundo_pagina"])], True)
+
+    def test_texto_branco_sobre_o_fundo_do_mes_selecionado(self):
+        for nome, paleta in (("claro", CLARO), ("escuro", ESCURO)):
+            with self.subTest(tema=nome):
+                texto = ft.Text("Out", color=paleta["texto_sobre_acao"])
+                botao = ft.Button(content=texto, bgcolor=paleta["acao_primaria"], color=paleta["texto_sobre_acao"])
+                dialogo = self.dialogo_com(botao, paleta=paleta)
+                fundos = self.fundos(dialogo, paleta["fundo_pagina"])
+                self.assertEqual(fundos[id(texto)], cor_solida(paleta["acao_primaria"], paleta["fundo_dialogo"]))
+                self.assertEqual(fundos[id(botao)], self.fundo_do_dialogo(paleta))   # o botão segue com o fundo de fora
+                self.assertGreaterEqual(contraste(paleta["texto_sobre_acao"], paleta["acao_primaria"]), MINIMO_TEXTO)
+                self.assertEqual(self.problemas(dialogo, paleta), [])
+
+    def test_botao_sem_fundo_proprio_usa_o_fundo_herdado(self):
+        for nome, paleta in (("claro", CLARO), ("escuro", ESCURO)):
+            with self.subTest(tema=nome):
+                texto_button = ft.Text("Nov", color=paleta["texto_principal"])
+                texto_textbutton = ft.Text("Outubro 2026", color=paleta["texto_principal"])
+                button = ft.Button(content=texto_button, color=paleta["texto_principal"])
+                textbutton = ft.TextButton(content=texto_textbutton,
+                                           style=ft.ButtonStyle(color=paleta["texto_principal"]))
+                dialogo = self.dialogo_com(button, textbutton, paleta=paleta)
+                fundos = self.fundos(dialogo, paleta["fundo_pagina"])
+                self.assertEqual(fundos[id(texto_button)], self.fundo_do_dialogo(paleta))
+                self.assertEqual(fundos[id(texto_textbutton)], self.fundo_do_dialogo(paleta))
+                self.assertEqual(self.problemas(dialogo, paleta), [])
+
+    def test_fundo_do_textbutton_pelo_estilo(self):
+        for nome, paleta in (("claro", CLARO), ("escuro", ESCURO)):
+            with self.subTest(tema=nome):
+                texto = ft.Text("Mês", color=paleta["texto_sobre_acao"])
+                botao = ft.TextButton(content=texto, style=ft.ButtonStyle(
+                    color=paleta["texto_sobre_acao"], bgcolor={ft.ControlState.DEFAULT: paleta["acao_primaria"]}))
+                fundos = self.fundos(self.dialogo_com(botao, paleta=paleta), paleta["fundo_pagina"])
+                self.assertEqual(fundos[id(texto)], cor_solida(paleta["acao_primaria"], paleta["fundo_dialogo"]))
+
+    def test_falha_real_dentro_do_botao_continua_detectada(self):
+        # Texto na mesma cor do fundo do botão: precisa continuar falhando.
+        for nome, paleta in (("claro", CLARO), ("escuro", ESCURO)):
+            with self.subTest(tema=nome):
+                texto = ft.Text("Out", color=paleta["acao_primaria"])
+                botao = ft.Button(content=texto, bgcolor=paleta["acao_primaria"], color=paleta["texto_sobre_acao"])
+                problemas = self.problemas(self.dialogo_com(botao, paleta=paleta), paleta)
+                self.assertEqual(len(problemas), 1)
+                self.assertIn("texto 1.00:1: 'Out'", problemas[0])
+
+    def test_texto_do_botao_sem_fundo_proprio_continua_medido_no_fundo_herdado(self):
+        # Sem fundo próprio, um texto claro sobre o diálogo claro continua falhando.
+        texto = ft.Text("Nov", color=CLARO["fundo_dialogo"])
+        botao = ft.Button(content=texto, color=CLARO["texto_principal"])
+        problemas = self.problemas(self.dialogo_com(botao, paleta=CLARO), CLARO)
+        self.assertEqual(len(problemas), 1)
+        self.assertIn("'Nov'", problemas[0])
 
 
 class TestTemaDoFlet(unittest.TestCase):
