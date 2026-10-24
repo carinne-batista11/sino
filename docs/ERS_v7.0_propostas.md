@@ -2283,6 +2283,8 @@ Uma etapa específica para **avaliar** como disponibilizar o Sino a outras pesso
 
 **Planejada** como prioridade 4 (E13–E15). Nenhuma decisão tomada; nada empacotado nem publicado.
 
+*Atualização (24/10/2026):* E13 iniciada e **suspensa temporariamente** por decisão da autora (não é cancelamento nem conclusão técnica). Foco inicial avaliado: APK Android pessoal da autora, sem Play Store, como experimento separado do piloto com terceiros (D1). Aprovadas D1, D2 (consultas de leitura às fontes oficiais) e D3 (ambiente local isolado no Ubuntu, só para planejamento); D5 e as demais decisões, inclusive as da tabela acima, continuam pendentes. Nada empacotado nem publicado; nenhuma dependência alterada. Diagnósticos, decisões, riscos e roteiro de retomada em [E13_M14_continuidade.md](E13_M14_continuidade.md). O registro anterior acima fica preservado.
+
 ---
 
 ## Resumo geral da ERS v7.0 proposta (04/10/2026)
