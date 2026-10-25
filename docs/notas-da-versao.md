@@ -5,6 +5,18 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.9.1 — nomes acessíveis nos botões só de ícone (24/10/2026)
+
+**Publicada no GitHub em 24/10/2026**, num único commit na `main`. Versão de correção, sem funcionalidade nova ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), RNF14 e 5.52).
+
+- **Nomes para leitores de tela:** botões que só mostravam um ícone passam a informar o próprio nome: as setas "Mês anterior" e "Próximo mês" em Início, "Ano anterior" e "Próximo ano" no seletor de mês e ano, "Período anterior" e "Próximo período" no Gráfico, "Voltar", "Escolher data", "Nova categoria" e as ações de cada categoria, com o nome dela. Os dois "Editar" de Ajustes passam a se chamar "Editar nome" e "Editar e-mail".
+- **Ações das contas em Início:** o lápis e o botão de pagamento de cada conta são lidos com o nome e o vencimento da conta, como "Editar conta Luz, vencimento 28/10/2026" e "Marcar Luz, vencimento 28/10/2026, como paga". Quando duas contas têm o mesmo nome e o mesmo vencimento, os nomes indicam a posição na lista ("1 de 2", "2 de 2").
+- **Aparência:** sem mudança. Telas comparadas antes e depois nos temas Claro e Escuro, em várias larguras de janela, idênticas.
+- **Desempenho:** medido também na janela real, com 1.000 contas ([desempenho](desempenho-v6.md)). Abaixo de 0,6 s com as contas distribuídas; **no pior caso** (1.000 contas num único mês), abrir esse mês em Início continua acima de 2 s (RNF06 não atendido nesse caso; tratamento pendente de decisão).
+- **Testes:** 1.302 testes automáticos do aplicativo aprovados, sem falhas nem erros, em bancos temporários e sem acesso à rede. Verificação com a tecnologia assistiva do Linux (AT-SPI) e pelo teclado numa cópia isolada, com dados fictícios.
+- **Continua pendente (RNF14 parcial):** outros controles da interface ainda sem foco ou sem nome (painéis clicáveis, interruptores, paleta de cores, seletor de emojis, calendário nativo e gráficos); o leitor de tela real não foi testado.
+- **Sem mudanças** no banco de dados (nenhuma migração), nas regras, nos Termos de Uso ou na Política de Privacidade.
+
 ## Sino 6.9 — correção da E11 e E12: seletor de mês acessível e comparativo por categoria (23/10/2026)
 
 ~~**Ainda não publicada.**~~ *Atualização (23/10/2026):* **publicada no GitHub em 23/10/2026**, nos commits `1141d68` (correção da E11) e `6e3241c` (E12). Inclui a correção da E11 ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), regra 5.44, M3) e, depois, a E12 (gráfico de colunas, M7), ~~ainda não iniciada~~ *atualização (23/10/2026):* implementada e validada, ainda sem publicação.
@@ -13,7 +25,7 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
 - **Seletor de mês e ano (correção da E11):** o botão que abre o seletor e cada mês do diálogo passam a informar o próprio nome no próprio botão, em vez de num elemento separado em volta dele. O nome do botão de abertura acompanha o mês exibido; cada mês informa também se é o mês exibido (selecionado). Nada muda na aparência nem no uso.
 - **Testes:** 1197 testes automáticos do aplicativo aprovados, em bancos temporários e sem acesso à rede; a verificação de contraste passou a considerar o fundo dos próprios botões. Validação manual numa cópia isolada, com dados fictícios: testes 1 a 6 aprovados pela autora. A inspeção com a ferramenta de acessibilidade do Linux (AT-SPI) confirmou o nome do botão de abertura, mas **não** conseguiu verificar diretamente os nomes nem a seleção dos 12 meses dentro do diálogo; a causa (possível limitação do Flet/Flutter no Linux) não foi confirmada, e não houve teste com leitor de tela real. Essa verificação continua pendente. Evidência bruta não preservada; resultado consta do checkpoint de 22/10/2026.
-- **Continua pendente (anterior a esta correção):** as setas de mês anterior e próximo, em Início, ainda não têm nome para leitores de tela.
+- **Continua pendente (anterior a esta correção):** as setas de mês anterior e próximo, em Início, ainda não têm nome para leitores de tela. *Atualização (24/10/2026): resolvida na Sino 6.9.1 (acima).*
 - **Sem mudanças** no banco de dados (nenhuma migração), nos Termos de Uso ou na Política de Privacidade.
 
 ## Sino 6.8 — E9 e E10: espaços invisíveis no e-mail e na senha; contas em janelas estreitas (16/10/2026)

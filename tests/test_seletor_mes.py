@@ -71,7 +71,8 @@ class BaseSeletor(TesteComBancoTemporario):
 
     # ---------------------------------------------------------------- auxiliares
     def seta_de_inicio(self, icone):
-        return next(b for b in self.controles(ft.IconButton) if b.icon == icone)
+        # o ícone das setas de Início é um ft.Icon (com o nome acessível, RNF14)
+        return next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == icone)
 
     def abertura(self):
         return next(c for c in self.controles(ft.TextButton) if c.data == "escolher_mes_e_ano")
@@ -148,7 +149,7 @@ class TestAbertura(BaseSeletor):
         linha = next(c for c in self.controles(ft.Row) if self.abertura() in c.controls)
         esquerda, abertura, direita = linha.controls
         self.assertIs(abertura, self.abertura())
-        self.assertEqual((esquerda.icon, direita.icon), (ft.Icons.CHEVRON_LEFT, ft.Icons.CHEVRON_RIGHT))
+        self.assertEqual((esquerda.icon.icon, direita.icon.icon), (ft.Icons.CHEVRON_LEFT, ft.Icons.CHEVRON_RIGHT))
         self.clicar(direita)
         self.assertIn("Outubro 2026", self.textos())
         self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Outubro de 2026")
@@ -265,7 +266,7 @@ class TestEscolherMes(BaseSeletor):
         self.escolher("Nov")
         self.abrir_ver_status()
         self.assertIn("Novembro de 2026", self.textos())
-        self.clicar(next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.ARROW_BACK))
+        self.clicar(next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == ft.Icons.ARROW_BACK))
         self.assertIn("Novembro 2026", self.textos())
 
         self.clicar(self.icones("Editar conta")[0])
@@ -450,6 +451,117 @@ class TestAcessibilidadeVarianteEB(BaseSeletor):
         self.assertEqual([a for a, m in self.meses(self.dialogo()).items() if m.semantica.selected], [])
         self.trocar_ano("Ano anterior")
         self.assertEqual([a for a, m in self.meses(self.dialogo()).items() if m.semantica.selected], ["Set"])
+
+
+class TestNomesDasSetasDeInicio(BaseSeletor):
+    """
+    RNF14 (pendência de 23/10/2026, 15.3): nome acessível das setas de mês de
+    Início no próprio botão focável (semantics_label do ícone), sem dica visível,
+    sem Semantics externo e com a mesma aparência. Leitor de tela e AT-SPI: só na
+    validação manual.
+    """
+
+    def setas(self):
+        linha = next(c for c in self.controles(ft.Row) if self.abertura() in c.controls)
+        esquerda, _, direita = linha.controls
+        return esquerda, direita
+
+    def assert_setas(self, paleta):
+        esquerda, direita = self.setas()
+        for seta, icone, nome, data in ((esquerda, ft.Icons.CHEVRON_LEFT, "Mês anterior", "mes_anterior"),
+                                        (direita, ft.Icons.CHEVRON_RIGHT, "Próximo mês", "proximo_mes")):
+            self.assertIsInstance(seta, ft.IconButton)                 # continua focável (Tab; Enter/Espaço)
+            self.assertIsInstance(seta.icon, ft.Icon)
+            self.assertEqual((seta.icon.icon, seta.icon.semantics_label), (icone, nome))
+            self.assertEqual(seta.data, data)
+            self.assertIsNone(seta.tooltip)                            # sem dica visível nova
+            # mesma aparência de antes: tamanho 18 e texto secundário, no botão e no ícone
+            self.assertEqual((seta.icon_size, seta.icon.size), (18, 18))
+            self.assertEqual((seta.icon_color, seta.icon.color), (paleta["texto_secundario"],) * 2)
+
+    def test_nomes_no_claro(self):
+        self.entrar()
+        self.assert_setas(CLARO)
+
+    def test_nomes_no_escuro(self):  # RNF09: as cores seguem o tema
+        db.definir_tema(self.usuario_id, "escuro")
+        self.entrar()
+        self.assert_setas(ESCURO)
+
+    def test_nomes_mantidos_ao_navegar(self):
+        self.entrar()
+        _, direita = self.setas()
+        self.clicar(direita)
+        self.assertIn("Outubro 2026", self.textos())
+        self.assert_setas(CLARO)
+        self.clicar(self.setas()[0])
+        self.clicar(self.setas()[0])
+        self.assertIn("Agosto 2026", self.textos())
+        self.assert_setas(CLARO)
+        self.assertEqual(self.nome_da_abertura(), "Escolher mês e ano, Agosto de 2026")
+
+    def test_sem_semantics_externo_em_volta_das_setas(self):
+        self.entrar()
+        self.assertEqual([c for c in self.controles(ft.Semantics) if c.label], [])
+        self.assertEqual(self.controles(ft.MergeSemantics), [])
+
+
+class TestNomesDasSetasDeAno(BaseSeletor):
+    """
+    RNF14 (achado de 24/10/2026): o tooltip das setas de ano do diálogo não dá
+    nome acessível no Linux (AT-SPI); o nome vai no semantics_label do ícone,
+    com a mesma dica do mouse, a mesma aparência e os mesmos limites da faixa.
+    Leitor de tela e AT-SPI: só na validação manual.
+    """
+
+    def assert_setas(self, paleta, anterior_desabilitada, proxima_desabilitada):
+        dialogo = self.dialogo()
+        linha_do_ano = dialogo.content.controls[0]
+        esquerda, _, direita = linha_do_ano.controls
+        for seta, icone, nome, desabilitada in (
+                (esquerda, ft.Icons.CHEVRON_LEFT, "Ano anterior", anterior_desabilitada),
+                (direita, ft.Icons.CHEVRON_RIGHT, "Próximo ano", proxima_desabilitada)):
+            self.assertIsInstance(seta, ft.IconButton)                 # continua focável (Tab; Enter/Espaço)
+            self.assertIsInstance(seta.icon, ft.Icon)
+            self.assertEqual((seta.icon.icon, seta.icon.semantics_label), (icone, nome))
+            self.assertEqual(seta.tooltip, nome)                       # a dica do mouse continua a mesma
+            self.assertEqual(seta.disabled, desabilitada)
+            # mesma aparência de antes: tamanho padrão; ícone na cor do texto
+            # principal também quando desabilitada (como já aparecia na janela real)
+            self.assertEqual((seta.icon_size, seta.icon.size), (None, None))
+            self.assertEqual((seta.icon_color, seta.disabled_color),
+                             (paleta["texto_principal"], paleta["botao_desabilitado_texto"]))
+            self.assertEqual(seta.icon.color, paleta["texto_principal"])
+
+    def test_nomes_no_claro(self):
+        self.entrar()
+        self.abrir()
+        self.assert_setas(CLARO, True, False)                          # faixa 2026–2031, aberto em 2026
+
+    def test_nomes_no_escuro(self):  # RNF09: as cores seguem o tema
+        db.definir_tema(self.usuario_id, "escuro")
+        self.entrar()
+        self.abrir()
+        self.assert_setas(ESCURO, True, False)
+
+    def test_nomes_e_limites_acompanham_a_troca_de_ano(self):
+        self.entrar()
+        self.abrir()
+        self.trocar_ano("Próximo ano")
+        self.assertEqual(self.ano_do_dialogo(self.dialogo()), "2027")
+        self.assert_setas(CLARO, False, False)
+        for _ in range(4):
+            self.trocar_ano("Próximo ano")
+        self.assertEqual(self.ano_do_dialogo(self.dialogo()), "2031")
+        self.assert_setas(CLARO, False, True)                          # limite da faixa mantido
+        self.trocar_ano("Ano anterior")
+        self.assert_setas(CLARO, False, False)
+
+    def test_sem_semantics_externo_em_volta_das_setas(self):
+        self.entrar()
+        dialogo = self.abrir()
+        linha_do_ano = dialogo.content.controls[0]
+        self.assertEqual([c for c in percorrer(linha_do_ano) if isinstance(c, (ft.Semantics, ft.MergeSemantics))], [])
 
 
 class TestUsuarioSemContas(BaseSeletor):

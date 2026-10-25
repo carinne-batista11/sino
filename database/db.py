@@ -2911,8 +2911,9 @@ def criar_conta_unica(usuario_id, nome, valor, data_vencimento, categoria_id=Non
     em `series_recorrencia`.
 
     `descricao` é opcional (5.22) e gravada já normalizada (sem espaços nas
-    bordas; vazia vira NULL). Nome acima de 30 ou descrição acima de 500
-    caracteres levantam `LimiteDeCaracteresError` sem gravar nada (5.23).
+    bordas; vazia vira NULL). Nome acima de 30 ou descrição acima de 1000
+    caracteres levantam `LimiteDeCaracteresError` sem gravar nada (5.23;
+    limite da descrição pela v7.0, 5.45).
     """
     descricao = normalizar_descricao(descricao)
     _validar_textos_conta(nome, descricao)

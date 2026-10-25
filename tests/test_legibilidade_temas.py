@@ -171,7 +171,7 @@ class TesteDeLegibilidade(TesteDeSessao):
                 self.clicar(pagina, aba)
                 return
             voltar = self.botao(pagina, "Voltar") or self.botao(pagina, "Cancelar") or next(
-                (c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and c.icon == ft.Icons.ARROW_BACK), None)
+                (c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and getattr(c.icon, "icon", None) == ft.Icons.ARROW_BACK), None)
             self.assertIsNotNone(voltar, "sem caminho de volta ao Início")
             self.clicar(pagina, voltar)
         self.fail("não voltou ao Início")
@@ -202,13 +202,13 @@ class TesteDeLegibilidade(TesteDeSessao):
         self.clicar(pagina, abrir_seletor)
         self.registrar(pagina, "Início/Escolher mês e ano", paleta)
         self.fechar_dialogos(pagina)
-        seta = lambda icone: next(c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and c.icon == icone)
-        self.clicar(pagina, seta(ft.Icons.CHEVRON_RIGHT))
+        seta = lambda data: next(c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and c.data == data)
+        self.clicar(pagina, seta("proximo_mes"))
         self.clicar(pagina, next(c for c in self.todos(pagina) if isinstance(c, ft.TextButton)
                                  and c.data == "escolher_mes_e_ano"))
         self.registrar(pagina, "Início/Escolher mês e ano (outro mês)", paleta)
         self.fechar_dialogos(pagina)
-        self.clicar(pagina, seta(ft.Icons.CHEVRON_LEFT))
+        self.clicar(pagina, seta("mes_anterior"))
 
         self.clicar(pagina, self.botao(pagina, "Ver status") or self.clicavel_com_texto(pagina, "Ver status"))
         self.registrar(pagina, "Ver status", paleta)
@@ -253,7 +253,7 @@ class TesteDeLegibilidade(TesteDeSessao):
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Categorias"))
         self.registrar(pagina, "Categorias", paleta)
         for icone, local in ((ft.Icons.ADD_CIRCLE, "nova"), (ft.Icons.EDIT, "editar"), (ft.Icons.DELETE, "excluir")):
-            botao = next(c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and c.icon == icone)
+            botao = next(c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and getattr(c.icon, "icon", None) == icone)
             self.clicar(pagina, botao)
             self.registrar(pagina, f"Categorias/{local}", paleta)
             self.fechar_dialogos(pagina)

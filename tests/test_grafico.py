@@ -252,7 +252,7 @@ class TestTelaGrafico(TesteComBancoTemporario):
         self.assertTrue(any(getattr(c, "data", None) == "tela_grafico" for c in self.controles()))
 
     def seta(self, icone):
-        return next(b for b in self.controles(ft.IconButton) if b.icon == icone)
+        return next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == icone)
 
     def barras(self):
         grafico = self.controles(fch.BarChart)[0]

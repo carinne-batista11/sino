@@ -197,7 +197,7 @@ class Medicao(TesteDeLegibilidade):
             self.medir("tela: Início (voltar)", lambda: self.ir_para_inicio(pagina),
                        preparar=lambda: self.clicar(pagina, self.clicavel_com_texto(pagina, "Categorias")))
             proximo = lambda: next(b for b in self.todos(pagina)  # noqa: E731
-                                   if isinstance(b, ft.IconButton) and b.icon == ft.Icons.CHEVRON_RIGHT)
+                                   if isinstance(b, ft.IconButton) and b.data == "proximo_mes")
             self.medir("tela: próximo mês (gera ocorrências sob demanda)", lambda: self.clicar(pagina, proximo()),
                        preparar=lambda: self.ir_para_inicio(pagina))
             self.medir("tela: Ver status + filtro Atrasadas", lambda: (

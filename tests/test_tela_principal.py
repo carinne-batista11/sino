@@ -113,7 +113,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         return [b for b in self.controles(ft.IconButton) if b.tooltip == dica]
 
     def ir_para_outubro(self):
-        seta = next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.CHEVRON_RIGHT)
+        seta = next(b for b in self.controles(ft.IconButton) if b.data == "proximo_mes")
         self.clicar(seta)
         self.assertIn("Outubro 2026", self.textos())
 
@@ -187,13 +187,37 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.assertFalse(self.na_tela_de_detalhes())
 
     def test_lapis_e_pagamento_tem_as_mesmas_dimensoes(self):
-        self.criar_contas_de_outubro(1)
+        # RF30/5.15: o lápis com o mesmo padrão visual e as mesmas dimensões do
+        # controle de pagamento. Até a Sino 6.9 os dois ficavam numa caixa de
+        # 40 px; desde a 6.9.1 (RNF14, grupo A) a caixa saiu e os 40 x 40 vêm do
+        # próprio IconButton (ícone 22, sem ajuste de tamanho em nenhum dos
+        # dois) -- medidos na janela real, não aqui. Fica a regra de 5.52 que
+        # depende desses 40 px: empilhar abaixo de 370 px em Início.
+        ids = self.criar_contas_de_outubro(2)
+        db.marcar_conta_como_paga(ids[1])
         self.entrar()
         self.ir_para_outubro()
-        lapis, pagamento = self.icones("Editar conta")[0], self.icones("Marcar como paga")[0]
-        self.assertEqual(lapis.icon_size, pagamento.icon_size)
-        caixas = [c for c in self.controles(ft.Container) if c.content in (lapis, pagamento)]
-        self.assertEqual({c.width for c in caixas}, {40})
+        linhas = [c for c in self.controles(ft.Container) if c.data in ("linha_conta", "linha_conta_empilhada")]
+        self.assertEqual(len(linhas), 2)
+        for linha, dica in zip(linhas, ("Marcar como paga", "Marcar como pendente")):
+            lapis, pagamento = [b for b in percorrer(linha) if isinstance(b, ft.IconButton)]
+            self.assertEqual((lapis.tooltip, pagamento.tooltip), ("Editar conta", dica))
+            for ajuste in ("width", "height", "padding", "visual_density", "size_constraints", "style"):
+                self.assertIsNone(getattr(lapis, ajuste), ajuste)
+                self.assertIsNone(getattr(pagamento, ajuste), ajuste)
+            self.assertEqual((lapis.icon_size, lapis.icon.size, pagamento.icon_size, pagamento.icon.size),
+                             (22, 22, 22, 22))
+            self.assertEqual([c for c in self.controles(ft.Container) if c.content in (lapis, pagamento)], [])
+            self.assertIsNotNone(lapis.on_click)
+            self.assertIsNotNone(pagamento.on_click)
+        self.assertFalse(main.linha_de_conta_empilhada(370, 2))
+        self.assertTrue(main.linha_de_conta_empilhada(369, 2))
+
+        # as ações continuam as mesmas: o pagamento alterna e o lápis abre a edição
+        self.clicar(self.icones("Marcar como paga")[0])
+        self.assertEqual(len(self.icones("Marcar como pendente")), 2)
+        self.clicar(self.icones("Editar conta")[0])
+        self.assertIn("Salvar alterações", [getattr(b, "content", None) for b in self.controles(ft.Button)])
 
     # ---------------------------------------------------------------- vence hoje
     def linha_da_conta(self, nome):
@@ -240,7 +264,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
             self.assertEqual(nomes, esperadas, filtro)
 
         # Contas em atraso: só a atrasada, sem "A vencer"
-        self.clicar(next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.ARROW_BACK))
+        self.clicar(next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == ft.Icons.ARROW_BACK))
         self.clicar(next(c for c in self.controles(ft.Container)
                          if isinstance(c.content, ft.Text) and c.content.value == "Ver essas contas"))
         self.assertIn("Contas em atraso", self.textos())
@@ -268,7 +292,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.assertIn("Suas contas de outubro", self.textos())
 
         self.clicar(self.icones("Editar conta")[0])
-        voltar = next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.ARROW_BACK)
+        voltar = next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == ft.Icons.ARROW_BACK)
         self.clicar(voltar)
         self.assertIn("Outubro 2026", self.textos())
 
@@ -344,7 +368,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.assertEqual(len(self.linhas_ver_status()), 3)
         self.assertEqual(self.icones("Editar conta"), [])  # lápis só na Tela Principal
 
-        voltar = next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.ARROW_BACK)
+        voltar = next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == ft.Icons.ARROW_BACK)
         self.clicar(voltar)
         self.assertIn("Outubro 2026", self.textos())
 
@@ -358,9 +382,9 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.assertEqual(len(self.linhas_ver_status()), 1)
         self.assertIn("Nenhuma conta cadastrada neste mês.", self.textos())
 
-        voltar = next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.ARROW_BACK)
+        voltar = next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == ft.Icons.ARROW_BACK)
         self.clicar(voltar)
-        self.clicar(next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.CHEVRON_RIGHT))
+        self.clicar(next(b for b in self.controles(ft.IconButton) if b.data == "proximo_mes"))
         self.abrir_ver_status()
         self.assertIn("Novembro de 2026", self.textos())
         self.assertEqual(len(self.linhas_ver_status()), 2)

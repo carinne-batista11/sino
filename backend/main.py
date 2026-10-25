@@ -10,6 +10,7 @@ import sys
 import time
 import traceback
 from calendar import monthrange
+from collections import Counter
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "database"))
@@ -594,6 +595,28 @@ def ordenar_contas_do_mes(contas):
     return sorted(contas, key=lambda c: (0 if c["status"] == "atrasado" else 1, c["data_vencimento"]))
 
 
+def posicoes_de_contas_iguais(contas):
+    """
+    RNF14 (Sino 6.9.1, grupo A): "1 de 2", "2 de 2"... para as contas da lista
+    exibida que tenham o mesmo nome e o mesmo vencimento (indistinguíveis no
+    nome acessível); None para as demais. Segue a ordem recebida, sem reordenar
+    e sem guardar nada: é a posição na lista, não uma identidade da conta.
+    """
+    def chave(c):
+        return c["nome"], c["data_vencimento"]
+
+    totais = Counter(chave(c) for c in contas)
+    vistas = Counter()
+    posicoes = []
+    for c in contas:
+        if totais[chave(c)] > 1:
+            vistas[chave(c)] += 1
+            posicoes.append(f"{vistas[chave(c)]} de {totais[chave(c)]}")
+        else:
+            posicoes.append(None)
+    return posicoes
+
+
 FILTROS_DE_STATUS = (
     ("todas", "Todas"), ("pendentes", "Pendentes"), ("pagas", "Pagas"), ("atrasadas", "Atrasadas"),
 )
@@ -938,14 +961,15 @@ def rotulo_ao_lado_em_detalhes(largura_pagina):
 
 # v7.0 5.52 (M11): linha de conta em Início, Ver status e Contas em atraso.
 # Lado a lado, o nome divide a linha com a coluna de valor e status (92 px) e
-# com os botões de ação (40 px cada), com o espaçamento padrão da linha
-# (10 px), dentro do cartão (12 px de cada lado mais 4 px da borda) e da lista
-# (20 px de cada lado). Abaixo de LARGURA_MINIMA_NOME_NA_LINHA px para o nome,
-# a linha se empilha: nome e subtítulo em cima, com toda a largura; valor,
-# status e botões embaixo. Sem largura mínima de janela. Decisão técnica da
-# implementação: com 100 px, o tamanho padrão do app (380 px) continua lado a
-# lado em Início (sobram 110 px) e a linha só empilha abaixo de 370 px em
-# Início e de 270 px em Ver status e Contas em atraso.
+# com os botões de ação (40 px cada, o tamanho do próprio IconButton), com o
+# espaçamento padrão da linha (10 px), dentro do cartão (12 px de cada lado
+# mais 4 px da borda) e da lista (20 px de cada lado). Abaixo de
+# LARGURA_MINIMA_NOME_NA_LINHA px para o nome, a linha se empilha: nome e
+# subtítulo em cima, com toda a largura; valor, status e botões embaixo. Sem
+# largura mínima de janela. Decisão técnica da implementação: com 100 px, o
+# tamanho padrão do app (380 px) continua lado a lado em Início (sobram
+# 110 px) e a linha só empilha abaixo de 370 px em Início e de 270 px em Ver
+# status e Contas em atraso.
 LARGURA_MINIMA_NOME_NA_LINHA = 100
 _MARGENS_DA_LINHA = 2 * 20 + 2 * 12 + 4
 _LARGURA_VALOR_STATUS = 92
@@ -1105,6 +1129,16 @@ def criar_seletor_data(**opcoes):
     """`ft.DatePicker` com os textos em português (TEXTOS_CALENDARIO); a data
     continua digitável pelo lápis (modo de entrada padrão do Flutter)."""
     return ft.DatePicker(**TEXTOS_CALENDARIO, **opcoes)
+
+
+def icone_com_nome(icone, nome, cor, tamanho=None):
+    """
+    RNF14 (Sino 6.9.1): ícone de um IconButton com o nome acessível do botão. O
+    tooltip não dá nome no Linux (AT-SPI) e o IconButton do Flet 0.86.5 não tem
+    semantics_label; cor e tamanho repetem os do botão, sem mudar a aparência
+    (mesmo padrão das setas de mês e de ano do seletor).
+    """
+    return ft.Icon(icone, size=tamanho, color=cor, semantics_label=nome)
 
 
 class ServicoCodigos:
@@ -2451,6 +2485,19 @@ def main(page: ft.Page):
                     ),
                 )
 
+            def seta_de_ano(icone, nome, desabilitada, passo):
+                # RNF14: o tooltip não dá nome acessível no Linux (AT-SPI), então
+                # o nome vai no semantics_label do ícone, como nas setas de mês de
+                # Início; a dica do mouse continua. Cor do ícone igual à de antes
+                # (na janela real o disabled_color não chegava ao ícone e a seta
+                # desabilitada já aparecia na cor do texto principal).
+                return ft.IconButton(
+                    icon=ft.Icon(icone, semantics_label=nome, color=cores.texto_principal),
+                    tooltip=nome, icon_color=cores.texto_principal,
+                    disabled_color=cores.botao_desabilitado_texto,
+                    disabled=desabilitada, on_click=lambda e: trocar_ano(passo),
+                )
+
             def conteudo():
                 ano = ano_no_dialogo["valor"]
                 return ft.Column(
@@ -2459,15 +2506,9 @@ def main(page: ft.Page):
                         ft.Row(
                             alignment=ft.MainAxisAlignment.CENTER,
                             controls=[
-                                ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, tooltip="Ano anterior",
-                                              icon_color=cores.texto_principal,
-                                              disabled_color=cores.botao_desabilitado_texto,
-                                              disabled=ano <= primeiro_ano, on_click=lambda e: trocar_ano(-1)),
+                                seta_de_ano(ft.Icons.CHEVRON_LEFT, "Ano anterior", ano <= primeiro_ano, -1),
                                 ft.Text(str(ano), size=16, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
-                                ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, tooltip="Próximo ano",
-                                              icon_color=cores.texto_principal,
-                                              disabled_color=cores.botao_desabilitado_texto,
-                                              disabled=ano >= ultimo_ano, on_click=lambda e: trocar_ano(1)),
+                                seta_de_ano(ft.Icons.CHEVRON_RIGHT, "Próximo ano", ano >= ultimo_ano, 1),
                             ],
                         ),
                         *[ft.Row(spacing=8, controls=[botao_do_mes(linha * 3 + coluna) for coluna in (1, 2, 3)])
@@ -2521,14 +2562,22 @@ def main(page: ft.Page):
             on_click=abrir_seletor_de_mes,
         )
 
+        # RNF14: nome acessível das setas no próprio botão focável (semantics_label
+        # do ícone, mesmo padrão do texto_mes acima), sem dica visível nem
+        # mudança de aparência; cor e tamanho repetidos no ícone de propósito.
+        def seta_de_mes(icone, nome, data, passo):
+            return ft.IconButton(
+                icon=ft.Icon(icone, size=18, color=cores.texto_secundario, semantics_label=nome),
+                icon_size=18, icon_color=cores.texto_secundario, data=data,
+                on_click=lambda e: mudar_mes(passo),
+            )
+
         seletor_mes = ft.Row(
             alignment=ft.MainAxisAlignment.CENTER,
             controls=[
-                ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, icon_size=18, on_click=lambda e: mudar_mes(-1),
-                              icon_color=cores.texto_secundario),
+                seta_de_mes(ft.Icons.CHEVRON_LEFT, "Mês anterior", "mes_anterior", -1),
                 abrir_periodo,
-                ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, icon_size=18, on_click=lambda e: mudar_mes(1),
-                              icon_color=cores.texto_secundario),
+                seta_de_mes(ft.Icons.CHEVRON_RIGHT, "Próximo mês", "proximo_mes", 1),
             ],
         )
 
@@ -4119,7 +4168,8 @@ def main(page: ft.Page):
                 cabecalho_edicao = ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
+                        ft.IconButton(icon=icone_com_nome(ft.Icons.ARROW_BACK, "Voltar", cores.texto_principal, 20),
+                                      icon_size=20, icon_color=cores.texto_principal,
                                       on_click=lambda e: voltar_do_formulario()),
                         ft.Text("Editar conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                         ft.Container(width=40),
@@ -4169,8 +4219,9 @@ def main(page: ft.Page):
                                 campo_valor_edit,
                                 ft.Row(controls=[
                                     campo_data_edit,
-                                    ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color=cores.acao_primaria,
-                                                  on_click=abrir_seletor_data),
+                                    ft.IconButton(icon=icone_com_nome(ft.Icons.CALENDAR_MONTH, "Escolher data",
+                                                                      cores.acao_primaria),
+                                                  icon_color=cores.acao_primaria, on_click=abrir_seletor_data),
                                 ]),
                                 campo_categoria_edit,
                                 campo_descricao_edit,
@@ -4195,7 +4246,8 @@ def main(page: ft.Page):
             else:
                 mostrar_visualizacao()
 
-        def linha_conta(conta, nome_categoria, acao_rapida_pagamento=False, acao_editar=False):
+        def linha_conta(conta, nome_categoria, acao_rapida_pagamento=False, acao_editar=False,
+                        posicao_entre_iguais=None):
             data_venc = date.fromisoformat(conta["data_vencimento"])
             dias_delta = (data_venc - date.today()).days
 
@@ -4256,21 +4308,27 @@ def main(page: ft.Page):
             if not empilhada:
                 controles_linha[1].width = _LARGURA_VALOR_STATUS
 
+            # RNF14 (Sino 6.9.1, grupo A): nome acessível dos dois botões com o
+            # nome e o vencimento da ocorrência exibida (e a posição, se houver
+            # outra conta com o mesmo nome e vencimento na lista).
+            conta_no_nome = f"{conta['nome']}, vencimento {data_venc.strftime('%d/%m/%Y')}"
+            if posicao_entre_iguais:
+                conta_no_nome += f", {posicao_entre_iguais}"
+
             if acao_editar:
                 # RF30/5.15 (Etapa 3): atalho para Editar conta, só na Tela
-                # Principal -- mesmas dimensões do controle de pagamento
-                # (IconButton 22 num Container de 40). O clique no botão não
-                # abre os Detalhes (o botão consome o toque, como o de pagamento).
+                # Principal -- mesmas dimensões do controle de pagamento (os dois
+                # são IconButton de ícone 22, que medem 40 x 40). O clique no
+                # botão não abre os Detalhes (o botão consome o toque, como o de
+                # pagamento).
                 controles_linha.append(
-                    ft.Container(
-                        width=40, alignment=ft.Alignment.CENTER,
-                        content=ft.IconButton(
-                            icon=ft.Icons.EDIT_OUTLINED,
-                            icon_color=cores.texto_secundario,
-                            icon_size=22,
-                            tooltip="Editar conta",
-                            on_click=lambda e, c=conta: abrir_detalhe_conta(c, abrir_em_edicao=True),
-                        ),
+                    ft.IconButton(
+                        icon=icone_com_nome(ft.Icons.EDIT_OUTLINED, f"Editar conta {conta_no_nome}",
+                                            cores.texto_secundario, 22),
+                        icon_color=cores.texto_secundario,
+                        icon_size=22,
+                        tooltip="Editar conta",
+                        on_click=lambda e, c=conta: abrir_detalhe_conta(c, abrir_em_edicao=True),
                     )
                 )
 
@@ -4292,7 +4350,8 @@ def main(page: ft.Page):
                         atualizar_dados()
 
                     icone_pagamento = ft.IconButton(
-                        icon=ft.Icons.CHECK_CIRCLE,
+                        icon=icone_com_nome(ft.Icons.CHECK_CIRCLE, f"Marcar {conta_no_nome}, como pendente",
+                                            cores.controle_pago, 22),
                         icon_color=cores.controle_pago,
                         icon_size=22,
                         tooltip="Marcar como pendente",
@@ -4304,15 +4363,14 @@ def main(page: ft.Page):
                         atualizar_dados()
 
                     icone_pagamento = ft.IconButton(
-                        icon=ft.Icons.CHECK_CIRCLE_OUTLINE,
+                        icon=icone_com_nome(ft.Icons.CHECK_CIRCLE_OUTLINE, f"Marcar {conta_no_nome}, como paga",
+                                            cores.controle_pendente, 22),
                         icon_color=cores.controle_pendente,
                         icon_size=22,
                         tooltip="Marcar como paga",
                         on_click=marcar_como_paga_rapido,
                     )
-                controles_linha.append(
-                    ft.Container(width=40, alignment=ft.Alignment.CENTER, content=icone_pagamento)
-                )
+                controles_linha.append(icone_pagamento)
 
             if empilhada:
                 nome_e_subtitulo, valor_e_status, *acoes = controles_linha
@@ -4423,10 +4481,10 @@ def main(page: ft.Page):
                     )
                 )
             else:
-                for c in contas_ordenadas:
+                for c, posicao in zip(contas_ordenadas, posicoes_de_contas_iguais(contas_ordenadas)):
                     lista_contas.controls.append(
                         linha_conta(c, categorias.get(c["categoria_id"], ""), acao_rapida_pagamento=True,
-                                    acao_editar=True)
+                                    acao_editar=True, posicao_entre_iguais=posicao)
                     )
 
             page.update()
@@ -4517,7 +4575,8 @@ def main(page: ft.Page):
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
+                        ft.IconButton(icon=icone_com_nome(ft.Icons.ARROW_BACK, "Voltar", cores.texto_principal, 20),
+                                      icon_size=20, icon_color=cores.texto_principal,
                                       on_click=lambda e: mostrar_tela_principal((ano, mes))),
                         ft.Column(
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -4583,7 +4642,8 @@ def main(page: ft.Page):
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
+                        ft.IconButton(icon=icone_com_nome(ft.Icons.ARROW_BACK, "Voltar", cores.texto_principal, 20),
+                                      icon_size=20, icon_color=cores.texto_principal,
                                       on_click=lambda e: mostrar_tela_principal()),
                         ft.Text("Contas em atraso", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                         ft.Container(width=40),
@@ -5161,7 +5221,11 @@ def main(page: ft.Page):
             return ft.Row(
                 alignment=ft.MainAxisAlignment.CENTER, spacing=12,
                 controls=[
-                    ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, icon_color=cores.texto_principal,
+                    # RNF14 (6.9.1): nome no ícone, na mesma cor do botão também
+                    # quando desabilitado (como a seta já aparecia na janela real).
+                    ft.IconButton(icon=icone_com_nome(ft.Icons.CHEVRON_LEFT, "Período anterior",
+                                                      cores.texto_principal),
+                                  icon_color=cores.texto_principal,
                                   disabled=not pode_voltar, tooltip="Período anterior",
                                   on_click=lambda e: navegar(-1)),
                     ft.Container(
@@ -5171,7 +5235,9 @@ def main(page: ft.Page):
                         content=ft.Text(rotulo_periodo(modo, ano, mes), size=16, weight=ft.FontWeight.BOLD,
                                         color=cores.texto_principal),
                     ),
-                    ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, icon_color=cores.texto_principal,
+                    ft.IconButton(icon=icone_com_nome(ft.Icons.CHEVRON_RIGHT, "Próximo período",
+                                                      cores.texto_principal),
+                                  icon_color=cores.texto_principal,
                                   disabled=not pode_avancar, tooltip="Próximo período",
                                   on_click=lambda e: navegar(1)),
                 ],
@@ -5689,17 +5755,25 @@ def main(page: ft.Page):
                         ),
                         ft.Row(
                             controls=[
+                                # RNF14 (6.9.1): nomes com o da categoria, refeitos por
+                                # atualizar_lista() quando ela é renomeada.
                                 ft.IconButton(
-                                    icon=ft.Icons.ADD, icon_size=18, icon_color=cores.acao_primaria,
+                                    icon=icone_com_nome(ft.Icons.ADD, f"Nova conta na categoria {cat['nome']}",
+                                                        cores.acao_primaria, 18),
+                                    icon_size=18, icon_color=cores.acao_primaria,
                                     tooltip="Nova conta nesta categoria",
                                     on_click=lambda e, c=cat: mostrar_tela_nova_conta(
                                         categoria_pre_selecionada=c["id"]),
                                 ),
-                                ft.IconButton(icon=ft.Icons.EDIT, icon_size=18,
+                                ft.IconButton(icon=icone_com_nome(ft.Icons.EDIT, f"Editar categoria {cat['nome']}",
+                                                                  cores.texto_secundario, 18),
+                                              icon_size=18,
                                               on_click=lambda e, c=cat: abrir_dialogo_categoria(
                                                   c, ao_salvar=lambda categoria_id: atualizar_lista()),
                                               icon_color=cores.texto_secundario),
-                                ft.IconButton(icon=ft.Icons.DELETE, icon_size=18, icon_color=cores.acao_destrutiva,
+                                ft.IconButton(icon=icone_com_nome(ft.Icons.DELETE, f"Excluir categoria {cat['nome']}",
+                                                                  cores.acao_destrutiva, 18),
+                                              icon_size=18, icon_color=cores.acao_destrutiva,
                                               on_click=lambda e, c=cat: confirmar_exclusao(c)),
                             ]
                         ),
@@ -5760,7 +5834,9 @@ def main(page: ft.Page):
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 controls=[
                     ft.Text("Categorias", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_sobre_destaque),
-                    ft.IconButton(icon=ft.Icons.ADD_CIRCLE, icon_color=cores.acento_sobre_destaque, icon_size=28,
+                    ft.IconButton(icon=icone_com_nome(ft.Icons.ADD_CIRCLE, "Nova categoria",
+                                                      cores.acento_sobre_destaque, 28),
+                                  icon_color=cores.acento_sobre_destaque, icon_size=28,
                                   on_click=ao_clicar_nova_categoria),
                 ],
             ),
@@ -6470,8 +6546,11 @@ def main(page: ft.Page):
         secao_conta = secao(ft.Icons.PERSON, "Conta", "Suas informações pessoais.", [
             ft.Row(controls=[
                 rotulo_e_valor("Nome", nome),
+                # RNF14 (6.9.1): texto visível "Editar" e nome acessível próprio
+                # (semantics_label do texto, padrão da E11); cor igual à do estilo.
                 ft.OutlinedButton(
-                    content="Editar", icon=ft.Icons.EDIT, on_click=abrir_dialogo_nome,
+                    content=ft.Text("Editar", color=cores.texto_principal, semantics_label="Editar nome"),
+                    icon=ft.Icons.EDIT, on_click=abrir_dialogo_nome,
                     style=ft.ButtonStyle(color=cores.texto_principal, icon_color=cores.acao_primaria,
                                          side=ft.BorderSide(1, cores.acao_primaria)),
                 ),
@@ -6488,7 +6567,8 @@ def main(page: ft.Page):
                     ]),
                 ]),
                 ft.OutlinedButton(
-                    content="Editar", icon=ft.Icons.EDIT, data="editar_email", on_click=abrir_dialogo_email,
+                    content=ft.Text("Editar", color=cores.texto_principal, semantics_label="Editar e-mail"),
+                    icon=ft.Icons.EDIT, data="editar_email", on_click=abrir_dialogo_email,
                     style=ft.ButtonStyle(color=cores.texto_principal, icon_color=cores.acao_primaria,
                                          side=ft.BorderSide(1, cores.acao_primaria)),
                 ),
@@ -6802,7 +6882,8 @@ def main(page: ft.Page):
         cabecalho = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
-                ft.IconButton(icon=ft.Icons.ARROW_BACK, icon_size=20, icon_color=cores.texto_principal,
+                ft.IconButton(icon=icone_com_nome(ft.Icons.ARROW_BACK, "Voltar", cores.texto_principal, 20),
+                              icon_size=20, icon_color=cores.texto_principal,
                               on_click=lambda e: mostrar_tela_principal()),
                 ft.Text("Nova conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                 ft.Container(width=40),
@@ -6837,8 +6918,9 @@ def main(page: ft.Page):
                             campo_valor,
                             ft.Row(controls=[
                                 campo_data,
-                                ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, icon_color=cores.acao_primaria,
-                                              on_click=abrir_seletor_data),
+                                ft.IconButton(icon=icone_com_nome(ft.Icons.CALENDAR_MONTH, "Escolher data",
+                                                                  cores.acao_primaria),
+                                              icon_color=cores.acao_primaria, on_click=abrir_seletor_data),
                             ]),
                             campo_categoria,
                             campo_descricao,

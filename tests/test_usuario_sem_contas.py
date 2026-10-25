@@ -80,7 +80,8 @@ class TestInicioSemContas(TesteDeSessao):
         return None
 
     def mudar_mes(self, pagina, icone):
-        seta = next(b for b in self.controles(pagina, ft.IconButton) if b.icon == icone)
+        # setas de Início: o ícone é um ft.Icon (com o nome acessível, RNF14)
+        seta = next(b for b in self.controles(pagina, ft.IconButton) if getattr(b.icon, "icon", None) == icone)
         seta.on_click(Evento(pagina, seta))
 
     def recarregar_inicio(self, pagina):

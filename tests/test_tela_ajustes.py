@@ -60,7 +60,8 @@ class TesteDeAjustes(TesteDeSessao):
 
     # ---------------------------------------------------------------- nome
     def abrir_dialogo_nome(self, pagina):
-        editar = next(b for b in self.na_tela(pagina, ft.OutlinedButton) if b.content == "Editar")
+        # Sino 6.9.1 (RNF14): texto visível "Editar", nome acessível "Editar nome"
+        editar = next(b for b in self.na_tela(pagina, ft.OutlinedButton) if b.content.semantics_label == "Editar nome")
         self.clicar(pagina, editar)
         self.assertIsNotNone(self.dialogo_aberto(pagina))
         return self.no_dialogo(pagina, ft.TextField)[0], self.botao_do_dialogo(pagina, "Salvar")
@@ -94,7 +95,8 @@ class TestTelaAjustes(TesteDeAjustes):
         # conta antiga de teste não é verificada e não tem selo nem "Verificar".
         pagina, _ = self.abrir_ajustes()
         editar = [b for b in self.na_tela(pagina, ft.OutlinedButton)]
-        self.assertEqual([(b.content, b.data) for b in editar], [("Editar", None), ("Editar", "editar_email")])
+        self.assertEqual([(b.content.value, b.content.semantics_label, b.data) for b in editar],
+                         [("Editar", "Editar nome", None), ("Editar", "Editar e-mail", "editar_email")])
         self.assertFalse([c for c in self.na_tela(pagina) if getattr(c, "data", None) == "selo_verificado"])
         linha_email = [c for c in self.na_tela(pagina, ft.Row)   # a mais interna (pré-ordem)
                        if "bia@sino.com" in [t.value for t in percorrer(c) if isinstance(t, ft.Text)]][-1]

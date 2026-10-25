@@ -120,7 +120,7 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.clicar(self.botao("Entrar"))
 
     def ir_para_outubro(self):
-        self.clicar(next(b for b in self.controles(ft.IconButton) if b.icon == ft.Icons.CHEVRON_RIGHT))
+        self.clicar(next(b for b in self.controles(ft.IconButton) if b.data == "proximo_mes"))
         self.assertIn("Outubro 2026", self.textos())
 
     def abrir_detalhes(self, nome):

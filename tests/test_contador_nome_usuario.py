@@ -107,7 +107,7 @@ class TestDemaisContadoresVisiveis(TesteDeAjustes):
         db.criar_categoria(self.bia, "Casa")                 # banco temporário
         pagina, _ = self.abrir_ajustes()
         self.abrir_aba(pagina, "Categorias")
-        editar = next(b for b in self.controles(pagina, ft.IconButton) if b.icon == ft.Icons.EDIT)
+        editar = next(b for b in self.controles(pagina, ft.IconButton) if getattr(b.icon, "icon", None) == ft.Icons.EDIT)
         self.clicar(pagina, editar)
         campo = next(c for c in self.no_dialogo(pagina, ft.TextField) if c.label == "Nome da categoria")
         self.assertEqual((campo.value, campo.counter), ("Casa", "4/30"))
