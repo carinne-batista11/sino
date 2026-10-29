@@ -376,6 +376,11 @@ class TestAcoesDasLinhasDeInicio(BaseNomes):
         self.clicar(self.acao("Marcar Luz, vencimento 28/09/2026, como paga"))
         self.assertEqual(self.nomes()[-1][2], "Marcar Luz, vencimento 28/09/2026, como pendente")
         self.clicar(self.acao("Marcar Luz, vencimento 28/09/2026, como pendente"))
+        # Pagamentos parciais: desfazer a quitação passa pela confirmação da reversão.
+        dialogo = self.pagina.show_dialog.call_args[0][0]
+        self.clicar(next(c for c in percorrer(dialogo.content)
+                         if isinstance(c, ft.Container) and c.data == "pp_opcao_todos"))
+        self.clicar(next(b for b in dialogo.actions if b.content == "Confirmar"))
         self.assertEqual(self.nomes()[-1][2], "Marcar Luz, vencimento 28/09/2026, como paga")
 
     def test_lapis_abre_a_edicao_e_nome_acompanha_a_renomeacao(self):

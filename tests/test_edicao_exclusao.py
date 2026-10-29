@@ -77,9 +77,14 @@ class TestEditarSerie(TesteComBancoTemporario):
         self.assertTrue(db.editar_conta_serie(self.ids[1], nome="Internet Fibra", valor=130.0))
 
         self.assertEqual(self.conta(self.ids[0])["valor"], 100.0)
+        # Pagamentos parciais: a quitação de ids[2] agora
+        # registra um pagamento, e pela opção D aprovada pela autora uma ocorrência com
+        # histórico de pagamentos mantém o valor em "Este mês em diante" (os demais
+        # campos seguem a série). Antes, ids[2] recebia 130,00.
         for conta_id in self.ids[1:]:
             conta = self.conta(conta_id)
-            self.assertEqual((conta["nome"], conta["valor"]), ("Internet Fibra", 130.0))
+            esperado = 100.0 if conta_id == self.ids[2] else 130.0
+            self.assertEqual((conta["nome"], conta["valor"]), ("Internet Fibra", esperado))
         pago = self.conta(self.ids[2])
         self.assertEqual((pago["status"], pago["data_pagamento"]), ("pago", "2026-09-01"))
         serie = self.serie(self.serie_id)

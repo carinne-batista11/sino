@@ -323,8 +323,12 @@ class TestVariosCamposNoMesmoEscopo(BaseDescricao):
         id_fev = self.id_por_data(serie_id, "2027-02-10")
         id_mar = self.id_por_data(serie_id, "2027-03-10")
         id_mai = self.id_por_data(serie_id, "2027-05-10")
-        db.marcar_conta_como_paga(id_mar, data_pagamento="2027-03-09")
-        db.marcar_conta_como_paga(id_mai, data_pagamento="2027-04-10")
+        # Pagamentos parciais: quitações anteriores ao protótipo
+        # (sem pagamento registrado), para conferir a regra 5.9 de sempre; uma quitação com
+        # pagamento registrado manteria o valor em "Este mês em diante" (opção D, ver
+        # test_pagamentos_parciais.TestEtapa41OpcaoD).
+        for conta_id, data in ((id_mar, "2027-03-09"), (id_mai, "2027-04-10")):
+            self.executar("UPDATE contas SET status = 'pago', data_pagamento = ? WHERE id = ?", (data, conta_id))
         db.editar_conta_ocorrencia(id_mai, valor=999.0)
         antes_jan = self.conta(id_jan), self.descricao(id_jan)
 

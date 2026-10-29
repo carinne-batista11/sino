@@ -152,26 +152,20 @@ class TestCalendariosNaInterface(TesteComBancoTemporario):
         self.assertEqual(self.consultar("SELECT data_vencimento FROM contas WHERE id = ?", (conta_id,))[0][0],
                          "2026-10-20")
 
-    def test_data_de_pagamento_em_editar_conta(self):  # CT135; regra de data futura inalterada
+    def test_data_de_pagamento_em_editar_conta(self):  # CT135
+        # Pagamentos parciais (D4): Editar conta não tem mais o bloco
+        # Status nem o seu calendário; a data de um pagamento é corrigida pelo
+        # lápis nos Detalhes, que mantém a recusa de data futura (testes do
+        # protótipo). Só o calendário do vencimento continua em Editar.
         conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-05")
         db.marcar_conta_como_paga(conta_id, "2026-09-10")
         self.entrar()
         self.ir_para_outubro()
         self.clicar(self.icones("Editar conta")[0])
-        # O bloco de status é montado mais de uma vez ao abrir a edição (cada
-        # montagem cria o seu calendário); vale o da última montagem.
-        pagamento = [s for s in self.seletores() if s.on_change.__name__ == "ao_escolher_data_pagamento"]
-        self.assertGreaterEqual(len(pagamento), 1)
-        for seletor in pagamento:
-            self.assert_textos_em_portugues(seletor)
-        seletor = pagamento[-1]
-        self.assertEqual(seletor.first_date, main.date(2000, 1, 1))
-        self.assertEqual(seletor.last_date, main.date(2100, 12, 31))
-        self.escolher(seletor, datetime(2026, 9, 20))   # depois de "hoje" (15/09)
-        self.assertEqual(self.pagina.show_dialog.call_args[0][0].title.value, "Data inválida")
+        self.assertEqual([s for s in self.seletores() if s.on_change.__name__ == "ao_escolher_data_pagamento"], [])
+        self.assertEqual([s.on_change.__name__ for s in self.seletores()][-1:], ["ao_escolher_data"])
         self.assertEqual(self.consultar("SELECT data_pagamento FROM contas WHERE id = ?", (conta_id,))[0][0],
                          "2026-09-10")
-
 
 if __name__ == "__main__":
     unittest.main()

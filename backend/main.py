@@ -11,13 +11,14 @@ import time
 import traceback
 from calendar import monthrange
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "database"))
 
 import flet as ft
 import flet_charts as fch
 import db as database
+import pagamentos  # Pagamentos parciais: pagamentos parciais
 import aviso_sonoro
 import cores as modulo_cores
 import documentos
@@ -585,9 +586,10 @@ def resumo_do_mes(contas):
     desmarcar uma conta como paga só move o valor entre pago e pendente.
     Atrasadas contam como pendentes (e no mês do vencimento).
     """
-    pago = sum(c["valor"] for c in contas if c["status"] == "pago")
-    pendente = sum(c["valor"] for c in contas if c["status"] != "pago")
-    return pago + pendente, pago, pendente
+    total = sum(c["valor"] for c in contas)
+    # Pagamentos parciais: o pago inclui os pagamentos parciais das contas em aberto.
+    pago = sum(c["valor"] if c["status"] == "pago" else c.get("total_pago", 0) for c in contas)
+    return total, pago, total - pago
 
 
 def ordenar_contas_do_mes(contas):
@@ -2363,6 +2365,526 @@ def main(page: ft.Page):
         page.update()
 
     # ======================================================
+    #  PAGAMENTOS PARCIAIS (diálogos compartilhados)
+    # ======================================================
+    def mostrar_aviso_pagamentos(mensagem, titulo="Ainda não disponível"):
+        page.show_dialog(ft.AlertDialog(
+            modal=True,
+            title=ft.Text(titulo, color=cores.texto_principal),
+            content=ft.Text(mensagem, color=cores.texto_principal),
+            actions=[ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                               on_click=lambda e: page.pop_dialog())],
+            bgcolor=cores.fundo_dialogo,
+        ))
+
+    def confirmar_pagamento_do_saldo(conta_id, pago_centavos, valor_centavos, ao_concluir):
+        """"Marcar como paga" numa conta com pagamentos parciais: registra só o
+        saldo restante, com a data de hoje, depois de confirmar."""
+        saldo = valor_centavos - pago_centavos
+
+        def confirmar(e):
+            e.control.disabled = True  # um clique só (o banco também recusa repetir)
+            page.pop_dialog()
+            database.marcar_conta_como_paga(conta_id)
+            ao_concluir()
+
+        page.show_dialog(ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Marcar como paga?", color=cores.texto_principal),
+            content=ft.Text(
+                f"Já foram pagos {formatar_moeda(pagamentos.reais(pago_centavos))} de "
+                f"{formatar_moeda(pagamentos.reais(valor_centavos))}. Será registrado só o saldo devedor, "
+                f"{formatar_moeda(pagamentos.reais(saldo))}, com a data de hoje. "
+                "Os pagamentos anteriores são mantidos.",
+                color=cores.texto_principal,
+            ),
+            actions=[
+                ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                              style=ft.ButtonStyle(color=cores.acao_primaria)),
+                ft.Button(content=f"Pagar {formatar_moeda(pagamentos.reais(saldo))}",
+                          bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao, on_click=confirmar),
+            ],
+            bgcolor=cores.fundo_dialogo,
+        ))
+
+    def mostrar_dialogo_pagamento_parcial(conta_id, nome, situacao, ao_concluir):
+        """Registra um pagamento parcial: valor e data (hoje por padrão). O
+        limite fica no `helper`, visível com ou sem foco no campo."""
+        saldo = situacao["saldo_centavos"]
+        campo_valor = ft.TextField(label="Valor a pagar",
+                                   helper=f"Valor máximo: {formatar_moeda(pagamentos.reais(saldo))}",
+                                   keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
+                                   autofocus=True, **estilo_campo_texto())
+        campo_data = ft.TextField(label="Data do pagamento", value=date.today().strftime("%d/%m/%Y"),
+                                  hint_text="dd/mm/aaaa", color=cores.texto_principal, **estilo_campo_texto())
+        erro = ft.Text("", color=cores.texto_erro, size=12)
+
+        def linha(rotulo, valor, negrito=False):
+            return ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
+                ft.Text(rotulo, size=14, color=cores.texto_secundario),
+                ft.Text(valor, size=14, color=cores.texto_principal,
+                        weight=ft.FontWeight.BOLD if negrito else None),
+            ])
+
+        def registrar(e):
+            centavos = pagamentos.centavos_do_texto(campo_valor.value)
+            try:
+                data = datetime.strptime((campo_data.value or "").strip(), "%d/%m/%Y").date()
+            except ValueError:
+                data = None
+            if centavos is None:
+                erro.value = "Informe um valor maior que zero, com no máximo dois decimais."
+            elif centavos > saldo:
+                erro.value = f"O valor é maior que o saldo devedor ({formatar_moeda(pagamentos.reais(saldo))})."
+            elif data is None:
+                erro.value = "Informe a data no formato dd/mm/aaaa."
+            elif data > date.today():
+                erro.value = "A data de pagamento não pode ser no futuro."
+            else:
+                botao_registrar.disabled = True
+                try:
+                    nova = pagamentos.registrar_pagamento_parcial(conta_id, centavos, data.isoformat(),
+                                                                  saldo_esperado_centavos=saldo)
+                except pagamentos.PagamentoError as recusa:
+                    erro.value = str(recusa)
+                    botao_registrar.disabled = False
+                else:
+                    page.pop_dialog()
+                    if nova["status"] == "pago":
+                        mensagem = (f"Pagamento de {formatar_moeda(pagamentos.reais(centavos))} registrado. "
+                                    f"Com ele, '{nome}' foi paga por completo.")
+                    else:
+                        mensagem = (f"Pagamento de {formatar_moeda(pagamentos.reais(centavos))} registrado. "
+                                    f"Pago até agora: {formatar_moeda(pagamentos.reais(nova['pago_centavos']))} "
+                                    f"de {formatar_moeda(pagamentos.reais(nova['valor_centavos']))}. "
+                                    f"Saldo devedor: {formatar_moeda(pagamentos.reais(nova['saldo_centavos']))}.")
+                    ao_concluir()
+                    mostrar_aviso_pagamentos(mensagem, titulo="Pagamento registrado")
+                    return
+            page.update()
+
+        botao_registrar = ft.Button(content="Registrar pagamento", bgcolor=cores.acao_primaria,
+                                    color=cores.texto_sobre_acao, on_click=registrar)
+        page.show_dialog(ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Registrar pagamento parcial", color=cores.texto_principal),
+            content=ft.Column(tight=True, spacing=12, width=340, controls=[
+                linha("Valor da conta", formatar_moeda(pagamentos.reais(situacao["valor_centavos"]))),
+                linha("Já pago", formatar_moeda(pagamentos.reais(situacao["pago_centavos"]))),
+                linha("Saldo devedor", formatar_moeda(pagamentos.reais(saldo)), negrito=True),
+                campo_valor,
+                campo_data,
+                erro,
+            ]),
+            actions=[
+                ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                              style=ft.ButtonStyle(color=cores.acao_primaria)),
+                botao_registrar,
+            ],
+            bgcolor=cores.fundo_dialogo,
+        ))
+
+    def linhas_dos_pagamentos(situacao, largo, ao_alterar=None, quitou_id=None):
+        """Uma linha por pagamento (data, tipo, valor), separadas, na ordem do
+        histórico; estornados riscados, com a data do estorno. Com
+        `ao_alterar`: lápis e lixeira discretos nos ativos e só a lixeira de
+        exclusão definitiva nos estornados. `quitou_id`: o
+        pagamento que completou o valor recebe a indicação discreta "Conta
+        quitada"."""
+        def acao(icone_acao, nome, dica, dado, abrir):
+            return ft.IconButton(
+                icon=icone_com_nome(icone_acao, nome, cores.texto_secundario, 20),
+                icon_size=20, icon_color=cores.texto_secundario, tooltip=dica, data=dado,
+                on_click=lambda e: abrir(),
+            )
+
+        rotulos = pagamentos.rotulos_para_exibir(situacao)
+        linhas = []
+        if not situacao["pagamentos"]:
+            vazio = ("Conta paga sem pagamentos individuais registrados." if situacao["paga_sem_registros"]
+                     else "Nenhum pagamento registrado.")
+            linhas += [ft.Divider(height=1, color=cores.divisor),
+                       ft.Container(padding=ft.Padding(0, 12, 0, 12),
+                                    content=ft.Text(vazio, size=14, color=cores.texto_secundario,
+                                                    data="pp_historico_vazio"))]
+        for p in situacao["pagamentos"]:
+            ativo = p["ativo"]
+            cor = cores.texto_principal if ativo else cores.texto_secundario
+            data_br = date.fromisoformat(p["data_pagamento"]).strftime("%d/%m/%Y")
+            texto_valor = formatar_moeda(pagamentos.reais(p["valor_centavos"]))
+            detalhes = [ft.Text(rotulos[p["id"]], size=13, color=cores.texto_secundario)]
+            if p["id"] == quitou_id:
+                detalhes.append(ft.Text("Conta quitada", size=13, color=cores.detalhes_icone, data="pp_quitou"))
+            if not ativo:
+                detalhes.append(ft.Text(
+                    f"Estornado em {date.fromisoformat(p['estornado_em']).strftime('%d/%m/%Y')}",
+                    size=13, weight=ft.FontWeight.BOLD, color=cores.texto_secundario))
+            valor = ft.Text(texto_valor, size=15, weight=ft.FontWeight.BOLD, color=cor,
+                            style=None if ativo else ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH))
+            if ativo and ao_alterar is not None:
+                descricao = f"pagamento de {texto_valor} em {data_br}"
+                botoes = [
+                    acao(ft.Icons.EDIT_OUTLINED, f"Editar {descricao}", "Editar pagamento", f"pp_editar_{p['id']}",
+                         lambda pg=p: mostrar_dialogo_editar_pagamento(pg, situacao, ao_alterar)),
+                    acao(ft.Icons.DELETE_OUTLINE, f"Desfazer {descricao}", "Desfazer pagamento",
+                         f"pp_desfazer_{p['id']}",
+                         lambda pg=p: mostrar_dialogo_estornar_pagamento(pg, situacao, ao_alterar)),
+                ]
+                lado_direito = (ft.Row(spacing=0, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                       controls=[ft.Container(width=8), valor, ft.Container(width=8), *botoes])
+                                if largo else
+                                ft.Column(spacing=0, horizontal_alignment=ft.CrossAxisAlignment.END,
+                                          controls=[valor, ft.Row(spacing=0, tight=True, controls=botoes)]))
+            elif ao_alterar is not None:
+                # Etapa 3: estornado só tem a lixeira de exclusão
+                # definitiva (nunca o lápis), no mesmo lugar dos ícones dos ativos.
+                botoes = [acao(ft.Icons.DELETE_OUTLINE,
+                               f"Excluir registro estornado de {texto_valor} em {data_br}",
+                               "Excluir registro estornado", f"pp_excluir_{p['id']}",
+                               lambda pg=p: mostrar_dialogo_excluir_estornado(pg, situacao, ao_alterar))]
+                lado_direito = (ft.Row(spacing=0, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                       controls=[ft.Container(width=8), valor, ft.Container(width=8), *botoes])
+                                if largo else
+                                ft.Column(spacing=0, horizontal_alignment=ft.CrossAxisAlignment.END,
+                                          controls=[valor, ft.Row(spacing=0, tight=True, controls=botoes)]))
+            else:
+                lado_direito = valor
+            linhas += [
+                ft.Divider(height=1, color=cores.divisor),
+                ft.Container(
+                    data=f"pp_pagamento_{p['id']}",
+                    padding=ft.Padding(0, 8, 0, 8),
+                    content=ft.Row(spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                        ft.Container(
+                            width=44, alignment=ft.Alignment.CENTER,
+                            content=ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE if ativo else ft.Icons.UNDO, size=20,
+                                            color=cores.detalhes_icone if ativo else cores.texto_secundario),
+                        ),
+                        ft.Column(expand=True, spacing=2, controls=[
+                            ft.Text(data_br, size=15, weight=ft.FontWeight.BOLD, color=cor),
+                            *detalhes,
+                        ]),
+                        lado_direito,
+                    ]),
+                ),
+            ]
+        return linhas
+
+    def secao_pagamentos_registrados(situacao, largo, ao_alterar=None):
+        """Detalhes: histórico dos pagamentos no estilo dos cartões, sempre
+        presente, com o total pago no cabeçalho. Reorganização, etapa 1: com
+        `ao_alterar`, lápis e lixeira nos ativos (gravando na hora, com as
+        confirmações) e `ao_alterar()` redesenha os Detalhes depois. Numa conta
+        quitada, o último ativo lançado (o que completou o valor e dá a data da
+        quitação) leva "Conta quitada"."""
+        icone = ft.Container(
+            width=44, height=44, border_radius=22,
+            bgcolor=ft.Colors.with_opacity(0.12, cores.detalhes_icone), alignment=ft.Alignment.CENTER,
+            content=ft.Icon(ft.Icons.RECEIPT_LONG_OUTLINED, size=22, color=cores.detalhes_icone),
+        )
+        quitou_id = pagamentos.pagamento_que_quitou(situacao)
+        titulo = ft.Text("Pagamentos registrados", size=15, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
+        texto_total = ft.Text(f"Total pago: {formatar_moeda(pagamentos.reais(situacao['pago_centavos']))}",
+                              size=15 if largo else 14, weight=ft.FontWeight.BOLD,
+                              color=cores.texto_principal, data="pp_total_pago")
+        if largo:
+            cabecalho = ft.Row(spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                               controls=[icone, ft.Container(expand=True, content=titulo), texto_total])
+        else:
+            cabecalho = ft.Row(spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                icone, ft.Column(expand=True, spacing=2, controls=[titulo, texto_total])])
+        return ft.Container(
+            data="pp_historico",
+            bgcolor=cores.fundo_card,
+            border=ft.Border.all(1, cores.borda_suave),
+            border_radius=12,
+            padding=ft.Padding(14, 14, 14, 4),
+            content=ft.Column(spacing=0, controls=[ft.Container(padding=ft.Padding(0, 0, 0, 12), content=cabecalho),
+                                                   *linhas_dos_pagamentos(situacao, largo, ao_alterar=ao_alterar,
+                                                                          quitou_id=quitou_id)]),
+        )
+
+    def data_digitada(campo):
+        try:
+            return datetime.strptime((campo.value or "").strip(), "%d/%m/%Y").date()
+        except ValueError:
+            return None
+
+    def resumo_sem_quebra(*partes, separador=" · "):
+        """Resumo "Total pago: R$ X · Saldo devedor: R$ Y" que, em janela
+        estreita, só quebra entre as partes (espaço não separável dentro delas)."""
+        return separador.join(parte.replace(" ", "\u00a0") for parte in partes)
+
+    def frase_pago_e_aberto(situacao):
+        moeda = lambda c: formatar_moeda(pagamentos.reais(c))  # noqa: E731
+        if situacao["saldo_centavos"] == 0:
+            return f"A conta ficou quitada, com {moeda(situacao['pago_centavos'])} pagos."
+        return (f"A conta ficou com {moeda(situacao['pago_centavos'])} pagos e "
+                f"{moeda(situacao['saldo_centavos'])} em aberto.")
+
+    def frase_da_edicao(pagamento, centavos, data):
+        """Título e frase da confirmação conforme o que mudou de fato (sem
+        mudança, o diálogo fecha sem confirmação)."""
+        data_br = data.strftime("%d/%m/%Y")
+        novo_valor = formatar_moeda(pagamentos.reais(centavos))
+        if centavos == pagamento["valor_centavos"]:
+            return "Data do pagamento alterada", f"A data do pagamento foi alterada para {data_br}."
+        if data.isoformat() == pagamento["data_pagamento"]:
+            return ("Valor do pagamento alterado",
+                    f"O valor do pagamento foi alterado de "
+                    f"{formatar_moeda(pagamentos.reais(pagamento['valor_centavos']))} para {novo_valor}.")
+        return "Pagamento atualizado", f"O pagamento foi alterado para {novo_valor}, em {data_br}."
+
+    def mostrar_dialogo_editar_pagamento(pagamento, situacao, ao_concluir):
+        """Corrige valor e data de um pagamento ativo, no próprio registro."""
+        outros = situacao["pago_centavos"] - pagamento["valor_centavos"] if situacao["ativos"] else 0
+        limite = situacao["valor_centavos"] - outros
+        campo_valor = ft.TextField(label="Valor do pagamento",
+                                   value=f"{pagamentos.reais(pagamento['valor_centavos']):.2f}".replace(".", ","),
+                                   hint_text=f"Até {formatar_moeda(pagamentos.reais(limite))}",
+                                   keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
+                                   **estilo_campo_texto())
+        campo_data = ft.TextField(label="Data do pagamento",
+                                  value=date.fromisoformat(pagamento["data_pagamento"]).strftime("%d/%m/%Y"),
+                                  hint_text="dd/mm/aaaa", color=cores.texto_principal, **estilo_campo_texto())
+        erro = ft.Text("", color=cores.texto_erro, size=12)
+
+        def linha(rotulo, valor, negrito=False):
+            return ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
+                ft.Text(rotulo, size=14, color=cores.texto_secundario),
+                ft.Text(valor, size=14, color=cores.texto_principal,
+                        weight=ft.FontWeight.BOLD if negrito else None),
+            ])
+
+        def salvar(e):
+            centavos = pagamentos.centavos_do_texto(campo_valor.value)
+            data = data_digitada(campo_data)
+            if centavos is None:
+                erro.value = "Informe um valor maior que zero, com no máximo dois decimais."
+            elif centavos > limite:
+                erro.value = ("Com este valor, os pagamentos somariam mais que o valor da conta "
+                              f"(máximo {formatar_moeda(pagamentos.reais(limite))}).")
+            elif data is None:
+                erro.value = "Informe a data no formato dd/mm/aaaa."
+            elif data > date.today():
+                erro.value = "A data de pagamento não pode ser no futuro."
+            elif centavos == pagamento["valor_centavos"] and data.isoformat() == pagamento["data_pagamento"]:
+                page.pop_dialog()  # nada mudou
+                return
+            else:
+                botao_salvar.disabled = True
+                try:
+                    nova = pagamentos.editar_pagamento(pagamento["id"], centavos, data.isoformat(),
+                                                       (pagamento["valor_centavos"], pagamento["data_pagamento"]))
+                except pagamentos.PagamentoError as recusa:
+                    erro.value = str(recusa)
+                    botao_salvar.disabled = False
+                else:
+                    page.pop_dialog()
+                    ao_concluir()
+                    titulo, frase = frase_da_edicao(pagamento, centavos, data)
+                    mostrar_aviso_pagamentos(f"{frase}\n\n{frase_pago_e_aberto(nova)}", titulo=titulo)
+                    return
+            page.update()
+
+        botao_salvar = ft.Button(content="Salvar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                                 on_click=salvar)
+        page.show_dialog(ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Editar pagamento", color=cores.texto_principal),
+            content=ft.Column(tight=True, spacing=12, width=340, controls=[
+                linha("Valor da conta", formatar_moeda(pagamentos.reais(situacao["valor_centavos"]))),
+                linha("Outros pagamentos", formatar_moeda(pagamentos.reais(outros))),
+                linha("Máximo permitido", formatar_moeda(pagamentos.reais(limite)), negrito=True),
+                campo_valor,
+                campo_data,
+                erro,
+            ]),
+            actions=[
+                ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                              style=ft.ButtonStyle(color=cores.acao_primaria)),
+                botao_salvar,
+            ],
+            bgcolor=cores.fundo_dialogo,
+        ))
+
+    def mostrar_dialogo_estornar_pagamento(pagamento, situacao, ao_concluir):
+        """Desfaz um pagamento ativo (estorno rastreável), com confirmação."""
+        moeda = lambda c: formatar_moeda(pagamentos.reais(c))  # noqa: E731
+        continua = situacao["pago_centavos"] - pagamento["valor_centavos"]
+        aberto = situacao["valor_centavos"] - continua
+
+        def confirmar(e):
+            e.control.disabled = True  # um clique só (o banco também recusa repetir)
+            page.pop_dialog()
+            try:
+                nova = pagamentos.estornar_pagamento(pagamento["id"],
+                                                     (pagamento["valor_centavos"], pagamento["data_pagamento"]))
+            except pagamentos.PagamentoError as recusa:
+                ao_concluir()
+                mostrar_aviso_pagamentos(str(recusa), titulo="Nada foi desfeito")
+                return
+            ao_concluir()
+            mostrar_aviso_pagamentos(
+                f"{frase_pago_e_aberto(nova)} O pagamento desfeito continua no histórico, marcado como estornado.",
+                titulo="Pagamento desfeito")
+
+        page.show_dialog(ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Desfazer este pagamento?", color=cores.texto_principal),
+            content=ft.Column(tight=True, spacing=12, width=340, controls=[
+                ft.Text(f"Você está prestes a desfazer o pagamento de {moeda(pagamento['valor_centavos'])} "
+                        f"realizado em {date.fromisoformat(pagamento['data_pagamento']).strftime('%d/%m/%Y')}.",
+                        size=14, color=cores.texto_principal),
+                ft.Text(f"Após a confirmação, esta conta ficará com {moeda(continua)} pagos e "
+                        f"{moeda(aberto)} em aberto.", size=14, color=cores.texto_principal),
+            ]),
+            actions=[
+                ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                              style=ft.ButtonStyle(color=cores.acao_primaria)),
+                ft.Button(content="Desfazer pagamento", bgcolor=cores.acao_destrutiva,
+                          color=cores.texto_sobre_acao, on_click=confirmar),
+            ],
+            bgcolor=cores.fundo_dialogo,
+        ))
+
+    def mostrar_dialogo_excluir_estornado(pagamento, situacao, ao_concluir):
+        """Etapa 3: exclusão definitiva de um registro estornado, com confirmação
+        (H1: sem aviso extra). Não muda total pago, saldo nem status."""
+        def confirmar(e):
+            e.control.disabled = True  # um clique só (o banco também recusa repetir)
+            page.pop_dialog()
+            try:
+                pagamentos.excluir_estornado(pagamento["id"], situacao["conta_id"])
+            except pagamentos.PagamentoError as recusa:
+                ao_concluir()
+                mostrar_aviso_pagamentos(str(recusa), titulo="Nada foi excluído")
+                return
+            ao_concluir()
+
+        page.show_dialog(ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Excluir registro estornado?", color=cores.texto_principal),
+            content=ft.Text("Este registro será excluído permanentemente do histórico de pagamentos. "
+                            "A exclusão não alterará o saldo da conta.", color=cores.texto_principal),
+            actions=[
+                ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                              style=ft.ButtonStyle(color=cores.acao_primaria)),
+                ft.Button(content="Excluir definitivamente", bgcolor=cores.acao_destrutiva,
+                          color=cores.texto_sobre_acao, on_click=confirmar),
+            ],
+            bgcolor=cores.fundo_dialogo,
+        ))
+
+    def quantidade_de_pagamentos(n):
+        extenso = {1: "um", 2: "dois", 3: "três", 4: "quatro", 5: "cinco", 6: "seis", 7: "sete", 8: "oito",
+                   9: "nove", 10: "dez"}.get(n, str(n))
+        return f"{extenso} pagamento registrado" if n == 1 else f"{extenso} pagamentos registrados"
+
+    def mostrar_dialogo_desfazer_pagamentos(conta_id, ao_concluir):
+        """"Desmarcar como paga" numa conta quitada com pagamentos registrados:
+        escolher entre desfazer o último pagamento ativo ou todos. Nada é
+        gravado antes de Confirmar; os desfeitos ficam no histórico como
+        estornados."""
+        situacao = pagamentos.obter_situacao(conta_id)
+        ativos = situacao["ativos"]
+        ids = [p["id"] for p in ativos]
+        escolha = {"modo": None}
+
+        def moeda(centavos):
+            return formatar_moeda(pagamentos.reais(centavos))
+
+        opcoes = []
+        if len(ativos) > 1:
+            revertido, continua, aberto = pagamentos.previa_da_reversao(situacao, "ultimo")
+            opcoes.append(("ultimo", f"Desfazer o último pagamento ({moeda(revertido)})",
+                           f"Os pagamentos anteriores serão mantidos. A conta ficará com {moeda(continua)} "
+                           f"pagos e {moeda(aberto)} em aberto."))
+        revertido, _, aberto = pagamentos.previa_da_reversao(situacao, "todos")
+        opcoes.append(("todos",
+                       f"Desfazer todos os pagamentos ({moeda(revertido)})" if len(ativos) > 1
+                       else f"Desfazer o pagamento ({moeda(revertido)})",
+                       ("Todos os pagamentos registrados serão revertidos." if len(ativos) > 1
+                        else "O pagamento registrado será revertido.")
+                       + f" A conta ficará com {moeda(aberto)} em aberto."))
+
+        cartoes = ft.Column(spacing=10)
+        resumo = ft.Text("Escolha uma opção.", size=14, color=cores.texto_secundario, data="pp_resumo_reversao")
+
+        def montar():
+            cartoes.controls = [
+                ft.Container(
+                    data=f"pp_opcao_{modo}",
+                    border=ft.Border.all(2 if escolha["modo"] == modo else 1,
+                                         cores.acao_primaria if escolha["modo"] == modo else cores.borda_suave),
+                    border_radius=10,
+                    padding=12,
+                    on_click=lambda e, m=modo: selecionar(m),
+                    content=ft.Row(spacing=10, vertical_alignment=ft.CrossAxisAlignment.START, controls=[
+                        ft.Icon(ft.Icons.RADIO_BUTTON_CHECKED if escolha["modo"] == modo
+                                else ft.Icons.RADIO_BUTTON_UNCHECKED, size=20,
+                                color=cores.acao_primaria if escolha["modo"] == modo else cores.texto_secundario),
+                        ft.Column(expand=True, spacing=4, controls=[
+                            ft.Text(titulo, size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                            ft.Text(explicacao, size=13, color=cores.texto_secundario),
+                        ]),
+                    ]),
+                )
+                for modo, titulo, explicacao in opcoes
+            ]
+
+        def selecionar(modo):
+            escolha["modo"] = modo
+            _, continua, aberto = pagamentos.previa_da_reversao(situacao, modo)
+            resumo.value = f"Continuará pago: {moeda(continua)}  ·  Em aberto: {moeda(aberto)}"
+            resumo.color = cores.texto_principal
+            resumo.weight = ft.FontWeight.BOLD
+            botao_confirmar.disabled = False
+            botao_confirmar.bgcolor = cores.acao_primaria
+            botao_confirmar.color = cores.texto_sobre_acao
+            montar()
+            page.update()
+
+        def confirmar(e):
+            if escolha["modo"] is None:
+                return
+            botao_confirmar.disabled = True  # um clique só (o banco também recusa repetir)
+            page.pop_dialog()
+            try:
+                nova = pagamentos.desfazer_pagamentos(conta_id, escolha["modo"], ids)
+            except pagamentos.PagamentoError as recusa:
+                ao_concluir()
+                mostrar_aviso_pagamentos(str(recusa), titulo="Nada foi desfeito")
+                return
+            ao_concluir()
+            mostrar_aviso_pagamentos(
+                f"A conta ficou com {moeda(nova['pago_centavos'])} pagos e {moeda(nova['saldo_centavos'])} em "
+                "aberto. Os pagamentos desfeitos continuam no histórico, marcados como estornados.",
+                titulo="Pagamento desfeito" if escolha["modo"] == "ultimo" or len(ids) == 1
+                else "Pagamentos desfeitos")
+
+        botao_confirmar = ft.Button(content="Confirmar", disabled=True, on_click=confirmar,
+                                    bgcolor=cores.botao_desabilitado_fundo, color=cores.botao_desabilitado_texto)
+        montar()
+        page.show_dialog(ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Desfazer pagamentos desta conta?", color=cores.texto_principal),
+            content=ft.Column(tight=True, spacing=12, width=340, controls=[
+                ft.Text(f"Esta conta possui {quantidade_de_pagamentos(len(ativos))}, totalizando "
+                        f"{moeda(situacao['pago_centavos'])}. Escolha como deseja desfazer o pagamento.",
+                        size=14, color=cores.texto_principal),
+                cartoes,
+                resumo,
+            ]),
+            actions=[
+                ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                              style=ft.ButtonStyle(color=cores.acao_primaria)),
+                botao_confirmar,
+            ],
+            bgcolor=cores.fundo_dialogo,
+        ))
+
+    # ======================================================
     #  TELA PRINCIPAL
     # ======================================================
     def mostrar_tela_principal(mes_inicial=None):
@@ -2800,31 +3322,14 @@ def main(page: ft.Page):
                     controles.append(acao)
                 return ft.Row(wrap=True, spacing=10, run_spacing=6, controls=controles)
 
-            # RF06/5.10 (etapa "Status como rascunho"): Status/data de pagamento
-            # dentro de Editar deixam de persistir imediatamente -- viram uma
-            # alteração pendente, igual a Nome/Valor/Vencimento/Categoria, só
-            # aplicada de fato quando "Salvar alterações" é clicado.
-            # `rascunho_status` guarda o estado local; o par ORIGINAL continua
-            # intocado em `conta["status"]`/`conta["data_pagamento"]`, nunca
-            # mutado por nenhuma ação de Status -- é contra ele que
-            # ha_alteracao_pendente() e salvar_edicao() sempre comparam.
-            rascunho_status = {"status": conta["status"], "data_pagamento": conta.get("data_pagamento")}
-
-            # Pequena indireção: atualizar_estado_botao_salvar() (o que liga
-            # cinza/verde) vive dentro de mostrar_formulario_edicao, porque
-            # depende de widgets recriados a cada vez que essa função roda
-            # (Nome/Valor/Vencimento/Categoria/botao_salvar) -- não pode ser
-            # promovida para cá. construir_conteudo_status(), por outro lado,
-            # foi promovida para o escopo de abrir_detalhe_conta (irmã de
-            # mostrar_formulario_edicao, não vê seus locais diretamente).
-            # gatilho_estado_salvar é o único ponto de contato entre os dois:
-            # mostrar_formulario_edicao registra a função real toda vez que
-            # roda; os handlers de Status (e, agora, de Recorrência) abaixo só
-            # chamam esse gatilho, sem precisar saber onde ela mora.
+            # Indireção: atualizar_estado_botao_salvar() (o que liga cinza/verde)
+            # vive dentro de mostrar_formulario_edicao, porque depende de widgets
+            # recriados a cada vez que essa função roda; os diálogos de
+            # Recorrência (irmãos dela) só chamam este gatilho.
             gatilho_estado_salvar = {"chamar": lambda: None}
 
-            # RF27/RF28/RF29 (etapa "Recorrência como rascunho"): mesmo
-            # princípio do Status -- Transformar em recorrente/Alterar
+            # RF27/RF28/RF29 (etapa "Recorrência como rascunho"):
+            # Transformar em recorrente/Alterar
             # frequência/Encerrar recorrência deixam de escrever no banco ao
             # serem escolhidas; viram uma ÚNICA decisão estrutural pendente,
             # só aplicada de fato no Salvar. `acao` é o slot único (None =
@@ -2850,121 +3355,20 @@ def main(page: ft.Page):
             # âncora considerada seja a mesma que será realmente salva.
             vencimento_pendente = {"valor": date.fromisoformat(conta["data_vencimento"])}
 
-            # UX (padronização pós-validação manual do RF07) + correção de
-            # navegação: bloco "Status", com a informação e as ações
-            # contextuais dentro do mesmo contorno. Promovido para o escopo de
-            # abrir_detalhe_conta (em vez de nascer dentro de
-            # mostrar_formulario_edicao) para que as próprias ações de Status
-            # (definidas logo abaixo) possam se re-executar e atualizar SÓ este
-            # bloco via atualizar_bloco_status() -- sem depender de
-            # mostrar_visualizacao() nem recriar o formulário inteiro, o que
-            # preservaria Nome/Valor/Vencimento/Categoria intactos mesmo que
-            # ainda não tenham sido salvos.
-            def construir_conteudo_status():
-                if rascunho_status["status"] == "pago":
-                    texto_status_edit = (
-                        f"Pago em {date.fromisoformat(rascunho_status['data_pagamento']).strftime('%d/%m/%Y')}"
-                        if rascunho_status.get("data_pagamento") else "Pago"
-                    )
+            # Pagamentos parciais: situação lida do banco a cada
+            # desenho dos Detalhes e de Editar (valor, pago, saldo, histórico).
+            situacao_pagamento = {"atual": pagamentos.obter_situacao(conta["id"])}
 
-                    def mostrar_erro_data_pagamento():
-                        dialogo_erro = ft.AlertDialog(
-                            modal=True,
-                            title=ft.Text("Data inválida", color=cores.texto_principal),
-                            content=ft.Text("A data de pagamento não pode ser no futuro.", color=cores.texto_principal),
-                            actions=[
-                                ft.Button(content="Entendi", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
-                                          on_click=lambda e: page.pop_dialog()),
-                            ],
-                            bgcolor=cores.fundo_dialogo,
-                        )
-                        page.show_dialog(dialogo_erro)
-
-                    def ao_escolher_data_pagamento(e):
-                        if not e.control.value:
-                            return
-                        nova_data = e.control.value.date()
-                        page.pop_dialog()
-                        # Checagem mínima na UI (RF06/5.10): a mudança fica
-                        # pendente até Salvar, então database.editar_data_pagamento
-                        # não é mais chamada aqui (é ela quem rejeitava data
-                        # futura antes) -- o banco continua sendo a proteção
-                        # final, aplicada de novo em aplicar_status_pendente()
-                        # no momento do Salvar de verdade.
-                        if nova_data.isoformat() > date.today().isoformat():
-                            mostrar_erro_data_pagamento()
-                            return
-                        rascunho_status["data_pagamento"] = nova_data.isoformat()
-                        atualizar_bloco_status()
-
-                    seletor_data_pagamento = criar_seletor_data(
-                        value=(
-                            date.fromisoformat(rascunho_status["data_pagamento"])
-                            if rascunho_status.get("data_pagamento") else date.today()
-                        ),
-                        first_date=date(2000, 1, 1),
-                        last_date=date(2100, 12, 31),
-                        on_change=ao_escolher_data_pagamento,
-                    )
-                    page.overlay.append(seletor_data_pagamento)
-
-                    def abrir_seletor_data_pagamento(e):
-                        page.show_dialog(seletor_data_pagamento)
-
-                    def marcar_como_pendente_edicao(e):
-                        # RF06/5.10 (rascunho): só muda rascunho_status -- nenhuma
-                        # chamada a database.marcar_conta_como_pendente aqui. O
-                        # status recalculado (Pendente vs Atrasado) usa a mesma
-                        # lógica de sempre (data de vencimento vs. hoje, a partir
-                        # de conta["data_vencimento"] -- o dado salvo).
-                        dias_delta_atual = (date.fromisoformat(conta["data_vencimento"]) - date.today()).days
-                        rascunho_status["status"] = "atrasado" if dias_delta_atual < 0 else "pendente"
-                        rascunho_status["data_pagamento"] = None
-                        atualizar_bloco_status()
-
-                    acoes_status = [
-                        ft.TextButton(
-                            content="Alterar data de pagamento",
-                            on_click=abrir_seletor_data_pagamento,
-                            style=ft.ButtonStyle(color=cores.acao_primaria),
-                        ),
-                        ft.TextButton(
-                            content="Marcar como pendente",
-                            on_click=marcar_como_pendente_edicao,
-                            style=ft.ButtonStyle(color=cores.acao_primaria),
-                        ),
-                    ]
-                else:
-                    texto_status_edit = "Atrasado" if rascunho_status["status"] == "atrasado" else "Pendente"
-
-                    def marcar_como_paga_edicao(e):
-                        # RF06/RF24 (rascunho): só muda rascunho_status -- nenhuma
-                        # chamada a database.marcar_conta_como_paga aqui.
-                        rascunho_status["status"] = "pago"
-                        rascunho_status["data_pagamento"] = date.today().isoformat()
-                        atualizar_bloco_status()
-
-                    acoes_status = [
-                        ft.TextButton(content="Marcar como paga", on_click=marcar_como_paga_edicao,
-                                      style=ft.ButtonStyle(color=cores.acao_primaria)),
-                    ]
-
-                return linha_info_acoes(texto_status_edit, acoes_status)
-
-            bloco_status = ft.Container(content=bloco_rotulado("Status", [construir_conteudo_status()]))
-
-            def atualizar_bloco_status():
-                # Ação de Status agora só altera o rascunho em memória -- aqui
-                # recompomos o bloco a partir dele e acionamos o gatilho que
-                # atualiza cor/estado de "Salvar alterações" (registrado por
-                # mostrar_formulario_edicao; ver comentário acima de
-                # rascunho_status).
-                bloco_status.content = bloco_rotulado("Status", [construir_conteudo_status()])
-                gatilho_estado_salvar["chamar"]()
-                page.update()
+            def recarregar_situacao():
+                situacao = pagamentos.obter_situacao(conta["id"])
+                if situacao is not None:
+                    situacao_pagamento["atual"] = situacao
+                    conta["status"] = situacao["status"]
+                    conta["data_pagamento"] = situacao["data_pagamento"]
+                return situacao
 
             # UX (RF29 revisado -- D7) + Recorrência como rascunho: bloco
-            # "Recorrência", mesmo princípio do bloco Status acima -- ver
+            # "Recorrência" -- ver
             # rascunho_recorrencia (definido antes) para o porquê de ser um
             # slot único, e construir_conteudo_recorrencia() logo abaixo para
             # como a prévia é decidida.
@@ -3049,7 +3453,20 @@ def main(page: ft.Page):
                 bloco_recorrencia.content = bloco_rotulado("Recorrência", [construir_conteudo_recorrencia()])
                 page.update()
 
-            area_corpo = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
+            # Rolagem: Detalhes e Editar dividiam uma só
+            # coluna rolável, e trocar só o conteúdo mantinha a posição da
+            # rolagem -- Detalhes rolado até "Editar" abria o formulário rolado.
+            # Cada troca entre as duas telas usa agora uma coluna nova (começa
+            # no topo); redesenhar os próprios Detalhes mantém a coluna vigente.
+            corpo = {"area": None, "tela": None}
+
+            def exibir_no_corpo(conteudo, tela):
+                if corpo["tela"] != tela:
+                    corpo["area"] = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
+                    corpo["tela"] = tela
+                    page.controls.clear()
+                    page.controls.append(corpo["area"])
+                corpo["area"].controls = [conteudo]
 
             def construir_seletor_frequencia(estado):
                 # RF27/RF28: chips Mensal/Anual reutilizáveis nos diálogos de
@@ -3090,12 +3507,21 @@ def main(page: ft.Page):
                 # Descrição (campos fixos, P12) e Editar/Excluir no rodapé.
                 page.overlay.clear()
                 hoje = date.today()
+                if recarregar_situacao() is None:
+                    mostrar_tela_principal(tuple(mes_atual))
+                    return
+                situacao = situacao_pagamento["atual"]
                 data_venc = date.fromisoformat(conta["data_vencimento"])
                 status = status_para_detalhes(conta, hoje)
                 categoria = identificacao_categoria(categoria_da_conta)
 
                 def marcar_como_paga_detalhes(e):
                     # RF06/RF24: só esta ocorrência; status nunca tem escopo de série.
+                    if situacao["ativos"]:
+                        # Pagamentos parciais: com pagamentos parciais, registra só o saldo.
+                        confirmar_pagamento_do_saldo(conta["id"], situacao["pago_centavos"],
+                                                     situacao["valor_centavos"], mostrar_visualizacao)
+                        return
                     database.marcar_conta_como_paga(conta["id"])
                     conta["status"] = "pago"
                     conta["data_pagamento"] = hoje.isoformat()
@@ -3104,10 +3530,22 @@ def main(page: ft.Page):
                 def desmarcar_como_paga_detalhes(e):
                     # 8.4/CT56: volta a ficar em aberto só esta ocorrência, sem
                     # data de pagamento; pendente ou atrasada pelo vencimento real.
-                    database.marcar_conta_como_pendente(conta["id"])
+                    if situacao["ativos"]:
+                        # Pagamentos parciais: quitada com pagamentos registrados -> escolher
+                        # o que desfazer (estorno rastreável, nada é apagado).
+                        mostrar_dialogo_desfazer_pagamentos(conta["id"], mostrar_visualizacao)
+                        return
+                    try:
+                        database.marcar_conta_como_pendente(conta["id"])
+                    except database.PagamentosRegistradosError as recusa:
+                        mostrar_aviso_pagamentos(str(recusa))
+                        return
                     conta["status"] = status_ao_desmarcar(conta, hoje)
                     conta["data_pagamento"] = None
                     mostrar_visualizacao()
+
+                def pago_parcialmente_detalhes(e):
+                    mostrar_dialogo_pagamento_parcial(conta["id"], conta["nome"], situacao, mostrar_visualizacao)
 
                 # --- Identificação (emoji e cor da categoria) ---------------
                 if categoria["sem_categoria"]:
@@ -3163,10 +3601,20 @@ def main(page: ft.Page):
                         bgcolor=cores.acao_pagamento, color=cores.texto_sobre_pagamento,
                         on_click=marcar_como_paga_detalhes,
                     )
+                # Pagamentos parciais: status principal, "Marcar como paga" e "Registrar
+                # pagamento parcial" (o pago e o saldo aparecem nos cartões e no
+                # histórico, sem selo no cabeçalho).
+                controles_status = [chip_status, botao_pagamento]
+                if status["status"] != "pago":
+                    controles_status.append(ft.OutlinedButton(
+                        content="Registrar pagamento parcial", icon=ft.Icons.PAYMENTS_OUTLINED,
+                        on_click=pago_parcialmente_detalhes,
+                        style=ft.ButtonStyle(color=cores.acao_primaria),
+                    ))
                 linha_status = ft.Row(
                     wrap=True, spacing=10, run_spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[chip_status, botao_pagamento],
+                    controls=controles_status,
                 )
 
                 # --- Grade de informações ----------------------------------
@@ -3222,10 +3670,17 @@ def main(page: ft.Page):
                         ),
                     )
 
+                # Pagamentos parciais: estrutura fixa, em qualquer situação de pagamento --
+                # Valor/Vencimento, Total pago/Saldo devedor, Categoria/Parcela,
+                # Recorrência, Descrição e Pagamentos registrados, sempre nessa ordem.
                 celulas = [
-                    celula(ft.Icons.PAYMENTS_OUTLINED, "Valor", formatar_moeda(conta["valor"])),
+                    celula(ft.Icons.PAYMENTS_OUTLINED, "Valor da conta", formatar_moeda(conta["valor"])),
                     celula(ft.Icons.CALENDAR_MONTH, "Vencimento", data_venc.strftime("%d/%m/%Y"),
                            complemento="Vence hoje" if status["vence_hoje"] else None),
+                    celula(ft.Icons.PRICE_CHECK, "Total pago",
+                           formatar_moeda(pagamentos.reais(situacao["pago_centavos"]))),
+                    celula(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED, "Saldo devedor",
+                           formatar_moeda(pagamentos.reais(situacao["saldo_centavos"]))),
                 ]
                 # Etapa 10 (8.4): sempre os seis campos, nesta ordem; sem
                 # informação, o campo continua com o texto de ausência.
@@ -3247,6 +3702,7 @@ def main(page: ft.Page):
                            largura_total=True, texto_longo=True),
                 ]
                 grade = ft.ResponsiveRow(spacing=12, run_spacing=12, controls=celulas)
+                historico = secao_pagamentos_registrados(situacao, rotulo_ao_lado, mostrar_visualizacao)
 
                 # --- Rodapé: Editar e Excluir, menores, iguais e centralizados
                 botoes_rodape = ft.Row(
@@ -3279,17 +3735,18 @@ def main(page: ft.Page):
                             identificacao,
                             linha_status,
                             grade,
+                            historico,
                             ft.Divider(color=cores.divisor),
                             botoes_rodape,
                         ],
                     ),
                 )
-                area_corpo.controls = [tela]
+                exibir_no_corpo(tela, "detalhes")
 
                 def ao_redimensionar(e):
                     # Redesenha só se o rótulo mudar de posição e só enquanto
                     # estes Detalhes estiverem na tela (não em Editar nem em outra tela).
-                    if (area_corpo in page.controls and tela in area_corpo.controls
+                    if (corpo["area"] in page.controls and tela in corpo["area"].controls
                             and rotulo_ao_lado_em_detalhes(page.width) != rotulo_ao_lado):
                         mostrar_visualizacao()
 
@@ -3317,8 +3774,12 @@ def main(page: ft.Page):
 
             def mostrar_dialogo_exclusao_simples():
                 def excluir(e):
-                    sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
+                    try:
+                        sucesso = database.excluir_conta(conta["id"])
+                    except database.PagamentosRegistradosError as recusa:
+                        mostrar_aviso_pagamentos(str(recusa))
+                        return
                     if sucesso:
                         mostrar_tela_principal(tuple(mes_atual))
                     else:
@@ -3340,16 +3801,24 @@ def main(page: ft.Page):
 
             def mostrar_dialogo_exclusao_serie():
                 def excluir_somente_este_mes(e):
-                    sucesso = database.excluir_conta(conta["id"])
                     page.pop_dialog()
+                    try:
+                        sucesso = database.excluir_conta(conta["id"])
+                    except database.PagamentosRegistradosError as recusa:
+                        mostrar_aviso_pagamentos(str(recusa))
+                        return
                     if sucesso:
                         mostrar_tela_principal(tuple(mes_atual))
                     else:
                         mostrar_erro_exclusao()
 
                 def excluir_este_mes_em_diante(e):
-                    sucesso = database.excluir_conta_serie(conta["id"])
                     page.pop_dialog()
+                    try:
+                        sucesso = database.excluir_conta_serie(conta["id"])
+                    except database.PagamentosRegistradosError as recusa:
+                        mostrar_aviso_pagamentos(str(recusa))
+                        return
                     if sucesso:
                         mostrar_tela_principal(tuple(mes_atual))
                     else:
@@ -3491,6 +3960,28 @@ def main(page: ft.Page):
                 nova_frequencia = {"valor": "mensal"}
                 linha_frequencia_alt = construir_seletor_frequencia(nova_frequencia)
 
+                def aviso_ocorrencias_com_pagamentos():
+                    # Pagamentos parciais: ocorrências seguintes com pagamentos são
+                    # preservadas como estão; avisa antes de confirmar.
+                    preservadas = database.ocorrencias_futuras_com_pagamentos(conta["id"])
+                    if not preservadas:
+                        return []
+                    itens = []
+                    for oc in preservadas:
+                        d = date.fromisoformat(oc["data_vencimento"])
+                        situacao_oc = ("paga" if oc["status"] == "pago" else
+                                       f"{formatar_moeda(pagamentos.reais(oc['pago']))} pagos" if oc["pago"]
+                                       else "pagamentos estornados")
+                        itens.append(f"{MESES_PT[d.month - 1].lower()}/{d.year} ({situacao_oc})")
+                    return [ft.Container(
+                        data="pp_aviso_frequencia",
+                        bgcolor=cores.aviso_fundo, border_radius=10, padding=12,
+                        content=ft.Text(
+                            "Estas ocorrências têm pagamentos registrados e serão mantidas como estão: "
+                            + ", ".join(itens) + ". A nova frequência não cria outra cobrança nesses meses.",
+                            size=13, color=cores.aviso_texto),
+                    )]
+
                 sem_termino_alt = ft.Switch(value=False, active_color=cores.acao_primaria)
                 ano_atual_alt = date.today().year
                 campo_mes_termino_alt = ft.Dropdown(
@@ -3593,6 +4084,7 @@ def main(page: ft.Page):
                                 ],
                             ),
                             linha_termino_alt,
+                            *aviso_ocorrencias_com_pagamentos(),
                             erro_freq,
                         ],
                     ),
@@ -3715,6 +4207,9 @@ def main(page: ft.Page):
                     multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
                     **estilo_campo_texto(),
                 )
+                # Pagamentos parciais: o valor continua editável; só não pode ficar abaixo
+                # da soma dos pagamentos ativos (conferido no Salvar e no banco).
+                recarregar_situacao()
                 campo_valor_edit = ft.TextField(
                     label="Valor",
                     value=f"{conta['valor']:.2f}".replace(".", ","),
@@ -3798,7 +4293,7 @@ def main(page: ft.Page):
                     page.show_dialog(seletor_data)
 
                 def ha_alteracao_pendente():
-                    # RF07 (5.11) + RF20 (5.6) + Status como rascunho: mesma
+                    # RF07 (5.11) + RF20 (5.6) + Recorrência como rascunho: mesma
                     # comparação usada para montar a mensagem natural, mas só o
                     # booleano -- usada para habilitar/desabilitar "Salvar
                     # alterações" em tempo real. Valor sempre comparado já
@@ -3806,10 +4301,8 @@ def main(page: ft.Page):
                     # positivo por formatação ("150,00" vs "150,0"); um valor
                     # temporariamente inválido (parse_valor -> None) ainda conta
                     # como alteração -- apenas a validação em salvar_edicao
-                    # explica o erro. rascunho_status é sempre comparado contra
-                    # `conta["status"]`/`conta.get("data_pagamento")` -- o
-                    # ORIGINAL, nunca mutado -- para que voltar ao estado
-                    # original desabilite Salvar de novo automaticamente.
+                    # explica o erro. Voltar ao estado original desabilita
+                    # Salvar de novo automaticamente.
                     nome_atual = campo_nome_edit.value.strip() if campo_nome_edit.value else ""
                     valor_atual = parse_valor(campo_valor_edit.value)
                     categoria_atual = (
@@ -3822,8 +4315,6 @@ def main(page: ft.Page):
                         or categoria_atual != categoria_id_original
                         or limites.normalizar_descricao(campo_descricao_edit.value)
                         != limites.normalizar_descricao(descricao_original)
-                        or rascunho_status["status"] != conta["status"]
-                        or rascunho_status["data_pagamento"] != conta.get("data_pagamento")
                         or rascunho_recorrencia["acao"] is not None
                     )
 
@@ -3836,26 +4327,15 @@ def main(page: ft.Page):
                     botao_salvar.color = cores.texto_sobre_acao if tem_alteracao else cores.botao_desabilitado_texto
                     page.update()
 
-                # Registra a função real no gatilho compartilhado com
-                # construir_conteudo_status/atualizar_bloco_status (definidas em
-                # abrir_detalhe_conta -- ver comentário junto a rascunho_status).
-                # Também reseta rascunho_status para o valor ATUAL de `conta`
-                # toda vez que este formulário é (re)aberto -- é isso que faz
-                # Cancelar "descartar" uma mudança de Status pendente: como
-                # nada foi persistido, reabrir Editar simplesmente recomeça do
-                # zero a partir do estado real (nunca alterado). O bloco visual
-                # é recomposto na hora (sem passar por atualizar_bloco_status,
-                # que dependeria de botao_salvar -- ainda não existe neste
-                # ponto da função) para não mostrar um Status "preso" numa
-                # escolha pendente de uma sessão anterior de Editar já
-                # cancelada.
+                # Registra a função real no gatilho compartilhado com os
+                # diálogos de Recorrência (ver gatilho_estado_salvar).
                 gatilho_estado_salvar["chamar"] = atualizar_estado_botao_salvar
-                rascunho_status["status"] = conta["status"]
-                rascunho_status["data_pagamento"] = conta.get("data_pagamento")
-                bloco_status.content = bloco_rotulado("Status", [construir_conteudo_status()])
-                # Mesmo raciocínio para Recorrência: reseta o rascunho e
-                # recompõe o bloco na hora, para que Cancelar (reabrir Editar)
-                # nunca mostre uma decisão pendente de uma sessão já cancelada.
+                # Pagamentos parciais: escolha feita no diálogo "Como deseja
+                # registrar a diferença?" -- None até a usuária escolher; nada é
+                # gravado antes disso. Recomeça a cada abertura de Editar.
+                escolha_diferenca = {"valor": None}
+                # Recorrência: reseta o rascunho e recompõe o bloco na hora, para
+                # que Cancelar (reabrir Editar) nunca mostre uma decisão pendente de uma sessão já cancelada.
                 rascunho_recorrencia["acao"] = None
                 rascunho_recorrencia["frequencia"] = None
                 rascunho_recorrencia["data_termino"] = None
@@ -3865,41 +4345,30 @@ def main(page: ft.Page):
                                          ao_mudar=lambda e: atualizar_estado_botao_salvar())
                 ligar_contador_de_limite(campo_descricao_edit, "descricao", limites.LIMITE_DESCRICAO,
                                          ao_mudar=lambda e: atualizar_estado_botao_salvar())
-                campo_valor_edit.on_change = lambda e: atualizar_estado_botao_salvar()
+                def ao_mudar_valor_edit(e):
+                    escolha_diferenca["valor"] = None  # Pagamentos parciais: valor novo pede nova escolha
+                    atualizar_estado_botao_salvar()
+
+                campo_valor_edit.on_change = ao_mudar_valor_edit
 
 
                 erro_edit = ft.Text(value="", color=cores.texto_erro, size=12)
 
-                def aplicar_status_pendente():
-                    # Status pertence exclusivamente à ocorrência (5.9/5.1) --
-                    # aplicado SEMPRE em conta["id"], nunca propagado para a
-                    # série, independente do escopo escolhido para
-                    # Nome/Valor/Vencimento/Categoria (chamada tanto no ramo
-                    # direto quanto nos dois ramos do diálogo de escopo, abaixo).
-                    # Compara sempre contra o original (`conta["status"]`/
-                    # `conta.get("data_pagamento")`, nunca mutados) -- se
-                    # rascunho_status voltou a bater com o original, nenhuma
-                    # chamada é feita. Reaproveita as mesmas 3 funções de
-                    # sempre, sem nenhuma regra nova.
-                    estava_pago = conta["status"] == "pago"
-                    esta_pago = rascunho_status["status"] == "pago"
-                    if esta_pago and not estava_pago:
-                        database.marcar_conta_como_paga(
-                            conta["id"], data_pagamento=rascunho_status["data_pagamento"],
-                        )
-                    elif estava_pago and not esta_pago:
-                        database.marcar_conta_como_pendente(conta["id"])
-                    elif (
-                        estava_pago and esta_pago
-                        and rascunho_status["data_pagamento"] != conta.get("data_pagamento")
-                    ):
-                        database.editar_data_pagamento(conta["id"], rascunho_status["data_pagamento"])
+                def concluir_salvamento(mensagem_alteracao, dialogo_alvo=None):
+                    # Recorrência, depois dos campos (já gravados, quando alterados).
+                    if not aplicar_recorrencia_pendente():
+                        if dialogo_alvo is not None:
+                            page.pop_dialog()
+                        erro_edit.value = "Não foi possível aplicar a alteração de recorrência."
+                        page.update()
+                        return
+                    mostrar_confirmacao_edicao(mensagem_alteracao, dialogo_alvo=dialogo_alvo)
 
                 def aplicar_recorrencia_pendente():
                     # Só chamada dentro do fluxo de Salvar, nunca ao configurar
                     # o rascunho (ver os três diálogos de Transformar/Alterar
                     # frequência/Encerrar). A ordem em que quem chama esta
-                    # função a invoca (sempre depois de campos comuns/Status)
+                    # função a invoca (sempre depois dos campos comuns)
                     # garante que a linha de `contas` já reflita nome/valor/
                     # vencimento/categoria definitivos quando
                     # transformar_em_recorrente/alterar_frequencia_serie lerem
@@ -3907,7 +4376,7 @@ def main(page: ft.Page):
                     # aplicada com sucesso (ou quando não havia nada
                     # pendente); False só se a operação estrutural falhar de
                     # verdade (ValueError) -- caso raro, sem rollback do que já
-                    # foi salvo antes (nome/valor/Status), só um aviso claro.
+                    # foi salvo antes (nome/valor), só um aviso claro.
                     acao = rascunho_recorrencia["acao"]
                     if acao is None:
                         return True
@@ -3970,6 +4439,23 @@ def main(page: ft.Page):
                         page.update()
                         return
 
+                    situacao_edit = situacao_pagamento["atual"]
+                    if (valor != conta["valor"] and situacao_edit and situacao_edit["ativos"]
+                            and database.centavos_de(valor) < situacao_edit["pago_centavos"]):
+                        # Pagamentos parciais: nada é gravado; o formulário fica como está.
+                        recusa = database.ValorMenorQuePagoError(situacao_edit["pago_centavos"])
+                        mostrar_aviso_pagamentos(str(recusa), titulo=recusa.titulo)
+                        return
+                    if (valor != conta["valor"] and conta["status"] == "pago"
+                            and situacao_edit
+                            and situacao_edit["ativos"]
+                            and database.centavos_de(valor) > situacao_edit["pago_centavos"]):
+                        if escolha_diferenca["valor"] is None:
+                            mostrar_dialogo_diferenca(nome, valor, situacao_edit)
+                            return
+                    else:
+                        escolha_diferenca["valor"] = None
+
                     nova_data = data_selecionada["valor"]
 
                     # RF07/5.11: "" no Dropdown = Sem categoria. Quando a
@@ -3980,7 +4466,7 @@ def main(page: ft.Page):
                         int(campo_categoria_edit.value) if campo_categoria_edit.value else None
                     )
 
-                    # RF20/5.6 (+ RF07 + Status): frase em linguagem natural
+                    # RF20/5.6 (+ RF07): frase em linguagem natural
                     # descrevendo só os campos realmente alterados -- comparada
                     # aqui, antes de qualquer escopo ser escolhido, porque é o
                     # único ponto em que os valores antigos e os novos (recém
@@ -3992,9 +4478,6 @@ def main(page: ft.Page):
                         conta["nome"], nome, conta["valor"], valor, data_venc_atual, nova_data,
                         categoria_nome_antiga=categorias_atuais.get(categoria_id_original),
                         categoria_nome_nova=categorias_atuais.get(categoria_id_novo),
-                        status_antigo=conta["status"], status_novo=rascunho_status["status"],
-                        data_pagamento_antiga=conta.get("data_pagamento"),
-                        data_pagamento_nova=rascunho_status["data_pagamento"],
                         recorrencia_acao=rascunho_recorrencia["acao"],
                         recorrencia_frequencia=rascunho_recorrencia["frequencia"],
                         recorrencia_data_termino=rascunho_recorrencia["data_termino"],
@@ -4008,13 +4491,11 @@ def main(page: ft.Page):
 
                     # "Há alguma alteração?" (mensagem_alteracao acima, também usada
                     # por ha_alteracao_pendente/Salvar) é uma pergunta DIFERENTE de
-                    # "essa alteração precisa de escolha de escopo?" -- Status/data de
-                    # pagamento pertencem exclusivamente à ocorrência (5.9/5.1) e nunca
-                    # são propagáveis para a série, então NUNCA justificam sozinhos o
-                    # diálogo "Somente este mês/Este mês em diante". Só Nome/Valor/
-                    # Vencimento/Categoria/Descrição (v6, 5.6) entram nesta checagem -- de propósito, não
-                    # volte a juntar as duas perguntas numa só (importante também para
-                    # quando Recorrência virar rascunho: a mesma distinção vai valer).
+                    # "essa alteração precisa de escolha de escopo?" -- uma alteração
+                    # só de Recorrência nunca justifica sozinha o diálogo "Somente este
+                    # mês/Este mês em diante". Só Nome/Valor/Vencimento/Categoria/
+                    # Descrição (v6, 5.6) entram nesta checagem -- de propósito, não
+                    # volte a juntar as duas perguntas numa só.
                     # Correção v6.0 (Etapa 0): só os campos realmente alterados
                     # seguem para o db.py -- um campo não alterado (sobretudo a
                     # data) nunca é reenviado, para não redefinir a âncora da
@@ -4025,13 +4506,15 @@ def main(page: ft.Page):
                         descricao_original, descricao,
                     )
                     ha_alteracao_propagavel = bool(campos_alterados)
+                    if escolha_diferenca["valor"] is not None and "valor" in campos_alterados:
+                        campos_alterados["pp_diferenca"] = escolha_diferenca["valor"]
 
                     if conta.get("serie_id") is not None and serie_ativa and ha_alteracao_propagavel:
                         # RF20 (5.6): só pergunta o escopo quando existe algo
                         # propagável de fato (Nome/Valor/Vencimento/Categoria/
                         # Descrição -- um único diálogo para todos, CT107) --
-                        # uma alteração só de Status/data de pagamento nunca chega
-                        # aqui, mesmo numa série ativa. Sem restrição de mês/ano
+                        # uma alteração só de Recorrência nunca chega aqui, mesmo
+                        # numa série ativa. Sem restrição de mês/ano
                         # (removida na Fase 2.6); a nova data pode cair em
                         # qualquer mês/ano. Série já removida (RF29) cai direto no
                         # ramo de baixo, como conta avulsa.
@@ -4039,29 +4522,128 @@ def main(page: ft.Page):
                     else:
                         if ha_alteracao_propagavel:
                             # Só grava Nome/Valor/Vencimento/Categoria/Descrição quando algo
-                            # deles de fato mudou -- uma alteração só de Status não
-                            # deve gerar uma reescrita sem propósito destes campos
-                            # (e, numa série ativa, não deve marcar
-                            # editado_individualmente=1 à toa só por causa de
-                            # Status, que nunca é uma edição desses campos).
+                            # deles de fato mudou -- uma alteração só de Recorrência
+                            # não deve gerar uma reescrita sem propósito destes campos
+                            # (nem marcar editado_individualmente=1 à toa).
                             try:
                                 database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
                             except limites.LimiteDeCaracteresError as erro_limite:
                                 erro_edit.value = str(erro_limite)
                                 page.update()
                                 return
-                        aplicar_status_pendente()
-                        if not aplicar_recorrencia_pendente():
-                            erro_edit.value = "Não foi possível aplicar a alteração de recorrência."
-                            page.update()
-                            return
+                            except database.ValorMenorQuePagoError as recusa:
+                                mostrar_aviso_pagamentos(str(recusa), titulo=recusa.titulo)
+                                return
+                            except database.DadosDesatualizadosError as recusa:
+                                escolha_diferenca["valor"] = None
+                                mostrar_aviso_pagamentos(str(recusa), titulo="Nada foi alterado")
+                                return
                         # RF20/5.6 (conta avulsa ou recorrência já encerrada -- sem
                         # diálogo de escopo, decisão de produto): só exibe a
                         # confirmação quando algo realmente mudou; sem alteração real,
                         # mantém o comportamento de sempre (volta direto à Principal).
-                        mostrar_confirmacao_edicao(mensagem_alteracao)
+                        concluir_salvamento(mensagem_alteracao)
 
-                def mostrar_confirmacao_edicao(mensagem_alteracao, dialogo_alvo=None):
+                def mostrar_dialogo_diferenca(nome, valor_novo, situacao_edit):
+                    """Conta quitada com valor maior: registrar a diferença como paga
+                    ou mantê-la em aberto. Nada é gravado antes de Confirmar; depois
+                    da escolha, o Salvar segue o fluxo de sempre (inclusive o
+                    diálogo de escopo numa série), e a alteração do valor e o
+                    eventual pagamento são gravados juntos."""
+                    def moeda(centavos):
+                        return formatar_moeda(pagamentos.reais(centavos))
+
+                    novo = database.centavos_de(valor_novo)
+                    pago = situacao_edit["pago_centavos"]
+                    diferenca = novo - pago
+                    vencida = data_selecionada["valor"] < date.today()
+                    escolha = {"modo": None}
+                    opcoes = [
+                        ("registrar", f"Registrar {moeda(diferenca)} como pagos",
+                         f"Um novo pagamento de {moeda(diferenca)} é registrado com a data de hoje. "
+                         "O pagamento anterior é mantido."),
+                        ("aberto", f"Manter {moeda(diferenca)} em aberto",
+                         "Nenhum pagamento novo. A conta volta a ficar "
+                         + ("atrasada" if vencida else "pendente") + " até a diferença ser paga."),
+                    ]
+                    cartoes = ft.Column(spacing=10)
+                    resumo = ft.Text("Escolha uma opção.", size=14, color=cores.texto_secundario,
+                                     data="pp_resumo_diferenca")
+
+                    def montar():
+                        cartoes.controls = [
+                            ft.Container(
+                                data=f"pp_diferenca_{modo}",
+                                border=ft.Border.all(2 if escolha["modo"] == modo else 1,
+                                                     cores.acao_primaria if escolha["modo"] == modo
+                                                     else cores.borda_suave),
+                                border_radius=10, padding=12,
+                                on_click=lambda e, m=modo: selecionar(m),
+                                content=ft.Row(spacing=10, vertical_alignment=ft.CrossAxisAlignment.START, controls=[
+                                    ft.Icon(ft.Icons.RADIO_BUTTON_CHECKED if escolha["modo"] == modo
+                                            else ft.Icons.RADIO_BUTTON_UNCHECKED, size=20,
+                                            color=cores.acao_primaria if escolha["modo"] == modo
+                                            else cores.texto_secundario),
+                                    ft.Column(expand=True, spacing=4, controls=[
+                                        ft.Text(titulo, size=14, weight=ft.FontWeight.BOLD,
+                                                color=cores.texto_principal),
+                                        ft.Text(explicacao, size=13, color=cores.texto_secundario),
+                                    ]),
+                                ]),
+                            )
+                            for modo, titulo, explicacao in opcoes
+                        ]
+
+                    def selecionar(modo):
+                        escolha["modo"] = modo
+                        if modo == "registrar":
+                            resumo.value = resumo_sem_quebra(f"Total pago: {moeda(novo)}", "Saldo devedor: R$ 0,00",
+                                                             "Paga", separador="  ·  ")
+                        else:
+                            resumo.value = resumo_sem_quebra(f"Total pago: {moeda(pago)}",
+                                                             f"Saldo devedor: {moeda(diferenca)}",
+                                                             "Atrasada" if vencida else "Pendente", separador="  ·  ")
+                        resumo.color = cores.texto_principal
+                        resumo.weight = ft.FontWeight.BOLD
+                        botao_confirmar.disabled = False
+                        botao_confirmar.bgcolor = cores.acao_primaria
+                        botao_confirmar.color = cores.texto_sobre_acao
+                        montar()
+                        page.update()
+
+                    def confirmar(e):
+                        if escolha["modo"] is None or escolha_diferenca["valor"] is not None:
+                            return  # sem escolha, ou já confirmada (clique repetido)
+                        botao_confirmar.disabled = True
+                        escolha_diferenca["valor"] = {"registrar": escolha["modo"] == "registrar",
+                                                      "esperado": (situacao_edit["valor_centavos"], pago)}
+                        page.pop_dialog()
+                        salvar_edicao(e)
+
+                    botao_confirmar = ft.Button(content="Confirmar", disabled=True, on_click=confirmar,
+                                                bgcolor=cores.botao_desabilitado_fundo,
+                                                color=cores.botao_desabilitado_texto)
+                    montar()
+                    page.show_dialog(ft.AlertDialog(
+                        modal=True,
+                        title=ft.Text("Como deseja registrar a diferença?", color=cores.texto_principal),
+                        content=ft.Column(tight=True, spacing=12, width=340, controls=[
+                            ft.Text(f"A conta {nome} já possui {moeda(pago)} pagos. Com a alteração, seu valor "
+                                    f"total será de {moeda(novo)}.", size=14, color=cores.texto_principal),
+                            ft.Text(f"O que deseja fazer com os {moeda(diferenca)} adicionais?", size=14,
+                                    color=cores.texto_principal),
+                            cartoes,
+                            resumo,
+                        ]),
+                        actions=[
+                            ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                                          style=ft.ButtonStyle(color=cores.acao_primaria)),
+                            botao_confirmar,
+                        ],
+                        bgcolor=cores.fundo_dialogo,
+                    ))
+
+                def mostrar_confirmacao_edicao(mensagem_alteracao, dialogo_alvo=None, titulo="Alteração salva"):
                     # RF20/5.6: feedback em linguagem natural exibido DEPOIS que a
                     # alteração já foi salva com sucesso -- nunca uma confirmação
                     # prévia. Reaproveita o AlertDialog de
@@ -4076,7 +4658,7 @@ def main(page: ft.Page):
                                               on_click=fechar_confirmacao)
 
                     if dialogo_alvo is not None:
-                        dialogo_alvo.title = ft.Text("Alteração salva", color=cores.texto_principal)
+                        dialogo_alvo.title = ft.Text(titulo, color=cores.texto_principal)
                         dialogo_alvo.content = ft.Text(mensagem_alteracao, color=cores.texto_principal)
                         dialogo_alvo.actions = [acao_entendi]
                         page.update()
@@ -4084,7 +4666,7 @@ def main(page: ft.Page):
                         page.show_dialog(
                             ft.AlertDialog(
                                 modal=True,
-                                title=ft.Text("Alteração salva", color=cores.texto_principal),
+                                title=ft.Text(titulo, color=cores.texto_principal),
                                 content=ft.Text(mensagem_alteracao, color=cores.texto_principal),
                                 actions=[acao_entendi],
                                 bgcolor=cores.fundo_dialogo,
@@ -4097,8 +4679,8 @@ def main(page: ft.Page):
                         # ao da parcela anterior): mensagem própria, nunca
                         # "ultrapassaria o término" nem falha genérica. A
                         # recusa acontece antes de qualquer gravação, e
-                        # Status/Recorrência (aplicados só depois) também
-                        # não são gravados.
+                        # a Recorrência (aplicada só depois) também
+                        # não é gravada.
                         page.pop_dialog()
                         erro_edit.value = str(erro)
                         page.update()
@@ -4109,18 +4691,21 @@ def main(page: ft.Page):
                         except limites.LimiteDeCaracteresError as erro_limite:
                             mostrar_recusa(erro_limite)
                             return
+                        except database.ValorMenorQuePagoError as recusa:
+                            page.pop_dialog()
+                            mostrar_aviso_pagamentos(str(recusa), titulo=recusa.titulo)
+                            return
+                        except database.DadosDesatualizadosError as recusa:
+                            page.pop_dialog()
+                            escolha_diferenca["valor"] = None
+                            mostrar_aviso_pagamentos(str(recusa), titulo="Nada foi alterado")
+                            return
                         if not sucesso:
                             page.pop_dialog()
                             erro_edit.value = "Não foi possível salvar esta alteração."
                             page.update()
                             return
-                        aplicar_status_pendente()
-                        if not aplicar_recorrencia_pendente():
-                            page.pop_dialog()
-                            erro_edit.value = "Não foi possível aplicar a alteração de recorrência."
-                            page.update()
-                            return
-                        mostrar_confirmacao_edicao(mensagem_alteracao, dialogo_alvo=dialogo)
+                        concluir_salvamento(mensagem_alteracao, dialogo_alvo=dialogo)
 
                     def aplicar_este_mes_em_diante(e):
                         try:
@@ -4128,6 +4713,15 @@ def main(page: ft.Page):
                         except (limites.LimiteDeCaracteresError,
                                 database.VencimentoAntesDaParcelaAnteriorError) as erro:
                             mostrar_recusa(erro)
+                            return
+                        except database.ValorMenorQuePagoError as recusa:
+                            page.pop_dialog()
+                            mostrar_aviso_pagamentos(str(recusa), titulo=recusa.titulo)
+                            return
+                        except database.DadosDesatualizadosError as recusa:
+                            page.pop_dialog()
+                            escolha_diferenca["valor"] = None
+                            mostrar_aviso_pagamentos(str(recusa), titulo="Nada foi alterado")
                             return
                         if not sucesso:
                             page.pop_dialog()
@@ -4137,22 +4731,37 @@ def main(page: ft.Page):
                             )
                             page.update()
                             return
-                        aplicar_status_pendente()
-                        if not aplicar_recorrencia_pendente():
-                            page.pop_dialog()
-                            erro_edit.value = "Não foi possível aplicar a alteração de recorrência."
-                            page.update()
-                            return
-                        mostrar_confirmacao_edicao(mensagem_alteracao, dialogo_alvo=dialogo)
+                        concluir_salvamento(mensagem_alteracao, dialogo_alvo=dialogo)
 
+                    texto_escopo = ft.Text(
+                        "Esta conta faz parte de uma recorrência. Você pode alterar "
+                        "apenas esta ocorrência ou também as próximas da mesma recorrência.",
+                        color=cores.texto_principal,
+                    )
+                    # Pagamentos parciais (opção D): em "Este mês em diante", as
+                    # ocorrências seguintes com histórico de pagamentos mantêm o valor.
+                    protegidas = (database.ocorrencias_protegidas_no_valor(conta["id"])
+                                  if "valor" in campos_alterados else [])
+                    conteudo_escopo = texto_escopo
+                    if protegidas:
+                        n = len(protegidas)
+                        conteudo_escopo = ft.Column(tight=True, spacing=12, controls=[
+                            texto_escopo,
+                            ft.Container(
+                                data="pp_aviso_protegidas",
+                                bgcolor=cores.aviso_fundo, border_radius=10, padding=12,
+                                content=ft.Text(
+                                    "Em \"Este mês em diante\", algumas ocorrências possuem histórico de "
+                                    "pagamentos e manterão seus valores atuais "
+                                    f"({n} {'ocorrência' if n == 1 else 'ocorrências'}). "
+                                    "As demais serão atualizadas.",
+                                    size=13, color=cores.aviso_texto),
+                            ),
+                        ])
                     dialogo = ft.AlertDialog(
                         modal=True,
                         title=ft.Text("Como deseja aplicar esta alteração?", color=cores.texto_principal),
-                        content=ft.Text(
-                            "Esta conta faz parte de uma recorrência. Você pode alterar "
-                            "apenas esta ocorrência ou também as próximas da mesma recorrência.",
-                            color=cores.texto_principal,
-                        ),
+                        content=conteudo_escopo,
                         actions=[
                             ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
                                           style=ft.ButtonStyle(color=cores.acao_primaria)),
@@ -4207,7 +4816,7 @@ def main(page: ft.Page):
                     on_click=salvar_edicao,
                 )
 
-                area_corpo.controls = [
+                exibir_no_corpo(
                     ft.Container(
                         padding=ft.Padding(20, 40, 20, 24),
                         content=ft.Column(
@@ -4225,7 +4834,6 @@ def main(page: ft.Page):
                                 ]),
                                 campo_categoria_edit,
                                 campo_descricao_edit,
-                                bloco_status,
                                 bloco_recorrencia,
                                 ft.Container(height=16),
                                 erro_edit,
@@ -4237,10 +4845,10 @@ def main(page: ft.Page):
                             ],
                         ),
                     ),
-                ]
+                    "editar",
+                )
                 page.update()
 
-            page.add(area_corpo)
             if abrir_em_edicao:
                 mostrar_formulario_edicao()
             else:
@@ -4264,6 +4872,8 @@ def main(page: ft.Page):
                 frase = frase_vencimento_futuro(dias_delta)
 
             partes_subtitulo = [p for p in (nome_categoria, frase) if p]
+            if conta.get("pago_parcialmente"):  # Pagamentos parciais: informação complementar
+                partes_subtitulo.append("Pago parcialmente")
             if conta.get("serie_id") is not None:
                 parcela = database.obter_parcela(conta["serie_id"], conta["id"])
                 if parcela:
@@ -4346,7 +4956,11 @@ def main(page: ft.Page):
                     # pela lógica já existente (data de vencimento vs. hoje), não por
                     # um cálculo paralelo aqui.
                     def marcar_como_pendente_rapido(e):
-                        database.marcar_conta_como_pendente(conta["id"])
+                        try:
+                            database.marcar_conta_como_pendente(conta["id"])
+                        except database.PagamentosRegistradosError:  # Pagamentos parciais: escolher o que desfazer
+                            mostrar_dialogo_desfazer_pagamentos(conta["id"], atualizar_dados)
+                            return
                         atualizar_dados()
 
                     icone_pagamento = ft.IconButton(
@@ -4359,6 +4973,11 @@ def main(page: ft.Page):
                     )
                 else:
                     def marcar_como_paga_rapido(e):
+                        if conta.get("pago_parcialmente"):  # Pagamentos parciais: só o saldo, com confirmação
+                            confirmar_pagamento_do_saldo(
+                                conta["id"], database.centavos_de(conta["total_pago"]),
+                                database.centavos_de(conta["valor"]), atualizar_dados)
+                            return
                         database.marcar_conta_como_paga(conta["id"])
                         atualizar_dados()
 
@@ -4441,7 +5060,8 @@ def main(page: ft.Page):
 
             proximas = database.listar_contas_proximas(usuario_atual["id"], dias=7)
             if proximas:
-                total_proximas = sum(c["valor"] for c in proximas)
+                # Pagamentos parciais: o que ainda falta pagar (saldo), não o valor cheio.
+                total_proximas = sum(c["saldo"] for c in proximas)
                 banner_semana.bgcolor = cores.aviso_fundo
                 banner_semana.border_radius = 10
                 banner_semana.padding = 12

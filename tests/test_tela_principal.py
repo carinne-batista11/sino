@@ -250,6 +250,11 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         pagar = next(b for b in percorrer(self.linha_da_conta("Hoje"))
                      if isinstance(b, ft.IconButton) and b.tooltip == "Marcar como pendente")
         self.clicar(pagar)
+        # Pagamentos parciais: desfazer a quitação passa pela confirmação da reversão.
+        dialogo = self.pagina.show_dialog.call_args[0][0]
+        self.clicar(next(c for c in percorrer(dialogo.content)
+                         if isinstance(c, ft.Container) and c.data == "pp_opcao_todos"))
+        self.clicar(next(b for b in dialogo.actions if b.content == "Confirmar"))
         self.assertEqual(self.textos_da_linha("Hoje")[-1], "Pendente")
 
         # Ver status: "Pendentes" inclui a que vence hoje; "Atrasadas" não

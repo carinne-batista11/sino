@@ -202,6 +202,11 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.abrir_detalhes("Luz")
         self.assertIn("🟢 Pago em 12/09/2026", self.textos())
         self.clicar(self.botao("Desmarcar como paga"))
+        # Pagamentos parciais: a quitação tem um pagamento registrado -> confirmação da reversão.
+        dialogo = self.pagina.show_dialog.call_args[0][0]
+        self.clicar(next(c for c in percorrer(dialogo.content)
+                         if isinstance(c, ft.Container) and c.data == "pp_opcao_todos"))
+        self.clicar(next(b for b in dialogo.actions if b.content == "Confirmar"))
         self.assertIn("🔴 Atrasado", self.textos())
         self.assertEqual((self.conta(atrasada)["status"], self.conta(atrasada)["data_pagamento"]), ("pendente", None))
         self.assertEqual(self.conta(futura)["status"], "pago")  # outra conta intacta
@@ -209,17 +214,23 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.clicar(self.botao("Voltar"))
         self.abrir_detalhes("Água")
         self.clicar(self.botao("Desmarcar como paga"))
+        dialogo = self.pagina.show_dialog.call_args[0][0]  # Pagamentos parciais: confirmação da reversão
+        self.clicar(next(c for c in percorrer(dialogo.content)
+                         if isinstance(c, ft.Container) and c.data == "pp_opcao_todos"))
+        self.clicar(next(b for b in dialogo.actions if b.content == "Confirmar"))
         self.assertIn("Pendente", self.textos())
         self.assertIsInstance(self.botao("Marcar como paga"), ft.Button)
 
     # ---------------------------------------------------------------- grade, recorrência, parcela
     def test_ct115_conta_unica_mostra_todos_os_campos(self):
-        # Etapa 10 (8.4): sempre os seis campos, nesta ordem, com os textos de ausência.
+        # Etapa 10 (8.4): sempre os campos, nesta ordem, com os textos de ausência.
+        # Pagamentos parciais: "Valor da conta" e o par Total pago|Saldo devedor.
         db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20")
         self.entrar()
         self.abrir_detalhes("Seguro")
         self.assertEqual(self.campos(), [
-            ("Valor", "R$ 90,00"), ("Vencimento", "20/09/2026"), ("Categoria", "Sem categoria"),
+            ("Valor da conta", "R$ 90,00"), ("Vencimento", "20/09/2026"),
+            ("Total pago", "R$ 0,00"), ("Saldo devedor", "R$ 90,00"), ("Categoria", "Sem categoria"),
             ("Parcela", "Não há parcelas"), ("Recorrência", "Esta conta não é recorrente."),
             ("Descrição", "Sem descrição"),
         ])
@@ -227,9 +238,10 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.assertEqual(cores_dos_valores["Parcela"], cores.texto_secundario)
         self.assertEqual(cores_dos_valores["Descrição"], cores.texto_secundario)
         self.assertEqual(cores_dos_valores["Categoria"], cores.texto_sem_categoria)
-        # Largura: Valor|Vencimento e Categoria|Parcela lado a lado; Recorrência e Descrição em linha inteira.
+        # Largura: Valor|Vencimento, Total pago|Saldo e Categoria|Parcela lado a lado;
+        # Recorrência e Descrição em linha inteira.
         larguras = [celula.col for _, _, celula in self.celulas()]
-        self.assertEqual(larguras, [{"xs": 12, "lg": 6}] * 4 + [{"xs": 12}] * 2)
+        self.assertEqual(larguras, [{"xs": 12, "lg": 6}] * 6 + [{"xs": 12}] * 2)
 
     def test_serie_ativa_mostra_parcela(self):
         db.criar_serie_recorrente(self.usuario_id, "Curso", 200.0, "2026-09-20", "mensal", data_termino="2026-12")
@@ -269,7 +281,8 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.entrar()
         self.abrir_detalhes("Seguro")
         self.assertEqual([t.value for t in self.rotulos()],
-                         ["Valor", "Vencimento", "Categoria", "Parcela", "Recorrência", "Descrição"])
+                         ["Valor da conta", "Vencimento", "Total pago", "Saldo devedor", "Categoria", "Parcela",
+                          "Recorrência", "Descrição"])
         self.assertEqual({(t.size, t.color) for t in self.rotulos()}, {(14, cores.texto_secundario)})
         for rotulo, valor, celula in self.celulas():
             with self.subTest(rotulo=rotulo):
@@ -285,7 +298,7 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.entrar()
         self.abrir_detalhes("Seguro")
         self.assertFalse(any(self.rotulo_ao_lado(celula) for _, _, celula in self.celulas()))
-        self.assertEqual(self.campos()[0], ("Valor", "R$ 90,00"))  # rótulo acima, mesmo conteúdo
+        self.assertEqual(self.campos()[0], ("Valor da conta", "R$ 90,00"))  # rótulo acima, mesmo conteúdo
 
         self.pagina.width = 900
         self.pagina.on_resize(None)

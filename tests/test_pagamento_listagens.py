@@ -40,8 +40,13 @@ class TestPagamento(TesteComBancoTemporario):
                          ["pendente", "pago", "pendente", "pendente"])
 
     def test_voltar_para_pendente_remove_data(self):
+        # Pagamentos parciais: a quitação registra um pagamento; desmarcar é pela reversão.
+        import pagamentos
         db.marcar_conta_como_paga(self.ids[0], "2026-09-01")
-        db.marcar_conta_como_pendente(self.ids[0])
+        with self.assertRaises(db.PagamentosRegistradosError):
+            db.marcar_conta_como_pendente(self.ids[0])
+        ativos = [p["id"] for p in pagamentos.obter_situacao(self.ids[0])["ativos"]]
+        pagamentos.desfazer_pagamentos(self.ids[0], "todos", ativos)
         conta = self.conta(self.ids[0])
         self.assertEqual((conta["status"], conta["data_pagamento"]), ("pendente", None))
 

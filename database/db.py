@@ -33,6 +33,218 @@ def conectar():
     return conexao
 
 
+# ------------------------------------------------------------------
+#  Pagamentos parciais (Sino 6.10, schema v10).
+#
+#  Cada pagamento é uma linha de `pp_pagamentos` (centavos inteiros), ligada a
+#  UMA ocorrência de `contas`. `contas.status` continua 'pendente' enquanto
+#  houver saldo e passa a 'pago' só quando os pagamentos somam o valor. Uma
+#  conta paga sem nenhuma linha aqui é o registro de sempre (legado ou paga de
+#  uma vez): o total pago dela é o próprio valor, sem linhas inventadas.
+#  A tabela e o índice são criados pela migração v10 (ver migrar_schema_v10).
+# ------------------------------------------------------------------
+MENSAGEM_PAGAMENTOS_REGISTRADOS = {
+    "desmarcar": "Esta conta foi quitada com pagamentos registrados. Para desfazer, use "
+                 "\"Desmarcar como paga\" e escolha quais pagamentos desfazer.",
+    "data": "Esta conta ainda não está quitada: não há data de pagamento a alterar. Os pagamentos "
+            "parciais têm a data própria, editável em \"Pagamentos registrados\".",
+}
+
+
+class PagamentosRegistradosError(ValueError):
+    """Operação recusada (nada é gravado) porque atinge uma ocorrência com
+    pagamentos registrados e a regra para esse caso aguarda decisão da autora."""
+
+    def __init__(self, operacao):
+        self.operacao = operacao
+        super().__init__(MENSAGEM_PAGAMENTOS_REGISTRADOS[operacao])
+
+
+def _sql_total_pago_centavos(cursor, coluna_id="contas.id"):
+    """Subconsulta com a soma dos pagamentos ATIVOS (não estornados) da conta (0 sem a tabela)."""
+    if not _tabela_existe(cursor, TABELA_PAGAMENTOS):
+        return "0"
+    return (f"(SELECT COALESCE(SUM(p.valor_centavos), 0) FROM {TABELA_PAGAMENTOS} p "
+            f"WHERE p.conta_id = {coluna_id} AND p.estornado_em IS NULL)")
+
+
+def _contas_com_pagamentos(cursor, condicao, parametros, so_ativos=False):
+    """Ids das contas (filtradas por `condicao` sobre `contas`) que têm pagamentos
+    registrados -- inclusive estornados, salvo `so_ativos=True` (só pagamentos ativos)."""
+    if not _tabela_existe(cursor, TABELA_PAGAMENTOS):
+        return []
+    if so_ativos:
+        filtro = (f"EXISTS (SELECT 1 FROM {TABELA_PAGAMENTOS} p WHERE p.conta_id = contas.id "
+                  "AND p.estornado_em IS NULL)")
+    else:
+        filtro = f"id IN ({_sql_contas_com_pagamentos(cursor)})"
+    cursor.execute(f"SELECT id FROM contas WHERE ({condicao}) AND {filtro}", parametros)
+    return [linha[0] for linha in cursor.fetchall()]
+
+
+class ValorMenorQuePagoError(ValueError):
+    """Novo valor de conta menor que a soma dos pagamentos ativos dela (nada é gravado)."""
+
+    def __init__(self, pago_centavos, serie=False):
+        self.pago_centavos = pago_centavos
+        self.serie = serie
+        pago = f"R$ {pago_centavos / 100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        self.titulo = "O valor informado é menor que o total já pago."
+        if serie:
+            texto = (f"Uma das ocorrências que seriam alteradas possui {pago} em pagamentos registrados. "
+                     f"Informe um valor igual ou superior a {pago} para continuar.")
+        else:
+            texto = (f"Esta conta possui {pago} em pagamentos registrados. "
+                     f"Informe um valor igual ou superior a {pago} para continuar.")
+        super().__init__(texto)
+
+
+def _maior_pago_centavos(cursor, condicao, parametros):
+    """Maior soma de pagamentos ATIVOS entre as contas filtradas (0 sem pagamentos)."""
+    if not _tabela_existe(cursor, TABELA_PAGAMENTOS):
+        return 0
+    cursor.execute(f"SELECT COALESCE(MAX({_sql_total_pago_centavos(cursor)}), 0) FROM contas WHERE {condicao}",
+                   parametros)
+    return cursor.fetchone()[0]
+
+
+def _exigir_valor_cobre_pagamentos(cursor, valor, condicao, parametros, serie=False):
+    pago = _maior_pago_centavos(cursor, condicao, parametros)
+    if centavos_de(valor) < pago:
+        raise ValorMenorQuePagoError(pago, serie)
+
+
+def _sincronizar_quitacao(cursor, condicao, parametros):
+    """Status das contas filtradas que têm pagamentos ATIVOS, pelos próprios
+    pagamentos: soma = valor -> 'pago', com a data do pagamento que completou o
+    valor (o último ativo na ordem de REGISTRO, não a maior data); soma < valor
+    -> 'pendente', sem data. Contas sem pagamentos ativos (pagas antes da
+    Sino 6.10, sem registros) não são tocadas."""
+    if not _tabela_existe(cursor, TABELA_PAGAMENTOS):
+        return
+    ativos = f"FROM {TABELA_PAGAMENTOS} p WHERE p.conta_id = contas.id AND p.estornado_em IS NULL"
+    cursor.execute(
+        f"""
+        UPDATE contas SET
+            status = CASE WHEN (SELECT SUM(p.valor_centavos) {ativos}) = CAST(ROUND(valor * 100) AS INTEGER)
+                          THEN 'pago' ELSE 'pendente' END,
+            data_pagamento = CASE WHEN (SELECT SUM(p.valor_centavos) {ativos}) = CAST(ROUND(valor * 100) AS INTEGER)
+                                  THEN (SELECT p.data_pagamento {ativos} ORDER BY p.id DESC LIMIT 1) END
+        WHERE ({condicao}) AND EXISTS (SELECT 1 {ativos})
+        """,
+        parametros,
+    )
+
+
+MESES_EXTENSO = ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro",
+                 "outubro", "novembro", "dezembro")
+
+
+def ocorrencias_protegidas_no_valor(conta_id):
+    """Etapa 4.1 (opção D): ocorrências SEGUINTES à selecionada (posição lógica)
+    com histórico de pagamentos -- mantêm o valor em "Este mês em diante".
+    Lista de vencimentos, em ordem. Só leitura."""
+    conexao = conectar()
+    try:
+        cursor = conexao.cursor()
+        linha = cursor.execute("SELECT serie_id, posicao FROM contas WHERE id = ?", (conta_id,)).fetchone()
+        if linha is None or linha[0] is None or not _tabela_existe(cursor, TABELA_PAGAMENTOS):
+            return []
+        cursor.execute(
+            f"SELECT data_vencimento FROM contas WHERE serie_id = ? AND posicao > ? "
+            f"AND id IN ({_sql_contas_com_pagamentos(cursor)}) ORDER BY posicao",
+            linha,
+        )
+        return [d for (d,) in cursor.fetchall()]
+    finally:
+        conexao.close()
+
+
+class DadosDesatualizadosError(ValueError):
+    def __init__(self):
+        super().__init__("Os valores desta conta mudaram desde que a tela foi aberta. "
+                         "Nada foi alterado; confira os valores e tente de novo.")
+
+
+def _conferir_quitada(cursor, conta_id, esperado):
+    """Etapa 4: a escolha da diferença só vale para a conta quitada que a tela
+    mostrava -- `esperado` = (valor, total pago) em centavos. Senão, nada muda."""
+    linha = cursor.execute(
+        f"SELECT status, valor, {_sql_total_pago_centavos(cursor, 'c.id')} FROM contas c WHERE c.id = ?",
+        (conta_id,),
+    ).fetchone()
+    if linha is None or linha[0] != "pago" or (centavos_de(linha[1]), linha[2]) != tuple(esperado):
+        raise DadosDesatualizadosError()
+
+
+def _registrar_diferenca(cursor, conta_id):
+    """Opção "Registrar a diferença como paga": um pagamento novo ('saldo', data
+    de hoje) com a diferença entre o novo valor e o total pago; os anteriores
+    ficam como estão."""
+    valor, pago = cursor.execute(
+        f"SELECT c.valor, {_sql_total_pago_centavos(cursor, 'c.id')} FROM contas c WHERE c.id = ?", (conta_id,),
+    ).fetchone()
+    diferenca = centavos_de(valor) - pago
+    if diferenca > 0:
+        cursor.execute(
+            f"INSERT INTO {TABELA_PAGAMENTOS} (conta_id, valor_centavos, data_pagamento, tipo, registrado_em) "
+            "VALUES (?, ?, ?, 'saldo', ?)",
+            (conta_id, diferenca, date.today().isoformat(), datetime.now().isoformat(timespec="seconds")),
+        )
+
+
+def _apagar_pagamentos(cursor, condicao, parametros):
+    """Apaga os pagamentos (ativos e estornados) das contas que serão excluídas,
+    na mesma transação da exclusão: nada fica órfão."""
+    if _tabela_existe(cursor, TABELA_PAGAMENTOS):
+        cursor.execute(f"DELETE FROM {TABELA_PAGAMENTOS} WHERE conta_id IN (SELECT id FROM contas WHERE {condicao})",
+                       parametros)
+
+
+def ocorrencias_futuras_com_pagamentos(conta_id):
+    """Etapa 4: ocorrências POSTERIORES à selecionada (posição lógica) que têm
+    pagamentos registrados e serão preservadas numa mudança de frequência:
+    [{id, data_vencimento, status, pago (centavos ativos)}]. Só leitura."""
+    conexao = conectar()
+    try:
+        cursor = conexao.cursor()
+        linha = cursor.execute("SELECT serie_id, posicao FROM contas WHERE id = ?", (conta_id,)).fetchone()
+        if linha is None or linha[0] is None or not _tabela_existe(cursor, TABELA_PAGAMENTOS):
+            return []
+        cursor.execute(
+            f"""
+            SELECT id, data_vencimento, status, {_sql_total_pago_centavos(cursor)} FROM contas
+            WHERE serie_id = ? AND posicao > ?
+              AND id IN ({_sql_contas_com_pagamentos(cursor)})
+            ORDER BY posicao
+            """,
+            linha,
+        )
+        return [{"id": i, "data_vencimento": d, "status": st, "pago": pago} for i, d, st, pago in cursor.fetchall()]
+    finally:
+        conexao.close()
+
+
+def _sql_contas_com_pagamentos(cursor):
+    """Subconsulta com os ids das contas que TÊM registros de pagamento (ativos ou
+    estornados) -- a base de todas as proteções de recorrência. Um registro
+    excluído definitivamente deixa de contar (simplificação, etapa 1)."""
+    if not _tabela_existe(cursor, TABELA_PAGAMENTOS):
+        return "SELECT NULL WHERE 0"
+    return f"SELECT conta_id FROM {TABELA_PAGAMENTOS}"
+
+
+def _exigir_sem_pagamentos(cursor, operacao, condicao, parametros, so_ativos=False):
+    if _contas_com_pagamentos(cursor, condicao, parametros, so_ativos):
+        raise PagamentosRegistradosError(operacao)
+
+
+def centavos_de(valor):
+    """Valor monetário (float de `contas.valor`, Decimal ou texto) em centavos inteiros."""
+    from decimal import ROUND_HALF_UP, Decimal
+    return int((Decimal(str(valor)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 def criar_tabelas():
     """
     Cria o schema atual (v10: ERS v6.0, 9.2, a posição lógica das ocorrências
@@ -2837,6 +3049,8 @@ def excluir_usuario(pendencia):
         senha_hash = linha[0]
         if not secrets.compare_digest(_impressao_senha(senha_hash), pendencia.impressao_senha):
             raise SenhaAlteradaDuranteOperacaoError()
+        # Pagamentos parciais: pagamentos e marcas de histórico das contas do usuário
+        _apagar_pagamentos(cursor, "usuario_id = ?", (pendencia.usuario_id,))
         removidos = {}
         for tabela, chave in _TABELAS_DO_USUARIO:
             cursor.execute(f"DELETE FROM {tabela} WHERE usuario_id = ?", (pendencia.usuario_id,))
@@ -3607,12 +3821,13 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
 def listar_contas(usuario_id, ano_mes=None):
     conexao = conectar()
     cursor = conexao.cursor()
+    total_pago = _sql_total_pago_centavos(cursor)
 
     if ano_mes:
         cursor.execute(
-            """
+            f"""
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
-                   serie_id, data_pagamento, editado_individualmente, descricao
+                   serie_id, data_pagamento, editado_individualmente, descricao, {total_pago}
             FROM contas WHERE usuario_id = ? AND data_vencimento LIKE ?
             ORDER BY data_vencimento, posicao, id
             """,
@@ -3620,9 +3835,9 @@ def listar_contas(usuario_id, ano_mes=None):
         )
     else:
         cursor.execute(
-            """
+            f"""
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
-                   serie_id, data_pagamento, editado_individualmente, descricao
+                   serie_id, data_pagamento, editado_individualmente, descricao, {total_pago}
             FROM contas WHERE usuario_id = ?
             ORDER BY data_vencimento, posicao, id
             """,
@@ -3642,9 +3857,22 @@ def listar_contas(usuario_id, ano_mes=None):
             "id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
             "status": status, "categoria_id": l[5], "serie_id": l[6],
             "data_pagamento": l[7], "editado_individualmente": l[8],
-            "descricao": l[9],
+            "descricao": l[9], **_situacao_do_pagamento(l[4], l[2], l[10]),
         })
     return contas
+
+
+def _situacao_do_pagamento(status, valor, pago_centavos):
+    """Pagamentos parciais: total pago e saldo (em reais, exatos ao centavo) de uma
+    ocorrência. Paga sem linhas = paga por inteiro (registro de sempre)."""
+    valor_centavos = centavos_de(valor)
+    if status == "pago":
+        pago_centavos = valor_centavos
+    return {
+        "total_pago": pago_centavos / 100,
+        "saldo": (valor_centavos - pago_centavos) / 100,
+        "pago_parcialmente": status != "pago" and pago_centavos > 0,
+    }
 
 
 def listar_contas_proximas(usuario_id, dias=7):
@@ -3656,8 +3884,9 @@ def listar_contas_proximas(usuario_id, dias=7):
     limite = hoje + timedelta(days=dias)
 
     cursor.execute(
-        """
-        SELECT id, nome, valor, data_vencimento, status, categoria_id, serie_id, descricao
+        f"""
+        SELECT id, nome, valor, data_vencimento, status, categoria_id, serie_id, descricao,
+               {_sql_total_pago_centavos(cursor)}
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente'
               AND data_vencimento BETWEEN ? AND ?
@@ -3670,7 +3899,8 @@ def listar_contas_proximas(usuario_id, dias=7):
 
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
-         "status": l[4], "categoria_id": l[5], "serie_id": l[6], "descricao": l[7]}
+         "status": l[4], "categoria_id": l[5], "serie_id": l[6], "descricao": l[7],
+         **_situacao_do_pagamento(l[4], l[2], l[8])}
         for l in linhas
     ]
 
@@ -3683,8 +3913,9 @@ def listar_contas_atrasadas(usuario_id):
     hoje = date.today().isoformat()
 
     cursor.execute(
-        """
-        SELECT id, nome, valor, data_vencimento, categoria_id, serie_id, descricao
+        f"""
+        SELECT id, nome, valor, data_vencimento, categoria_id, serie_id, descricao,
+               {_sql_total_pago_centavos(cursor)}
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente' AND data_vencimento < ?
         ORDER BY data_vencimento
@@ -3696,7 +3927,8 @@ def listar_contas_atrasadas(usuario_id):
 
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
-         "status": "atrasado", "categoria_id": l[4], "serie_id": l[5], "descricao": l[6]}
+         "status": "atrasado", "categoria_id": l[4], "serie_id": l[5], "descricao": l[6],
+         **_situacao_do_pagamento("pendente", l[2], l[7])}
         for l in linhas
     ]
 
@@ -3718,10 +3950,13 @@ def resumo_do_periodo(usuario_id, inicio, fim):
     inclusive), em centavos arredondados. Status não altera o total (5.24)."""
     conexao = conectar()
     try:
+        # Pagamentos parciais: o pago inclui os pagamentos parciais das contas em aberto;
+        # o total (despesas) nunca é reduzido por eles.
+        parcial = _sql_total_pago_centavos(conexao.cursor())
         total, pago = conexao.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(valor), 0),
-                   COALESCE(SUM(CASE WHEN status = 'pago' THEN valor END), 0)
+                   COALESCE(SUM(CASE WHEN status = 'pago' THEN valor ELSE {parcial} / 100.0 END), 0)
             FROM contas WHERE usuario_id = ? AND data_vencimento BETWEEN ? AND ?
             """,
             (usuario_id, inicio, fim),
@@ -3908,13 +4143,46 @@ def marcar_conta_como_paga(conta_id, data_pagamento=None):
         return False
 
     conexao = conectar()
+    conexao.isolation_level = None
     cursor = conexao.cursor()
-    cursor.execute(
-        "UPDATE contas SET status = 'pago', data_pagamento = ? WHERE id = ?",
-        (data_pagamento, conta_id),
-    )
-    conexao.commit()
-    conexao.close()
+    try:
+        cursor.execute("BEGIN IMMEDIATE;")
+        # Pagamentos parciais: toda quitação registra um
+        # pagamento individual com o saldo restante -- 'integral' quando não
+        # havia pagamentos ativos, 'saldo' quando completa pagamentos parciais
+        # (nunca o valor cheio de novo). Conta já paga: nada muda (sem
+        # duplicar). A data de pagamento da conta é a deste pagamento, que é o
+        # que completou o valor. Sem a tabela (banco anterior à v10), o de sempre.
+        if _tabela_existe(cursor, TABELA_PAGAMENTOS):
+            cursor.execute(
+                f"SELECT c.status, c.valor, {_sql_total_pago_centavos(cursor, 'c.id')} FROM contas c WHERE c.id = ?",
+                (conta_id,),
+            )
+            linha = cursor.fetchone()
+            if linha is None or linha[0] == "pago":
+                cursor.execute("ROLLBACK;")
+                return False
+            status, valor, pago_centavos = linha
+            saldo = centavos_de(valor) - pago_centavos
+            if saldo <= 0:
+                cursor.execute("ROLLBACK;")
+                return False
+            cursor.execute(
+                f"INSERT INTO {TABELA_PAGAMENTOS} (conta_id, valor_centavos, data_pagamento, tipo, registrado_em) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (conta_id, saldo, data_pagamento, "integral" if pago_centavos == 0 else "saldo",
+                 datetime.now().isoformat(timespec="seconds")),
+            )
+        cursor.execute(
+            "UPDATE contas SET status = 'pago', data_pagamento = ? WHERE id = ?",
+            (data_pagamento, conta_id),
+        )
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
     return True
 
 
@@ -3925,6 +4193,11 @@ def marcar_conta_como_pendente(conta_id):
     """
     conexao = conectar()
     cursor = conexao.cursor()
+    try:
+        _exigir_sem_pagamentos(cursor, "desmarcar", "id = ?", (conta_id,), so_ativos=True)
+    except PagamentosRegistradosError:
+        conexao.close()
+        raise
     cursor.execute(
         "UPDATE contas SET status = 'pendente', data_pagamento = NULL WHERE id = ?",
         (conta_id,),
@@ -3945,6 +4218,25 @@ def editar_data_pagamento(conta_id, nova_data):
 
     conexao = conectar()
     cursor = conexao.cursor()
+    # Pagamentos parciais: com pagamentos ativos, a data de pagamento da conta
+    # não é uma segunda informação -- muda-se a data do pagamento que completou o
+    # valor (o último ativo na ordem de registro) e a da conta acompanha. Valor,
+    # total pago, saldo e demais registros ficam como estão. Conta em aberto com
+    # pagamentos parciais não tem data de quitação a alterar.
+    if _contas_com_pagamentos(cursor, "id = ?", (conta_id,), so_ativos=True):
+        status = cursor.execute("SELECT status FROM contas WHERE id = ?", (conta_id,)).fetchone()[0]
+        if status != "pago":
+            conexao.close()
+            raise PagamentosRegistradosError("data")
+        cursor.execute(
+            f"UPDATE {TABELA_PAGAMENTOS} SET data_pagamento = ? WHERE id = (SELECT id FROM {TABELA_PAGAMENTOS} "
+            "WHERE conta_id = ? AND estornado_em IS NULL ORDER BY id DESC LIMIT 1)",
+            (nova_data, conta_id),
+        )
+        _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
+        conexao.commit()
+        conexao.close()
+        return True
     cursor.execute(
         "UPDATE contas SET data_pagamento = ? WHERE id = ?",
         (nova_data, conta_id),
@@ -3969,7 +4261,8 @@ def _normalizar_entrada_descricao(descricao, remover_descricao):
 
 
 def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
-                             remover_categoria=False, descricao=None, remover_descricao=False):
+                             remover_categoria=False, descricao=None, remover_descricao=False,
+                             pp_diferenca=None):
     """
     RF20 "Somente este mês" (5.6): altera nome/valor/categoria/data de
     vencimento de uma única ocorrência. Sem restrição de mês/ano — a trava
@@ -4009,12 +4302,20 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     conexao = conectar()
     cursor = conexao.cursor()
 
-    cursor.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,))
+    cursor.execute("SELECT serie_id, valor FROM contas WHERE id = ?", (conta_id,))
     linha = cursor.fetchone()
     if linha is None:
         conexao.close()
         return False
     serie_id = linha[0]
+    if valor is not None and valor != linha[1]:
+        try:  # Pagamentos parciais: o novo valor não pode ficar abaixo do que já foi pago
+            _exigir_valor_cobre_pagamentos(cursor, valor, "id = ?", (conta_id,))
+            if pp_diferenca is not None:  # conta quitada: só a que a tela mostrava
+                _conferir_quitada(cursor, conta_id, pp_diferenca["esperado"])
+        except (ValorMenorQuePagoError, DadosDesatualizadosError):
+            conexao.close()
+            raise
 
     campos, valores = [], []
     if nome is not None:
@@ -4042,6 +4343,10 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     if campos:
         sql = f"UPDATE contas SET {', '.join(campos)} WHERE id = ?"
         cursor.execute(sql, (*valores, conta_id))
+        if valor is not None:  # Pagamentos parciais: saldo e status pelos pagamentos ativos
+            if pp_diferenca is not None and pp_diferenca["registrar"]:
+                _registrar_diferenca(cursor, conta_id)  # mesma transação da alteração do valor
+            _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
         conexao.commit()
     conexao.close()
     return True
@@ -4064,7 +4369,8 @@ class VencimentoAntesDaParcelaAnteriorError(ValueError):
 
 
 def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
-                        remover_categoria=False, descricao=None, remover_descricao=False):
+                        remover_categoria=False, descricao=None, remover_descricao=False,
+                        pp_diferenca=None):
     """
     RF20 "Este mês em diante" (5.6): aplica nome/valor/categoria/data à
     ocorrência selecionada e às futuras da mesma série (posição lógica >=
@@ -4184,7 +4490,8 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
         return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor,
                                         categoria_id=categoria_id, data_vencimento=data_vencimento,
                                         remover_categoria=remover_categoria,
-                                        descricao=descricao, remover_descricao=remover_descricao)
+                                        descricao=descricao, remover_descricao=remover_descricao,
+                                        pp_diferenca=pp_diferenca)
 
     cursor_leitura.execute(
         "SELECT frequencia, data_termino, ativa, mes_ancora FROM series_recorrencia WHERE id = ?",
@@ -4194,6 +4501,13 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     if ativa == 0:
         conexao_leitura.close()
         return False
+
+    if valor is not None:  # Pagamentos parciais: a selecionada segue as regras individuais (as protegidas não mudam)
+        try:
+            _exigir_valor_cobre_pagamentos(cursor_leitura, valor, "id = ?", (conta_id,))
+        except ValorMenorQuePagoError:
+            conexao_leitura.close()
+            raise
 
     # D5: o novo vencimento precisa cair numa competência posterior à VAGA
     # da ocorrência imediatamente anterior (não ao vencimento real dela, que
@@ -4265,12 +4579,12 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     cursor = conexao.cursor()
     try:
         cursor.execute("BEGIN;")
+        if valor is not None and pp_diferenca is not None:  # só a conta quitada que a tela mostrava
+            _conferir_quitada(cursor, conta_id, pp_diferenca["esperado"])
 
         campos, valores = [], []
         if nome is not None:
             campos.append("nome = ?"); valores.append(nome)
-        if valor is not None:
-            campos.append("valor = ?"); valores.append(valor)
         if remover_categoria:
             campos.append("categoria_id = NULL")
         elif categoria_id is not None:
@@ -4282,6 +4596,19 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
         if campos:
             sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?"
             cursor.execute(sql, (*valores, serie_id, posicao_referencia))
+        if valor is not None:
+            # Pagamentos parciais (opção D): o valor novo vai para a selecionada e
+            # para as ocorrências seguintes SEM histórico de pagamentos; as que têm
+            # qualquer pagamento (parcial, quitação ou só estornado) mantêm o valor,
+            # os pagamentos, o saldo e o status. Nada é reaberto nem pago.
+            cursor.execute(
+                f"UPDATE contas SET valor = ? WHERE serie_id = ? AND posicao >= ? "
+                f"AND (id = ? OR id NOT IN ({_sql_contas_com_pagamentos(cursor)}))",
+                (valor, serie_id, posicao_referencia, conta_id),
+            )
+            if pp_diferenca is not None and pp_diferenca["registrar"]:
+                _registrar_diferenca(cursor, conta_id)  # só a selecionada, nunca as outras
+            _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
 
         if novas_datas_por_id is not None:
             for oc_id, nova_data in novas_datas_por_id.items():
@@ -4437,8 +4764,14 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
             (serie_id, posicao_referencia),
         )
         futuras = cursor.fetchall()
-        substituiveis = [oc_id for oc_id, editado in futuras if editado == 0]
-        preservadas = [oc_id for oc_id, editado in futuras if editado == 1]
+        # Pagamentos parciais: ocorrências com pagamentos registrados (ativos
+        # ou estornados) são preservadas como as editadas -- ficam como estão,
+        # ocupam a própria competência e a nova grade não cria outra cobrança
+        # nela (_competencias_ocupadas). Nada é apagado nem fundido.
+        com_pagamentos = set(_contas_com_pagamentos(cursor, "serie_id = ? AND posicao > ?",
+                                                    (serie_id, posicao_referencia)))
+        substituiveis = [oc_id for oc_id, editado in futuras if editado == 0 and oc_id not in com_pagamentos]
+        preservadas = [oc_id for oc_id, editado in futuras if editado == 1 or oc_id in com_pagamentos]
 
         try:
             cursor.execute("BEGIN;")
@@ -4630,6 +4963,7 @@ def excluir_conta(conta_id):
 
         try:
             cursor.execute("BEGIN;")
+            _apagar_pagamentos(cursor, "id = ?", (conta_id,))  # Pagamentos parciais: junto com a conta
             cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
 
             if serie_id is not None:
@@ -4702,11 +5036,11 @@ def excluir_conta_serie(conta_id):
         if linha is None:
             return False
         serie_id, posicao_referencia = linha
-
         try:
             cursor.execute("BEGIN;")
 
             if serie_id is None:
+                _apagar_pagamentos(cursor, "id = ?", (conta_id,))  # Pagamentos parciais: junto com a conta
                 cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
             else:
                 cursor.execute(
@@ -4717,6 +5051,8 @@ def excluir_conta_serie(conta_id):
                 # Etapa 2b: "daqui em diante" pela posição lógica -- uma
                 # ocorrência anterior com o vencimento movido para depois
                 # da selecionada é preservada.
+                _apagar_pagamentos(cursor, "serie_id = ? AND posicao >= ?",
+                                   (serie_id, posicao_referencia))
                 cursor.execute(
                     "DELETE FROM contas WHERE serie_id = ? AND posicao >= ?",
                     (serie_id, posicao_referencia),
@@ -4824,7 +5160,7 @@ def encerrar_recorrencia(conta_id):
             cursor.execute("BEGIN;")
 
             cursor.execute(
-                """
+                f"""
                 DELETE FROM contas
                 WHERE serie_id = ?
                   AND posicao > ?
@@ -4832,6 +5168,7 @@ def encerrar_recorrencia(conta_id):
                   AND status != 'pago'
                   AND data_pagamento IS NULL
                   AND editado_individualmente = 0
+                  AND id NOT IN ({_sql_contas_com_pagamentos(cursor)})
                 """,
                 (serie_id, posicao_referencia, corte),
             )
