@@ -157,12 +157,21 @@ class AuxiliaresBancoV6(TesteComBancoTemporario):
         finally:
             conexao.close()
 
-    def assert_schema_v9(self, caminho):
-        """Schema atual: tudo da v8 + aceites_documentos (ERS v7.0, M12), user_version 9."""
-        self.assert_schema_v8(caminho, versao=9)
+    def assert_schema_v9(self, caminho, versao=9):
+        """Tudo da v8 + aceites_documentos (ERS v7.0, M12), com a user_version indicada."""
+        self.assert_schema_v8(caminho, versao=versao)
         conexao = sqlite3.connect(caminho)
         try:
             self.assertEqual(db._estado_tabela_aceites(conexao.cursor()), "valida")
+        finally:
+            conexao.close()
+
+    def assert_schema_v10(self, caminho):
+        """Schema atual: tudo da v9 + pp_pagamentos (Sino 6.10), user_version 10."""
+        self.assert_schema_v9(caminho, versao=10)
+        conexao = sqlite3.connect(caminho)
+        try:
+            self.assertEqual(db._estado_tabela_pagamentos(conexao.cursor()), "valida")
         finally:
             conexao.close()
 
@@ -274,9 +283,9 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
     # ------------------------------------------------------------------
     #  Banco novo e criar_tabelas()
     # ------------------------------------------------------------------
-    def test_banco_novo_ja_nasce_v9_e_migracao_v6_nao_faz_nada(self):
-        # ERS v7.0, M12: criar_tabelas() cria o schema atual (v9), que contém a v6, a v7 e a v8.
-        self.assert_schema_v9(self.caminho_banco)
+    def test_banco_novo_ja_nasce_v10_e_migracao_v6_nao_faz_nada(self):
+        # Sino 6.10: criar_tabelas() cria o schema atual (v10), que contém a v6 a v9.
+        self.assert_schema_v10(self.caminho_banco)
         self.assertTrue(db.validar_migracao_v6(self.caminho_banco)["ok"])
         self.assertTrue(db.validar_schema_atual(self.caminho_banco)["ok"])
 

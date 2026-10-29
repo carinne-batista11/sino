@@ -327,7 +327,11 @@ class TestMigracaoV9(AuxiliaresBancoV6):
         self.assertFalse(resultado["tabela_reaproveitada"])
         self.assertEqual(self.backups_v9(), [os.path.basename(resultado["backup"])])
         self.assert_schema_v9(self.caminho_v5)
-        self.assertTrue(db.validar_schema_atual(self.caminho_v5)["ok"])
+        conexao = _conectar_original(self.caminho_v5)
+        try:  # a v9 completa (a v10, schema atual, vem depois pela migrar_schema_v10)
+            self.assertTrue(db._verificar_schema_v9(conexao.cursor())["ok"])
+        finally:
+            conexao.close()
         self.assertEqual(self.dados_v8(self.caminho_v5), dados_antes)
         # Aceites antigos continuam só como data, sem versão atribuída.
         self.assertEqual(self.sql(self.caminho_v5, "SELECT id, termos_aceitos_em FROM usuarios ORDER BY id"),
@@ -386,7 +390,8 @@ class TestMigracaoV9(AuxiliaresBancoV6):
         db.migrar_schema_v9(self.caminho_v5)
         consulta = "SELECT type, name, sql FROM sqlite_master WHERE tbl_name = 'aceites_documentos' ORDER BY name"
         self.assertEqual(self.sql(self.caminho_v5, consulta), self.sql(self.caminho_banco, consulta))
-        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], 9)
+        # O banco novo nasce no schema atual (v10), que contém a tabela da v9.
+        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], db.VERSAO_SCHEMA_V10)
 
     def test_v7_e_recusado_sem_alteracao(self):
         self.criar_v5()

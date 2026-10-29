@@ -103,8 +103,8 @@ class TesteMigracaoV8(AuxiliaresBancoV6):
         consulta = ("SELECT type, name, sql FROM sqlite_master "
                     "WHERE tbl_name = 'autorizacoes_usadas' ORDER BY name")
         self.assertEqual(self.sql(self.caminho_v5, consulta), self.sql(self.caminho_banco, consulta))
-        # O banco novo já nasce no schema atual (v9), que contém a tabela da v8.
-        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], db.VERSAO_SCHEMA_V9)
+        # O banco novo já nasce no schema atual (v10), que contém a tabela da v8.
+        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], db.VERSAO_SCHEMA_V10)
 
     def test_migracao_v7_reconhece_banco_v8_como_migrado(self):
         self.criar_v7()

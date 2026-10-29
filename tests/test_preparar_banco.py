@@ -52,18 +52,23 @@ class TestePrepararBanco(AuxiliaresBancoV6):
         self.criar_v8_populado()
         db.migrar_schema_v9(self.caminho_v5)
 
-    SEM_MIGRACAO = {"migracao": None, "migracao_v7": None, "migracao_v8": None, "migracao_v9": None}
+    def criar_v10_populado(self):
+        self.criar_v9_populado()
+        db.migrar_schema_v10(self.caminho_v5)
+
+    SEM_MIGRACAO = {"migracao": None, "migracao_v7": None, "migracao_v8": None, "migracao_v9": None,
+                    "migracao_v10": None}
 
     # ------------------------------------------------------------------
     #  Os três cenários normais
     # ------------------------------------------------------------------
-    def test_banco_inexistente_cria_v9_sem_backup(self):
+    def test_banco_inexistente_cria_v10_sem_backup(self):
         self.assertFalse(os.path.exists(self.caminho_v5))
 
         resultado = db.preparar_banco()
 
         self.assertEqual(resultado, {"situacao": "criado", **self.SEM_MIGRACAO})
-        self.assert_schema_v9(self.caminho_v5)
+        self.assert_schema_v10(self.caminho_v5)
         self.assertTrue(db.validar_schema_atual(self.caminho_v5)["ok"])
         self.assertEqual(self.backups(), [])
 
@@ -73,7 +78,7 @@ class TestePrepararBanco(AuxiliaresBancoV6):
         resultado = db.preparar_banco()
 
         self.assertEqual(resultado["situacao"], "criado")
-        self.assert_schema_v9(self.caminho_v5)
+        self.assert_schema_v10(self.caminho_v5)
         self.assertEqual(self.backups(), [])
 
     def test_banco_v5_e_migrado_com_backup_e_dados_preservados(self):
@@ -85,18 +90,18 @@ class TestePrepararBanco(AuxiliaresBancoV6):
 
         criar_tabelas.assert_not_called()  # nunca sobre um banco existente
         self.assertEqual(resultado["situacao"], "migrado")
-        # cadeia v5 -> v6 -> v7 -> v8 -> v9: quatro transações, quatro backups
-        chaves = ("migracao", "migracao_v7", "migracao_v8", "migracao_v9")
+        # cadeia v5 -> v6 -> v7 -> v8 -> v9 -> v10: cinco transações, cinco backups
+        chaves = ("migracao", "migracao_v7", "migracao_v8", "migracao_v9", "migracao_v10")
         for chave in chaves:
             self.assertTrue(resultado[chave]["executado"], chave)
         self.assertEqual(self.backups(), sorted(os.path.basename(resultado[chave]["backup"]) for chave in chaves))
-        self.assert_schema_v9(self.caminho_v5)
+        self.assert_schema_v10(self.caminho_v5)
         self.assertEqual(self.dados_v5(self.caminho_v5), dados_antes)
         self.assertTrue(db.validar_schema_atual(self.caminho_v5)["ok"])
         # Aceites anteriores ao versionamento: nenhuma versão é atribuída (5.53).
         self.assertEqual(self.sql(self.caminho_v5, "SELECT COUNT(*) FROM aceites_documentos"), [(0,)])
 
-    def test_banco_v6_e_migrado_para_v9_com_backup(self):
+    def test_banco_v6_e_migrado_para_v10_com_backup(self):
         self.criar_v6_populado()
         backups_v6 = self.backups()
         dados_antes = self.dados_v5(self.caminho_v5)
@@ -104,17 +109,17 @@ class TestePrepararBanco(AuxiliaresBancoV6):
         with mock.patch.object(db, "migrar_schema_v6", wraps=db.migrar_schema_v6) as migrar_v6:
             resultado = db.preparar_banco()
 
-        migrar_v6.assert_not_called()  # a v6 já é válida: só a v7, a v8 e a v9 rodam
+        migrar_v6.assert_not_called()  # a v6 já é válida: só a v7, a v8, a v9 e a v10 rodam
         self.assertEqual(resultado["situacao"], "migrado")
         self.assertIsNone(resultado["migracao"])
         self.assertEqual(self.backups(), sorted(backups_v6 + [
             os.path.basename(resultado[chave]["backup"])
-            for chave in ("migracao_v7", "migracao_v8", "migracao_v9")
+            for chave in ("migracao_v7", "migracao_v8", "migracao_v9", "migracao_v10")
         ]))
-        self.assert_schema_v9(self.caminho_v5)
+        self.assert_schema_v10(self.caminho_v5)
         self.assertEqual(self.dados_v5(self.caminho_v5), dados_antes)
 
-    def test_banco_v7_recebe_a_v8_e_a_v9(self):
+    def test_banco_v7_recebe_a_v8_a_v9_e_a_v10(self):
         self.criar_v7_populado()
         backups_antes = self.backups()
         dados_antes = self.dados_v5(self.caminho_v5)
@@ -126,13 +131,15 @@ class TestePrepararBanco(AuxiliaresBancoV6):
         self.assertFalse(resultado["migracao_v7"]["executado"])
         self.assertTrue(resultado["migracao_v8"]["executado"])
         self.assertTrue(resultado["migracao_v9"]["executado"])
+        self.assertTrue(resultado["migracao_v10"]["executado"])
         self.assertEqual(self.backups(), sorted(backups_antes + [
-            os.path.basename(resultado[chave]["backup"]) for chave in ("migracao_v8", "migracao_v9")
+            os.path.basename(resultado[chave]["backup"])
+            for chave in ("migracao_v8", "migracao_v9", "migracao_v10")
         ]))
-        self.assert_schema_v9(self.caminho_v5)
+        self.assert_schema_v10(self.caminho_v5)
         self.assertEqual(self.dados_v5(self.caminho_v5), dados_antes)
 
-    def test_banco_v8_recebe_so_a_migracao_v9(self):
+    def test_banco_v8_recebe_a_v9_e_a_v10(self):
         self.criar_v8_populado()
         backups_antes = self.backups()
         dados_antes = self.dados_v5(self.caminho_v5)
@@ -144,24 +151,44 @@ class TestePrepararBanco(AuxiliaresBancoV6):
         self.assertFalse(resultado["migracao_v7"]["executado"])
         self.assertFalse(resultado["migracao_v8"]["executado"])
         self.assertTrue(resultado["migracao_v9"]["executado"])
-        self.assertEqual(self.backups(),
-                         sorted(backups_antes + [os.path.basename(resultado["migracao_v9"]["backup"])]))
-        self.assert_schema_v9(self.caminho_v5)
+        self.assertTrue(resultado["migracao_v10"]["executado"])
+        self.assertEqual(self.backups(), sorted(backups_antes + [
+            os.path.basename(resultado[chave]["backup"]) for chave in ("migracao_v9", "migracao_v10")
+        ]))
+        self.assert_schema_v10(self.caminho_v5)
         self.assertEqual(self.dados_v5(self.caminho_v5), dados_antes)
 
-    def test_banco_v9_nao_e_alterado_nem_recebe_backup(self):
+    def test_banco_v9_recebe_so_a_migracao_v10(self):
         self.criar_v9_populado()
+        backups_antes = self.backups()
+        dados_antes = self.dados_v5(self.caminho_v5)
+
+        resultado = db.preparar_banco()
+
+        self.assertEqual(resultado["situacao"], "migrado")
+        self.assertIsNone(resultado["migracao"])
+        for chave in ("migracao_v7", "migracao_v8", "migracao_v9"):
+            self.assertFalse(resultado[chave]["executado"], chave)
+        self.assertTrue(resultado["migracao_v10"]["executado"])
+        self.assertEqual(self.backups(),
+                         sorted(backups_antes + [os.path.basename(resultado["migracao_v10"]["backup"])]))
+        self.assert_schema_v10(self.caminho_v5)
+        self.assertEqual(self.dados_v5(self.caminho_v5), dados_antes)
+
+    def test_banco_v10_nao_e_alterado_nem_recebe_backup(self):
+        self.criar_v10_populado()
         estado_antes = self.estado()
 
         with mock.patch.object(db, "migrar_schema_v6", wraps=db.migrar_schema_v6) as migrar_v6, \
                 mock.patch.object(db, "migrar_schema_v7", wraps=db.migrar_schema_v7) as migrar_v7, \
                 mock.patch.object(db, "migrar_schema_v8", wraps=db.migrar_schema_v8) as migrar_v8, \
                 mock.patch.object(db, "migrar_schema_v9", wraps=db.migrar_schema_v9) as migrar_v9, \
+                mock.patch.object(db, "migrar_schema_v10", wraps=db.migrar_schema_v10) as migrar_v10, \
                 mock.patch.object(db, "criar_tabelas", wraps=db.criar_tabelas) as criar_tabelas:
             resultado = db.preparar_banco()
 
         self.assertEqual(resultado, {"situacao": "atual", **self.SEM_MIGRACAO})
-        for migrar in (migrar_v6, migrar_v7, migrar_v8, migrar_v9):
+        for migrar in (migrar_v6, migrar_v7, migrar_v8, migrar_v9, migrar_v10):
             migrar.assert_not_called()  # nem o lock de escrita das migrações é pedido
         criar_tabelas.assert_not_called()
         self.assertEqual(self.estado(), estado_antes)
@@ -175,7 +202,7 @@ class TestePrepararBanco(AuxiliaresBancoV6):
             self.assertEqual(db.preparar_banco(), {"situacao": "atual", **self.SEM_MIGRACAO})
 
         self.assertEqual(self.estado(), estado_depois_da_migracao)
-        self.assertEqual(len(self.backups()), 4)
+        self.assertEqual(len(self.backups()), 5)
 
     def test_falha_na_v7_deixa_o_banco_em_v6_e_a_proxima_inicializacao_retoma(self):
         self.criar_v5()
@@ -206,7 +233,7 @@ class TestePrepararBanco(AuxiliaresBancoV6):
         resultado = db.preparar_banco()
         self.assertEqual(resultado["situacao"], "migrado")
         self.assertIsNone(resultado["migracao"])
-        self.assert_schema_v9(self.caminho_v5)
+        self.assert_schema_v10(self.caminho_v5)
 
     # ------------------------------------------------------------------
     #  Falhas: nada é alterado e a exceção chega a quem chamou
@@ -414,7 +441,8 @@ class TesteInicializacaoInterface(AuxiliaresBancoV6):
                      "migracao": {"executado": True, "backup": "/tmp/x/backup.db"},
                      "migracao_v7": {"executado": True, "backup": "/tmp/x/backup_v7.db"},
                      "migracao_v8": {"executado": True, "backup": "/tmp/x/backup_v8.db"},
-                     "migracao_v9": {"executado": True, "backup": "/tmp/x/backup_v9.db"}}
+                     "migracao_v9": {"executado": True, "backup": "/tmp/x/backup_v9.db"},
+                     "migracao_v10": {"executado": True, "backup": "/tmp/x/backup_v10.db"}}
         stdout = io.StringIO()
         with mock.patch.object(main.database, "preparar_banco", return_value=resultado), \
                 redirect_stdout(stdout):
@@ -425,13 +453,15 @@ class TesteInicializacaoInterface(AuxiliaresBancoV6):
         self.assertIn("/tmp/x/backup_v8.db", stdout.getvalue())
         self.assertIn("banco migrado para a v9", stdout.getvalue())
         self.assertIn("/tmp/x/backup_v9.db", stdout.getvalue())
+        self.assertIn("banco migrado para a v10", stdout.getvalue())
+        self.assertIn("/tmp/x/backup_v10.db", stdout.getvalue())
 
     def test_main_usa_o_banco_temporario_de_ponta_a_ponta(self):
-        """Sem mocks em preparar_banco: o banco do teste é criado em v9 e o login abre."""
+        """Sem mocks em preparar_banco: o banco do teste é criado em v10 e o login abre."""
         pagina = self.pagina_falsa()
         with mock.patch.object(db, "NOME_DO_BANCO", self.caminho_v5):
             main.main(pagina)
-        self.assert_schema_v9(self.caminho_v5)
+        self.assert_schema_v10(self.caminho_v5)
         self.assertIn("Bem-vindo de volta", [t for c in pagina.controls for t in self.textos(c)])
 
 

@@ -35,14 +35,15 @@ def conectar():
 
 def criar_tabelas():
     """
-    Cria o schema atual (v9: ERS v6.0, 9.2, a posição lógica das ocorrências
-    da Etapa 2b, o registro de autorizações usadas da Etapa 8 e o registro
-    dos aceites por versão da ERS v7.0, M12) em um banco novo. Em um banco que já existe,
+    Cria o schema atual (v10: ERS v6.0, 9.2, a posição lógica das ocorrências
+    da Etapa 2b, o registro de autorizações usadas da Etapa 8, o registro
+    dos aceites por versão da ERS v7.0, M12, e os pagamentos parciais da
+    Sino 6.10) em um banco novo. Em um banco que já existe,
     `CREATE TABLE IF NOT EXISTS` não acrescenta colunas; por isso os índices
     de e-mail e de posição e o `user_version` só são gravados quando
     `usuarios` nasce nesta chamada. Um banco v5/v6 existente permanece
     intocado até `migrar_schema_v6()`/`migrar_schema_v7()`/`migrar_schema_v8()`/
-    `migrar_schema_v9()` (com backup).
+    `migrar_schema_v9()`/`migrar_schema_v10()` (com backup).
 
     Tudo roda em uma única transação (em modo legado, o sqlite3 do Python
     faria autocommit de cada DDL): um banco novo nunca fica com as tabelas
@@ -158,6 +159,7 @@ def _criar_tabelas_v6(cursor, banco_novo):
         cursor.execute(f"CREATE UNIQUE INDEX {INDICE_POSICAO} ON contas(serie_id, posicao);")
         _criar_tabela_autorizacoes(cursor)
         _criar_tabela_aceites(cursor)
+        _criar_tabela_pagamentos(cursor)
         cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_ATUAL};")
 
 
@@ -536,7 +538,6 @@ FINALIDADES_AUTORIZACAO = ("cadastro", "alteracao_email", "recuperacao_senha")
 # que não foi registrada no momento do aceite (`usuarios.termos_aceitos_em`
 # continua sendo o registro desse aceite).
 VERSAO_SCHEMA_V9 = 9
-VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V9
 TABELA_ACEITES = "aceites_documentos"
 DOCUMENTOS_VERSIONADOS = ("termos", "politica")
 TIPOS_REGISTRO_DOCUMENTO = ("aceite", "ciencia")
@@ -562,9 +563,43 @@ COLUNAS_ACEITES = (
     (4, "tipo", "TEXT", 1, None, 0),
     (5, "registrado_em", "TEXT", 1, None, 0),
 )
+# Schema v10 (Sino 6.10, pagamentos parciais): `pp_pagamentos`, um registro
+# por pagamento de uma ocorrência de `contas` -- valor em centavos inteiros,
+# data do pagamento, tipo de origem, quando foi registrado e, se estornado,
+# quando (o registro estornado fica no histórico e deixa de contar). Só o
+# schema nesta migração: nenhuma conta é convertida (uma conta paga sem
+# registros continua sendo a quitação de sempre).
+VERSAO_SCHEMA_V10 = 10
+VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V10
+TABELA_PAGAMENTOS = "pp_pagamentos"
+TIPOS_PAGAMENTO = ("parcial", "saldo", "integral")
+DDL_PAGAMENTOS = """
+CREATE TABLE pp_pagamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conta_id INTEGER NOT NULL REFERENCES contas(id),
+    valor_centavos INTEGER NOT NULL CHECK (valor_centavos > 0),
+    data_pagamento TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('parcial', 'saldo', 'integral')),
+    registrado_em TEXT NOT NULL,
+    estornado_em TEXT
+)
+"""
+INDICE_PAGAMENTOS = "idx_pp_pagamentos_conta"
+DDL_INDICE_PAGAMENTOS = f"CREATE INDEX {INDICE_PAGAMENTOS} ON pp_pagamentos(conta_id)"
+# (cid, nome, tipo, notnull, default, pk) esperados em PRAGMA table_info.
+COLUNAS_PAGAMENTOS = (
+    (0, "id", "INTEGER", 0, None, 1),
+    (1, "conta_id", "INTEGER", 1, None, 0),
+    (2, "valor_centavos", "INTEGER", 1, None, 0),
+    (3, "data_pagamento", "TEXT", 1, None, 0),
+    (4, "tipo", "TEXT", 1, None, 0),
+    (5, "registrado_em", "TEXT", 1, None, 0),
+    (6, "estornado_em", "TEXT", 0, None, 0),
+)
 # user_version que esta versão do app sabe tratar: 0 (bancos anteriores ao
-# controle de versão, validados estruturalmente como v5), 6, 7, 8 e 9.
-VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9)
+# controle de versão, validados estruturalmente como v5), 6, 7, 8, 9 e 10.
+VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9,
+                      VERSAO_SCHEMA_V10)
 
 
 class ColisaoDeEmailError(RuntimeError):
@@ -645,6 +680,23 @@ class SchemaV9IncompativelError(RuntimeError):
         self.problemas = problemas
         super().__init__(
             "Migração v9 abortada: schema incompatível ("
+            + "; ".join(problemas)
+            + "). Nenhuma alteração foi feita."
+        )
+
+
+class SchemaV10IncompativelError(RuntimeError):
+    """
+    O banco não está no estado que a migração v10 aceita: anterior à v9,
+    `pp_pagamentos` (ou o índice dela) com definição diferente, com dados
+    fora do formato, ou ausente/incompatível num banco já declarado v10.
+    Nada é alterado e nenhum backup é criado.
+    """
+
+    def __init__(self, problemas):
+        self.problemas = problemas
+        super().__init__(
+            "Migração v10 abortada: schema incompatível ("
             + "; ".join(problemas)
             + "). Nenhuma alteração foi feita."
         )
@@ -801,7 +853,7 @@ def _verificar_schema_v6(cursor):
         all(resultado[f"{tabela}.{coluna}"] == "valida" for tabela, coluna, _, _ in COLUNAS_V6)
         and resultado["indice_email_ci"] == "valido"
         and resultado["user_version"] in (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8,
-                                          VERSAO_SCHEMA_V9)
+                                          VERSAO_SCHEMA_V9, VERSAO_SCHEMA_V10)
         and resultado["integridade"] == ["ok"]
         and not resultado["violacoes_fk"]
     )
@@ -966,6 +1018,7 @@ class BancoNaoPreparadoError(RuntimeError):
         v7 = "indice_posicao" in validacao
         v8 = "tabela_autorizacoes" in validacao
         v9 = "tabela_aceites" in validacao
+        v10 = "tabela_pagamentos" in validacao
         colunas = COLUNAS_V6 + (COLUNAS_V7 if v7 else ())
         falhas = [f"{tabela}.{coluna}" for tabela, coluna, _, _ in colunas
                   if validacao.get(f"{tabela}.{coluna}") != "valida"]
@@ -976,7 +1029,8 @@ class BancoNaoPreparadoError(RuntimeError):
         if v7:
             versoes_aceitas = (validacao.get("versao_esperada", VERSAO_SCHEMA_V7),)
         else:
-            versoes_aceitas = (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9)
+            versoes_aceitas = (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9,
+                               VERSAO_SCHEMA_V10)
         if validacao.get("user_version") not in versoes_aceitas:
             falhas.append("user_version")
         if v8 and validacao.get("tabela_autorizacoes") != "valida":
@@ -987,6 +1041,10 @@ class BancoNaoPreparadoError(RuntimeError):
             falhas.append("tabela_aceites")
         if v9 and validacao.get("aceites_invalidos"):
             falhas.append("aceites_invalidos")
+        if v10 and validacao.get("tabela_pagamentos") != "valida":
+            falhas.append("tabela_pagamentos")
+        if v10 and validacao.get("pagamentos_invalidos"):
+            falhas.append("pagamentos_invalidos")
         if validacao.get("integridade") != ["ok"]:
             falhas.append("integridade")
         if validacao.get("violacoes_fk"):
@@ -1179,10 +1237,11 @@ def _aceites_invalidos(cursor):
     return cursor.fetchone()[0]
 
 
-def _verificar_schema_v9(cursor):
-    """Checagens da v8 (com user_version 9) + tabela de aceites exata e com
+def _verificar_schema_v9(cursor, versao_esperada=VERSAO_SCHEMA_V9):
+    """Checagens da v8 (com user_version `versao_esperada`: 9; a v10
+    reaproveita estas checagens com 10) + tabela de aceites exata e com
     dados no formato estrito."""
-    resultado = _verificar_schema_v8(cursor, versao_esperada=VERSAO_SCHEMA_V9)
+    resultado = _verificar_schema_v8(cursor, versao_esperada=versao_esperada)
     resultado["tabela_aceites"] = _estado_tabela_aceites(cursor)
     resultado["aceites_invalidos"] = (
         _aceites_invalidos(cursor) if resultado["tabela_aceites"] == "valida" else None
@@ -1197,19 +1256,19 @@ def _verificar_schema_v9(cursor):
 
 def validar_schema_atual(caminho_banco=None):
     """
-    Checagens do schema atual (v9): tudo o que `validar_migracao_v6()`
+    Checagens do schema atual (v10): tudo o que `validar_migracao_v6()`
     verifica, mais as colunas e o índice da posição lógica, nenhuma
     ocorrência de série sem posição/vaga, nenhuma coluna fora do schema
-    conhecido, as tabelas `autorizacoes_usadas` e `aceites_documentos`
-    exatas e com dados válidos e `user_version = 9`. Só consulta o banco
-    (FileNotFoundError se não existir).
+    conhecido, as tabelas `autorizacoes_usadas`, `aceites_documentos` e
+    `pp_pagamentos` exatas e com dados válidos e `user_version = 10`. Só
+    consulta o banco (FileNotFoundError se não existir).
     """
     caminho_banco = caminho_banco or NOME_DO_BANCO
     if not os.path.exists(caminho_banco):
         raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
     conexao = sqlite3.connect(caminho_banco)
     try:
-        return _verificar_schema_v9(conexao.cursor())
+        return _verificar_schema_v10(conexao.cursor())
     finally:
         conexao.close()
 
@@ -1563,12 +1622,12 @@ def migrar_schema_v9(caminho_banco=None):
         estado = _estado_tabela_aceites(cursor)
         invalidos = _aceites_invalidos(cursor) if estado == "valida" else 0
 
-        if versao == VERSAO_SCHEMA_V9:
+        if versao >= VERSAO_SCHEMA_V9:  # v10 também tem todos os itens da v9
             if estado != "valida":
-                raise SchemaV9IncompativelError([f"banco v9 com {TABELA_ACEITES} {estado}"])
+                raise SchemaV9IncompativelError([f"banco v{versao} com {TABELA_ACEITES} {estado}"])
             if invalidos:
                 raise SchemaV9IncompativelError([f"{invalidos} registro(s) de aceite fora do formato"])
-            verificacao = _verificar_schema_v9(cursor)
+            verificacao = _verificar_schema_v9(cursor, versao_esperada=versao)
             if not verificacao["ok"]:
                 raise BancoNaoPreparadoError(verificacao)
             cursor.execute("ROLLBACK;")
@@ -1617,6 +1676,185 @@ def _criar_tabela_aceites(cursor):
     cursor.execute(DDL_ACEITES)
 
 
+def _criar_tabela_pagamentos(cursor):
+    cursor.execute(DDL_PAGAMENTOS)
+    cursor.execute(DDL_INDICE_PAGAMENTOS)
+
+
+def _estado_tabela_pagamentos(cursor):
+    """
+    'ausente', 'valida' ou 'incompativel'. Válida = tabela com o DDL exato
+    (comparado sem diferenças de espaçamento), colunas exatas em PRAGMA
+    table_info, a chave estrangeira para contas(id), só o índice por conta_id
+    (DDL exato) e nenhum gatilho sobre a tabela.
+    """
+    cursor.execute("SELECT type, sql FROM sqlite_master WHERE name = ?", (TABELA_PAGAMENTOS,))
+    objeto = cursor.fetchone()
+    if objeto is None:
+        return "ausente"
+    if objeto[0] != "table" or _normalizar_ddl(objeto[1]) != _normalizar_ddl(DDL_PAGAMENTOS):
+        return "incompativel"
+    cursor.execute(f"PRAGMA table_info({TABELA_PAGAMENTOS})")
+    if tuple(tuple(linha) for linha in cursor.fetchall()) != COLUNAS_PAGAMENTOS:
+        return "incompativel"
+    cursor.execute(f"PRAGMA foreign_key_list({TABELA_PAGAMENTOS})")
+    # (id, seq, table, from, to, on_update, on_delete, match)
+    if [tuple(linha[2:5]) for linha in cursor.fetchall()] != [("contas", "conta_id", "id")]:
+        return "incompativel"
+    cursor.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ?", (TABELA_PAGAMENTOS,),
+    )
+    indices = cursor.fetchall()
+    if (len(indices) != 1 or indices[0][0] != INDICE_PAGAMENTOS
+            or _normalizar_ddl(indices[0][1]) != _normalizar_ddl(DDL_INDICE_PAGAMENTOS)):
+        return "incompativel"
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?", (TABELA_PAGAMENTOS,))
+    if cursor.fetchone() is not None:
+        return "incompativel"
+    return "valida"
+
+
+def _pagamentos_invalidos(cursor):
+    """Linhas fora do formato estrito (tipos de armazenamento, valor positivo,
+    datas AAAA-MM-DD, tipo e datas de registro/estorno). As referências a
+    contas inexistentes aparecem em `PRAGMA foreign_key_check`."""
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) FROM {TABELA_PAGAMENTOS}
+        WHERE typeof(conta_id) != 'integer'
+           OR typeof(valor_centavos) != 'integer' OR valor_centavos <= 0
+           OR typeof(data_pagamento) != 'text' OR length(data_pagamento) != 10
+           OR data_pagamento NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+           OR typeof(tipo) != 'text' OR tipo NOT IN ('parcial', 'saldo', 'integral')
+           OR typeof(registrado_em) != 'text' OR length(registrado_em) < 10
+           OR (estornado_em IS NOT NULL AND (typeof(estornado_em) != 'text' OR length(estornado_em) < 10))
+        """
+    )
+    return cursor.fetchone()[0]
+
+
+def _verificar_schema_v10(cursor, versao_esperada=VERSAO_SCHEMA_V10):
+    """Checagens da v9 (com user_version `versao_esperada`) + tabela de
+    pagamentos exata e com dados no formato estrito."""
+    resultado = _verificar_schema_v9(cursor, versao_esperada=versao_esperada)
+    resultado["tabela_pagamentos"] = _estado_tabela_pagamentos(cursor)
+    resultado["pagamentos_invalidos"] = (
+        _pagamentos_invalidos(cursor) if resultado["tabela_pagamentos"] == "valida" else None
+    )
+    resultado["ok"] = (
+        resultado["ok"]
+        and resultado["tabela_pagamentos"] == "valida"
+        and resultado["pagamentos_invalidos"] == 0
+    )
+    return resultado
+
+
+def _dados_v9(cursor):
+    """Dados v8 + aceites por versão (RNF08 na v10)."""
+    dados = _dados_v8(cursor)
+    cursor.execute(f"SELECT * FROM {TABELA_ACEITES} ORDER BY id")
+    dados[TABELA_ACEITES] = cursor.fetchall()
+    return dados
+
+
+def migrar_schema_v10(caminho_banco=None):
+    """
+    Migração v9 -> v10 (Sino 6.10, pagamentos parciais): tabela
+    `pp_pagamentos` e o índice por conta, vazios. Aditiva (RNF08): nenhuma
+    tabela ou coluna existente é alterada e nenhuma conta é convertida -- uma
+    conta já paga continua paga, sem registros (a quitação de sempre).
+
+    Mesmo roteiro da v9. Tudo dentro de `BEGIN IMMEDIATE`. Antes de qualquer
+    escrita e sem backup:
+      * `user_version` não suportada (VersaoDeBancoNaoSuportadaError) ou
+        anterior à 9 (SchemaV10IncompativelError -- a v9 vem antes);
+      * banco v10: a tabela precisa existir, exata e com dados válidos;
+        senão SchemaV10IncompativelError. Íntegro: {"executado": False,
+        "motivo": "já migrado"};
+      * banco v9: a tabela ausente é o esperado e é criada. Se já existir
+        (ex.: um banco do protótipo de pagamentos parciais), só é
+        reaproveitada -- com os registros intactos -- se DDL, colunas, chave
+        estrangeira, índice e dados estiverem exatamente no formato; qualquer
+        divergência é recusada, sem apagar nem reconstruir nada;
+      * banco v9 que não passa na própria validação: BancoNaoPreparadoError.
+    Depois: backup com integrity_check (o RESERVED lock deste BEGIN IMMEDIATE
+    permite a leitura da cópia e garante que nada muda até o COMMIT), criação,
+    `user_version = 10`, validação (schema v10, contagens e dados v9 idênticos
+    e, se reaproveitada, os registros de pagamento idênticos) e COMMIT.
+    Qualquer falha reverte tudo; o backup, se já criado, permanece no disco.
+
+    Retorna {"executado": True, "backup": caminho, "tabela_reaproveitada": bool}.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+
+    conexao = sqlite3.connect(caminho_banco)
+    caminho_backup = None
+    try:
+        conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+
+        versao = _exigir_versao_suportada(cursor)
+        if versao < VERSAO_SCHEMA_V9:
+            raise SchemaV10IncompativelError(
+                [f"user_version {versao}: o banco precisa passar pela migração v9 antes da v10"]
+            )
+        estado = _estado_tabela_pagamentos(cursor)
+        invalidos = _pagamentos_invalidos(cursor) if estado == "valida" else 0
+
+        if versao >= VERSAO_SCHEMA_V10:
+            if estado != "valida":
+                raise SchemaV10IncompativelError([f"banco v{versao} com {TABELA_PAGAMENTOS} {estado}"])
+            if invalidos:
+                raise SchemaV10IncompativelError([f"{invalidos} registro(s) de pagamento fora do formato"])
+            verificacao = _verificar_schema_v10(cursor, versao_esperada=versao)
+            if not verificacao["ok"]:
+                raise BancoNaoPreparadoError(verificacao)
+            cursor.execute("ROLLBACK;")
+            return {"executado": False, "motivo": "já migrado", "backup": None}
+
+        if estado == "incompativel":
+            raise SchemaV10IncompativelError([f"{TABELA_PAGAMENTOS} com definição diferente da esperada"])
+        if invalidos:
+            raise SchemaV10IncompativelError([f"{invalidos} registro(s) de pagamento fora do formato"])
+        validacao_v9 = _verificar_schema_v9(cursor)
+        if not validacao_v9["ok"]:
+            raise BancoNaoPreparadoError(validacao_v9)
+
+        caminho_backup = criar_backup(caminho_banco, rotulo="v10")
+        if not _verificar_integridade_backup(caminho_backup):
+            raise RuntimeError(
+                f"Backup pré-migração v10 falhou no integrity_check ({caminho_backup}); "
+                "migração abortada."
+            )
+
+        contagens_antes = _contagens(cursor)
+        dados_antes = _dados_v9(cursor)
+        pagamentos_antes = (cursor.execute(f"SELECT * FROM {TABELA_PAGAMENTOS} ORDER BY id").fetchall()
+                            if estado == "valida" else [])
+
+        if estado == "ausente":
+            _criar_tabela_pagamentos(cursor)
+        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V10};")
+
+        verificacao = _verificar_schema_v10(cursor)
+        pagamentos_depois = cursor.execute(f"SELECT * FROM {TABELA_PAGAMENTOS} ORDER BY id").fetchall()
+        if (not verificacao["ok"] or _contagens(cursor) != contagens_antes
+                or _dados_v9(cursor) != dados_antes or pagamentos_depois != pagamentos_antes):
+            raise RuntimeError("Validação pós-migração v10 falhou; alterações revertidas.")
+
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+    return {"executado": True, "backup": caminho_backup, "tabela_reaproveitada": estado == "valida"}
+
+
 def _banco_existente_vazio(caminho_banco):
     """
     Só leitura. Recusa `user_version` não suportada (VersaoDeBancoNaoSuportadaError)
@@ -1635,20 +1873,20 @@ def _banco_existente_vazio(caminho_banco):
 def preparar_banco():
     """
     Garante, na inicialização do app, que `NOME_DO_BANCO` está no schema
-    atual (v9), reutilizando `criar_tabelas()`, `migrar_schema_v6()` a
-    `migrar_schema_v9()` e `validar_schema_atual()`:
+    atual (v10), reutilizando `criar_tabelas()`, `migrar_schema_v6()` a
+    `migrar_schema_v10()` e `validar_schema_atual()`:
 
       * `user_version` fora de VERSOES_SUPORTADAS (ex.: banco de uma versão
         futura): `VersaoDeBancoNaoSuportadaError` antes de qualquer escrita;
       * banco inexistente, ou arquivo sem nenhuma tabela: `criar_tabelas()`
-        gera o schema v9 direto, sem backup -> situação "criado";
+        gera o schema v10 direto, sem backup -> situação "criado";
       * banco que já passa em `validar_schema_atual()`: nada é gravado, nem
         lock de escrita é pedido -> "atual";
       * banco v5 (ou v6 incompleto): `migrar_schema_v6()` até
-        `migrar_schema_v9()` -- uma transação e um backup por etapa. Se uma
+        `migrar_schema_v10()` -- uma transação e um backup por etapa. Se uma
         etapa falhar, o banco fica na última versão válida (com o backup
         dela) e a próxima inicialização retoma a partir dali;
-      * banco v6, v7 ou v8: só as migrações que faltam -> "migrado".
+      * banco v6, v7, v8 ou v9: só as migrações que faltam -> "migrado".
 
     `criar_tabelas()` nunca é chamada sobre um banco existente. Ao final, o
     banco precisa passar em `validar_schema_atual()`; caso contrário,
@@ -1658,31 +1896,33 @@ def preparar_banco():
 
     Retorna {"situacao": "criado" | "migrado" | "atual",
              "migracao": dict | None (v6), "migracao_v7": dict | None,
-             "migracao_v8": dict | None, "migracao_v9": dict | None}.
+             "migracao_v8": dict | None, "migracao_v9": dict | None,
+             "migracao_v10": dict | None}.
     """
     caminho_banco = NOME_DO_BANCO
-    migracao_v6 = migracao_v7 = migracao_v8 = migracao_v9 = None
+    migracao_v6 = migracao_v7 = migracao_v8 = migracao_v9 = migracao_v10 = None
     if not os.path.exists(caminho_banco) or _banco_existente_vazio(caminho_banco):
         criar_tabelas()
         situacao = "criado"
     elif validar_schema_atual(caminho_banco)["ok"]:
         return {"situacao": "atual", "migracao": None, "migracao_v7": None, "migracao_v8": None,
-                "migracao_v9": None}
+                "migracao_v9": None, "migracao_v10": None}
     else:
         if not validar_migracao_v6(caminho_banco)["ok"]:
             migracao_v6 = migrar_schema_v6(caminho_banco)
         migracao_v7 = migrar_schema_v7(caminho_banco)
         migracao_v8 = migrar_schema_v8(caminho_banco)
         migracao_v9 = migrar_schema_v9(caminho_banco)
+        migracao_v10 = migrar_schema_v10(caminho_banco)
         executou = any(m is not None and m["executado"]
-                       for m in (migracao_v6, migracao_v7, migracao_v8, migracao_v9))
+                       for m in (migracao_v6, migracao_v7, migracao_v8, migracao_v9, migracao_v10))
         situacao = "migrado" if executou else "atual"
 
     validacao = validar_schema_atual(caminho_banco)
     if not validacao["ok"]:
         raise BancoNaoPreparadoError(validacao)
     return {"situacao": situacao, "migracao": migracao_v6, "migracao_v7": migracao_v7,
-            "migracao_v8": migracao_v8, "migracao_v9": migracao_v9}
+            "migracao_v8": migracao_v8, "migracao_v9": migracao_v9, "migracao_v10": migracao_v10}
 
 
 # RNF05: PBKDF2-HMAC-SHA256 (stdlib, sem dependência nova) com salt aleatório
