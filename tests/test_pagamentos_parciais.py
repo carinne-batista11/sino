@@ -1400,3 +1400,449 @@ class TestIntegracao610(TestePagamentos):
         db.encerrar_recorrencia(ids[0])
         self.assertEqual(self.consultar("SELECT COUNT(*) FROM contas WHERE id IN (?, ?)", (ids[1], ids[2])), [(2,)])
         self.invariante()
+
+
+class TestEtapa4VencimentoColetivo(TestePagamentos):
+    """Sino 6.10, etapa 4 da integração: "Este mês em diante" com novo
+    vencimento. H2: as ocorrências seguintes com pagamentos (ativos ou
+    estornados) ficam no mesmo mês e ano, só com o novo dia; as demais seguem
+    a série. I1: a selecionada pode mudar de mês com os próprios pagamentos.
+    I2: numa série anual, o ano de uma ocorrência paga que era a cobrança do
+    ano não ganha outra cobrança (mensais pagas só ocupam o próprio mês). I4:
+    a selecionada no mês de uma seguinte com pagamentos, depois dele, ou num
+    ano anual ocupado -- recusa integral, nada gravado. I3 (camada de banco):
+    ocorrencias_mantidas_no_vencimento. Hoje fixo: 15/09/2026."""
+
+    def da(self, serie_id, competencia):
+        linhas = self.consultar("SELECT id FROM contas WHERE serie_id = ? AND data_vencimento LIKE ?",
+                                (serie_id, f"{competencia}%"))
+        self.assertEqual(len(linhas), 1, (competencia, linhas))
+        return linhas[0][0]
+
+    def preparar(self, conta, tipo):
+        if tipo == "ativo":
+            self.pagar(conta, 40_00, "2026-09-05")
+        elif tipo == "quitada":
+            db.marcar_conta_como_paga(conta, "2026-09-05")
+        elif tipo in ("estornado", "excluido"):
+            self.pagar(conta, 40_00, "2026-09-05")
+            pid = self.consultar("SELECT MAX(id) FROM pp_pagamentos")[0][0]
+            pagamentos.estornar_pagamento(pid, (40_00, "2026-09-05"))
+            if tipo == "excluido":
+                pagamentos.excluir_estornado(pid, conta)
+        elif tipo == "varios":
+            self.pagar(conta, 30_00, "2026-09-05")
+            self.pagar(conta, 20_00, "2026-09-06")
+            pid = self.consultar("SELECT MAX(id) FROM pp_pagamentos")[0][0]
+            pagamentos.estornar_pagamento(pid, (20_00, "2026-09-06"))
+        elif tipo == "editada":
+            db.editar_conta_ocorrencia(conta, nome="Editada")
+        elif tipo == "editada_paga":
+            db.editar_conta_ocorrencia(conta, nome="Editada")
+            self.pagar(conta, 40_00, "2026-09-05")
+        else:
+            self.assertEqual(tipo, "nenhum")
+
+    def venc(self, conta):
+        return self.consultar("SELECT data_vencimento FROM contas WHERE id = ?", (conta,))[0][0]
+
+    def lista(self, serie_id):
+        return [d for (d,) in self.consultar("SELECT data_vencimento FROM contas WHERE serie_id = ? ORDER BY posicao",
+                                             (serie_id,))]
+
+    def financeiro(self, conta):
+        s = pagamentos.obter_situacao(conta)
+        return (s["valor_centavos"], s["pago_centavos"], s["saldo_centavos"], s["status"], s["data_pagamento"],
+                self.consultar("SELECT id, conta_id, valor_centavos, data_pagamento, tipo, estornado_em "
+                               "FROM pp_pagamentos WHERE conta_id = ? ORDER BY id", (conta,)))
+
+    def tudo(self):
+        return (self.consultar("SELECT * FROM contas ORDER BY id"),
+                self.consultar("SELECT * FROM series_recorrencia ORDER BY id"),
+                self.consultar("SELECT * FROM pp_pagamentos ORDER BY id"))
+
+    def conferir_serie(self, serie_id):
+        """Sem dois vencimentos no mesmo mês; posições 1..n em ordem de vaga; integridade e FK."""
+        linhas = self.consultar("SELECT posicao, data_vencimento, data_prevista FROM contas WHERE serie_id = ? "
+                                "ORDER BY posicao", (serie_id,))
+        meses = [v[:7] for _, v, _ in linhas]
+        self.assertEqual(len(meses), len(set(meses)), meses)
+        self.assertEqual([p for p, _, _ in linhas], list(range(1, len(linhas) + 1)))
+        self.assertEqual([pr for _, _, pr in linhas], sorted(pr for _, _, pr in linhas))
+        self.assertEqual(self.consultar("PRAGMA integrity_check"), [("ok",)])
+        self.assertEqual(self.consultar("PRAGMA foreign_key_check"), [])
+
+    def mensal(self, inicio="2026-11-10", termino=None):
+        serie_id, _ = self.serie(100.0, vencimento=inicio, termino=termino)
+        return serie_id
+
+    def anual(self, termino=None):
+        serie_id, _ = self.serie(1800.0, frequencia="anual", vencimento="2026-11-10", termino=termino)
+        return serie_id
+
+    def anos(self, serie_id):
+        return [int(v[:4]) for v in self.lista(serie_id)]
+
+    # ------------------------------------------------ H2: proteção financeira
+    def test_h2_tipos_de_pagamento_e_edicao(self):
+        esperado = {"ativo": "2027-01", "quitada": "2027-01", "estornado": "2027-01", "varios": "2027-01",
+                    "editada_paga": "2027-01",                                 # H2
+                    "excluido": "2027-02", "nenhum": "2027-02", "editada": "2027-02"}  # seguem a série (D2)
+        for tipo, mes in esperado.items():
+            with self.subTest(tipo=tipo):
+                serie_id = self.mensal()
+                jan = self.da(serie_id, "2027-01")
+                self.preparar(jan, tipo)
+                antes = self.financeiro(jan)
+                self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10"))
+                self.assertEqual(self.venc(jan)[:7], mes)
+                self.assertEqual(self.financeiro(jan), antes)                  # pagamentos e situação iguais
+                self.conferir_serie(serie_id)
+
+    def test_h2_quitada_integralmente_continua_quitada(self):
+        serie_id = self.mensal()
+        jan = self.da(serie_id, "2027-01")
+        self.pagar(jan, 100_00, "2026-09-05")
+        self.assertEqual(self.status(jan), ("pago", "2026-09-05"))
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-20")
+        self.assertEqual((self.venc(jan), self.status(jan)), ("2027-01-20", ("pago", "2026-09-05")))
+        self.conferir_serie(serie_id)
+
+    def test_h2_so_o_dia_muda_dentro_do_mes(self):
+        for inicio, nova, esperado in (("2026-11-10", "2026-11-20", "2027-01-20"),
+                                       ("2026-11-20", "2026-11-10", "2027-01-10")):
+            with self.subTest(nova=nova):
+                serie_id = self.mensal(inicio)
+                jan = self.da(serie_id, "2027-01")
+                self.preparar(jan, "ativo")
+                self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento=nova))
+                self.assertEqual(self.venc(jan), esperado)
+                self.conferir_serie(serie_id)
+
+    def test_h2_novembro_para_dezembro_com_janeiro_protegido(self):
+        serie_id = self.mensal()
+        jan, dez = self.da(serie_id, "2027-01"), self.da(serie_id, "2026-12")
+        self.preparar(jan, "ativo")
+        total = len(self.lista(serie_id))
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        self.assertEqual(self.lista(serie_id)[:4], ["2026-12-10", "2027-01-10", "2027-02-10", "2027-03-10"])
+        self.assertEqual((self.venc(jan), self.venc(dez)), ("2027-01-10", "2027-02-10"))  # dez pula jan
+        self.assertEqual(len(self.lista(serie_id)), total)
+        self.conferir_serie(serie_id)
+
+    def test_h2_janeiro_para_fevereiro_com_marco_protegido(self):
+        serie_id = self.mensal()
+        mar, fev = self.da(serie_id, "2027-03"), self.da(serie_id, "2027-02")
+        self.preparar(mar, "quitada")
+        db.editar_conta_serie(self.da(serie_id, "2027-01"), data_vencimento="2027-02-10")
+        self.assertEqual(self.lista(serie_id)[:5], ["2026-11-10", "2026-12-10", "2027-02-10", "2027-03-10",
+                                                    "2027-04-10"])
+        self.assertEqual((self.venc(mar), self.venc(fev)), ("2027-03-10", "2027-04-10"))
+        self.conferir_serie(serie_id)
+
+    def test_h2_virada_de_ano(self):
+        serie_id = self.mensal()
+        fev = self.da(serie_id, "2027-02")
+        self.preparar(fev, "estornado")
+        db.editar_conta_serie(self.da(serie_id, "2026-12"), data_vencimento="2027-01-10")
+        self.assertEqual(self.lista(serie_id)[:5], ["2026-11-10", "2027-01-10", "2027-02-10", "2027-03-10",
+                                                    "2027-04-10"])
+        self.assertEqual(self.venc(fev), "2027-02-10")
+        self.conferir_serie(serie_id)
+
+    def test_h2_protegida_fora_da_grade_anual(self):
+        serie_id = self.mensal()
+        jan = self.da(serie_id, "2027-01")
+        self.preparar(jan, "ativo")
+        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        self.assertEqual(self.lista(serie_id), ["2026-11-10", "2027-01-10", "2027-11-10"])
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-11-20")
+        self.assertEqual(self.lista(serie_id), ["2026-11-20", "2027-01-20", "2027-11-20"])  # nov/2027 continua
+        self.conferir_serie(serie_id)
+
+    def test_h2_varias_protegidas(self):
+        serie_id = self.mensal()
+        jan, mar = self.da(serie_id, "2027-01"), self.da(serie_id, "2027-03")
+        self.preparar(jan, "ativo")
+        self.preparar(mar, "varios")
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        self.assertEqual(self.lista(serie_id)[:6], ["2026-12-10", "2027-01-10", "2027-02-10", "2027-03-10",
+                                                    "2027-04-10", "2027-05-10"])
+        self.assertEqual((self.venc(jan), self.venc(mar)), ("2027-01-10", "2027-03-10"))
+        self.conferir_serie(serie_id)
+
+    def test_h2_protegidas_antes_e_no_fim(self):
+        serie_id = self.mensal("2026-10-10")
+        primeira, ultima = self.da(serie_id, "2026-10"), self.da(serie_id, "2027-10")
+        self.preparar(primeira, "ativo")
+        self.preparar(ultima, "ativo")
+        total = len(self.lista(serie_id))
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        lista = self.lista(serie_id)
+        self.assertEqual((self.venc(primeira), self.venc(ultima)), ("2026-10-10", "2027-10-10"))
+        self.assertEqual((lista[0], lista[1], len(lista)), ("2026-10-10", "2026-12-10", total))
+        self.assertIn("2027-11-10", lista)                                           # a que caía em out pula
+        self.conferir_serie(serie_id)
+
+    def test_h2_valor_e_vencimento_juntos(self):
+        serie_id = self.mensal()
+        jan, mar = self.da(serie_id, "2027-01"), self.da(serie_id, "2027-03")
+        self.preparar(jan, "varios")
+        self.preparar(mar, "estornado")
+        ids_antes = sorted(i for (i,) in self.consultar("SELECT id FROM contas WHERE serie_id = ?", (serie_id,)))
+        registros = self.consultar("SELECT * FROM pp_pagamentos ORDER BY id")
+        self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10",
+                                              valor=120.0))
+        self.assertEqual(db.preparar_banco()["situacao"], "atual")                     # nova abertura
+        self.assertEqual(self.consultar("SELECT * FROM pp_pagamentos ORDER BY id"), registros)
+        self.assertEqual(self.consultar("SELECT data_vencimento, valor FROM contas WHERE id IN (?, ?) ORDER BY id",
+                                        (jan, mar)), [("2027-01-10", 100.0), ("2027-03-10", 100.0)])
+        ids_depois = sorted(i for (i,) in self.consultar("SELECT id FROM contas WHERE serie_id = ?", (serie_id,)))
+        self.assertEqual(ids_antes, ids_depois)                                        # nada apagado ou criado
+        for conta in (jan, mar):
+            s = pagamentos.obter_situacao(conta)
+            self.assertEqual(s["pago_centavos"] + s["saldo_centavos"], s["valor_centavos"])
+        self.conferir_serie(serie_id)
+
+    def test_h2_termino_permite_so_o_dia_e_recusa_o_mes(self):
+        serie_id = self.mensal(termino="2027-03")
+        jan = self.da(serie_id, "2027-01")
+        self.preparar(jan, "ativo")
+        antes = self.tudo()
+        self.assertFalse(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10"))
+        self.assertEqual(self.tudo(), antes)
+        self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-11-20"))
+        self.assertEqual(self.lista(serie_id), ["2026-11-20", "2026-12-20", "2027-01-20", "2027-02-20",
+                                                "2027-03-20"])
+        self.conferir_serie(serie_id)
+
+    def test_d5_continua_valendo(self):
+        serie_id = self.mensal()
+        with self.assertRaises(db.VencimentoAntesDaParcelaAnteriorError):
+            db.editar_conta_serie(self.da(serie_id, "2027-01"), data_vencimento="2026-12-20")
+
+    # ------------------------------------------------ I1: a selecionada
+    def test_i1_selecionada_com_pagamento_muda_de_mes(self):
+        serie_id = self.mensal()
+        jan, mar = self.da(serie_id, "2027-01"), self.da(serie_id, "2027-03")
+        self.preparar(jan, "ativo")
+        self.preparar(mar, "ativo")
+        antes = self.financeiro(jan)
+        self.assertTrue(db.editar_conta_serie(jan, data_vencimento="2027-02-10"))
+        self.assertEqual(self.venc(jan), "2027-02-10")                                # a escolha expressa
+        self.assertEqual(self.financeiro(jan), antes)                                 # mesmos pagamentos
+        self.assertEqual(self.venc(mar), "2027-03-10")                                # a outra fica
+        self.conferir_serie(serie_id)
+
+    def test_i1_selecionada_quitada_e_estornada(self):
+        for tipo in ("quitada", "estornado"):
+            with self.subTest(tipo=tipo):
+                serie_id = self.mensal()
+                jan = self.da(serie_id, "2027-01")
+                self.preparar(jan, tipo)
+                antes = self.financeiro(jan)
+                self.assertTrue(db.editar_conta_serie(jan, data_vencimento="2027-02-15"))
+                self.assertEqual((self.venc(jan), self.financeiro(jan)), ("2027-02-15", antes))
+                self.conferir_serie(serie_id)
+
+    def test_i1_selecionada_sem_pagamento(self):
+        serie_id = self.mensal()
+        jan = self.da(serie_id, "2027-01")
+        db.editar_conta_serie(jan, data_vencimento="2027-02-10")
+        self.assertEqual(self.lista(serie_id)[2:4], ["2027-02-10", "2027-03-10"])
+        self.conferir_serie(serie_id)
+
+    # ------------------------------------------------ I2: anual
+    def test_i2_ano_pago_nao_ganha_outra_cobranca(self):
+        for tipo in ("ativo", "quitada", "estornado", "varios"):
+            with self.subTest(tipo=tipo):
+                serie_id = self.anual()
+                nov27 = self.da(serie_id, "2027-11")
+                self.preparar(nov27, tipo)
+                self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10"))
+                self.assertEqual(self.lista(serie_id), ["2026-12-10", "2027-11-10"])      # sem dez/2027
+                self.assertEqual(self.consultar("SELECT horizonte_gerado_ate FROM series_recorrencia WHERE id = ?",
+                                                (serie_id,)), [("2027-12-10",)])
+                db.gerar_ocorrencias_sob_demanda(serie_id, "2029-12")                     # próximo ano elegível
+                self.assertEqual(self.lista(serie_id), ["2026-12-10", "2027-11-10", "2028-12-10", "2029-12-10"])
+                self.assertEqual(len(self.anos(serie_id)), len(set(self.anos(serie_id))))
+                self.conferir_serie(serie_id)
+
+    def test_i2_sem_protecao_depois_de_excluir_o_ultimo(self):
+        serie_id = self.anual()
+        nov27 = self.da(serie_id, "2027-11")
+        self.preparar(nov27, "excluido")
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        self.assertEqual(self.lista(serie_id), ["2026-12-10", "2027-12-10"])                # segue a série
+
+    def test_i2_com_termino(self):
+        for termino, aceita in (("2029-12", True), ("2029-11", False)):
+            with self.subTest(termino=termino):
+                serie_id = self.anual(termino)
+                self.preparar(self.da(serie_id, "2027-11"), "ativo")
+                antes = self.lista(serie_id)
+                ok = db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+                self.assertEqual(ok, aceita)
+                esperado = ["2026-12-10", "2027-11-10", "2028-12-10", "2029-12-10"] if aceita else antes
+                self.assertEqual(self.lista(serie_id), esperado)
+
+    def test_i2_selecionada_paga_muda_de_mes_no_mesmo_ano(self):
+        serie_id = self.anual()
+        nov27 = self.da(serie_id, "2027-11")
+        self.preparar(nov27, "ativo")
+        antes = self.financeiro(nov27)
+        self.assertTrue(db.editar_conta_serie(nov27, data_vencimento="2027-12-10"))           # I1
+        self.assertEqual(self.lista(serie_id), ["2026-11-10", "2027-12-10"])
+        self.assertEqual(self.financeiro(nov27), antes)
+        db.gerar_ocorrencias_sob_demanda(serie_id, "2028-12")
+        self.assertEqual(self.lista(serie_id), ["2026-11-10", "2027-12-10", "2028-12-10"])
+
+    def test_i2_editada_sem_pagamentos_segue_as_regras_proprias(self):
+        serie_id = self.anual()
+        nov27 = self.da(serie_id, "2027-11")
+        self.preparar(nov27, "editada")
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        self.assertEqual(self.venc(nov27), "2027-12-10")                                     # D2: na grade, anda
+
+    def test_i2_pago_fora_da_grade_nao_ocupa_o_ano(self):
+        """Um mês pago herdado de antes de mensal -> anual ocupa só o mês."""
+        serie_id = self.mensal()
+        self.preparar(self.da(serie_id, "2027-01"), "ativo")
+        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        self.assertEqual(self.lista(serie_id), ["2026-12-10", "2027-01-10", "2027-12-10"])
+
+    def test_i2_mensal_paga_nao_bloqueia_o_ano(self):
+        serie_id = self.mensal()
+        jan = self.da(serie_id, "2027-01")
+        self.preparar(jan, "quitada")
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        lista = self.lista(serie_id)
+        self.assertEqual(sum(1 for v in lista if v.startswith("2027-")), 12)                # o ano segue cheio
+        self.conferir_serie(serie_id)
+
+    def test_i2_reabrir_e_gerar_sem_duplicidade(self):
+        serie_id = self.anual()
+        self.preparar(self.da(serie_id, "2027-11"), "ativo")
+        db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
+        self.assertEqual(db.preparar_banco()["situacao"], "atual")                         # nova abertura
+        for _ in range(2):
+            db.gerar_ocorrencias_sob_demanda(serie_id, "2030-12")
+        self.assertEqual(self.anos(serie_id), [2026, 2027, 2028, 2029, 2030])
+        self.conferir_serie(serie_id)
+
+    # ------------------------------------------------ I4: conflitos e atomicidade
+    def recusa(self, conta, data, motivo):
+        antes = self.tudo()
+        with self.assertRaises(db.CompetenciaComPagamentosError) as ctx:
+            db.editar_conta_serie(conta, data_vencimento=data, nome="Outro nome", valor=150.0)
+        self.assertEqual(ctx.exception.motivo, motivo)
+        self.assertEqual(str(ctx.exception), db.MENSAGENS_COMPETENCIA_COM_PAGAMENTOS[motivo])
+        self.assertEqual(self.tudo(), antes)                                           # nada gravado
+
+    def test_i4_mesmo_mes_de_uma_paga(self):
+        for tipo in ("ativo", "quitada", "estornado"):
+            with self.subTest(tipo=tipo):
+                serie_id = self.mensal()
+                self.preparar(self.da(serie_id, "2027-01"), tipo)
+                self.recusa(self.da(serie_id, "2026-11"), "2027-01-20", "mesmo_mes")
+
+    def test_i4_selecionada_paga_no_mes_de_outra_paga(self):
+        serie_id = self.mensal()
+        jan, mar = self.da(serie_id, "2027-01"), self.da(serie_id, "2027-03")
+        self.preparar(jan, "ativo")
+        self.preparar(mar, "ativo")
+        self.recusa(jan, "2027-03-05", "mesmo_mes")
+
+    def test_i4_depois_de_uma_paga(self):
+        serie_id = self.mensal()
+        self.preparar(self.da(serie_id, "2027-01"), "ativo")
+        self.recusa(self.da(serie_id, "2026-11"), "2027-02-10", "depois")
+        self.recusa(self.da(serie_id, "2026-11"), "2028-06-10", "depois")
+
+    def test_i4_ate_o_mes_anterior_a_paga_e_permitido(self):
+        serie_id = self.mensal()
+        jan = self.da(serie_id, "2027-01")
+        self.preparar(jan, "ativo")
+        self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-31"))
+        self.assertEqual(self.lista(serie_id)[:3], ["2026-12-31", "2027-01-31", "2027-02-28"])
+        self.assertEqual(self.venc(jan), "2027-01-31")
+        self.conferir_serie(serie_id)
+
+    def test_i4_ano_anual_ocupado(self):
+        serie_id = self.anual()
+        self.preparar(self.da(serie_id, "2027-11"), "ativo")
+        self.recusa(self.da(serie_id, "2026-11"), "2027-03-10", "ano")
+        self.recusa(self.da(serie_id, "2026-11"), "2028-03-10", "depois")
+
+    def test_i4_ano_livre_e_mensal_paga_fora_da_grade(self):
+        """Na anual, um mês pago herdado de mensal ocupa só o próprio mês."""
+        serie_id = self.mensal()
+        self.preparar(self.da(serie_id, "2027-03"), "ativo")
+        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2027-01-10"))
+        self.assertEqual(self.lista(serie_id)[:2], ["2027-01-10", "2027-03-10"])
+        self.conferir_serie(serie_id)
+
+    def test_i4_editada_fora_da_grade_com_pagamentos(self):
+        serie_id = self.mensal()
+        jan = self.da(serie_id, "2027-01")
+        self.preparar(jan, "ativo")
+        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        db.editar_conta_ocorrencia(jan, nome="Editada")                     # D2: fica, e com pagamentos
+        self.recusa(self.da(serie_id, "2026-11"), "2027-01-05", "mesmo_mes")
+
+    def test_i4_falha_no_meio_desfaz_tudo(self):
+        serie_id = self.mensal()
+        jan = self.da(serie_id, "2027-01")
+        self.preparar(jan, "varios")
+        antes = self.tudo()
+        with mock.patch.object(db, "_renumerar_segmento", side_effect=RuntimeError("falha simulada")):
+            with self.assertRaises(RuntimeError):
+                db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10", valor=130.0)
+        self.assertEqual(self.tudo(), antes)                                           # ROLLBACK completo
+        self.conferir_serie(serie_id)
+
+    # ------------------------------------------------ calendário
+    def test_fevereiro_e_dias_29_30_31(self):
+        casos = (("2026-11-15", "2026-11", "2026-11-29", "2027-02", "2027-02-28"),
+                 ("2026-11-15", "2026-11", "2026-11-30", "2027-02", "2027-02-28"),
+                 ("2026-12-15", "2026-12", "2026-12-31", "2027-02", "2027-02-28"),
+                 ("2027-11-28", "2027-11", "2027-11-29", "2028-02", "2028-02-29"))   # bissexto
+        for inicio, sel, nova, alvo, esperado in casos:
+            with self.subTest(nova=nova):
+                serie_id = self.mensal(inicio)
+                conta = self.da(serie_id, alvo)
+                self.preparar(conta, "ativo")
+                self.assertTrue(db.editar_conta_serie(self.da(serie_id, sel), data_vencimento=nova))
+                self.assertEqual(self.venc(conta), esperado)
+                self.conferir_serie(serie_id)
+
+    def test_dia_ajustado_volta_nos_meses_longos(self):
+        """Sem arrasto: a protegida de fevereiro fica em 28, as de março em diante voltam a 31."""
+        serie_id = self.mensal("2026-12-15")
+        self.preparar(self.da(serie_id, "2027-02"), "ativo")
+        db.editar_conta_serie(self.da(serie_id, "2026-12"), data_vencimento="2026-12-31")
+        self.assertEqual(self.lista(serie_id)[:4], ["2026-12-31", "2027-01-31", "2027-02-28", "2027-03-31"])
+
+    # ------------------------------------------------ I3 (camada de banco)
+    def test_i3_mantidas(self):
+        serie_id = self.mensal()
+        nov, jan = self.da(serie_id, "2026-11"), self.da(serie_id, "2027-01")
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(nov, "2026-12-10"), [])     # sem pagamentos
+        self.preparar(jan, "ativo")
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(nov, "2026-12-10"), ["2027-01-10"])
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(nov, "2026-11-20"), [])     # só o dia
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(jan, "2027-02-10"), [])     # a selecionada
+
+    def test_i3_sem_aviso_quando_seria_recusado(self):
+        serie_id = self.mensal(termino="2027-03")
+        nov, dez, jan = self.da(serie_id, "2026-11"), self.da(serie_id, "2026-12"), self.da(serie_id, "2027-01")
+        self.preparar(jan, "ativo")
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(nov, "2027-01-20"), [])     # I4 mesmo mês
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(nov, "2027-02-10"), [])     # I4 depois
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(nov, "2026-12-10"), [])     # término
+        self.assertFalse(db.editar_conta_serie(nov, data_vencimento="2026-12-10"))
+        self.assertEqual(db.ocorrencias_mantidas_no_vencimento(dez, "2026-11-20"), [])     # D5
+        with self.assertRaises(db.VencimentoAntesDaParcelaAnteriorError):
+            db.editar_conta_serie(dez, data_vencimento="2026-11-20")

@@ -4711,7 +4711,8 @@ def main(page: ft.Page):
                         try:
                             sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
                         except (limites.LimiteDeCaracteresError,
-                                database.VencimentoAntesDaParcelaAnteriorError) as erro:
+                                database.VencimentoAntesDaParcelaAnteriorError,
+                                database.CompetenciaComPagamentosError) as erro:  # I4: recusa integral
                             mostrar_recusa(erro)
                             return
                         except database.ValorMenorQuePagoError as recusa:
@@ -4742,22 +4743,37 @@ def main(page: ft.Page):
                     # ocorrências seguintes com histórico de pagamentos mantêm o valor.
                     protegidas = (database.ocorrencias_protegidas_no_valor(conta["id"])
                                   if "valor" in campos_alterados else [])
-                    conteudo_escopo = texto_escopo
+                    # I3: com um novo vencimento, as seguintes com pagamentos que só
+                    # não mudam de mês por causa da proteção (H2). Mudar só o dia não
+                    # conta, a selecionada nunca conta, e uma alteração que seria
+                    # recusada (D5, I4, término) não tem aviso.
+                    mantidas = (database.ocorrencias_mantidas_no_vencimento(conta["id"],
+                                                                             campos_alterados["data_vencimento"])
+                                if "data_vencimento" in campos_alterados else [])
+
+                    def aviso_do_escopo(dado, texto):
+                        return ft.Container(data=dado, bgcolor=cores.aviso_fundo, border_radius=10, padding=12,
+                                            content=ft.Text(texto, size=13, color=cores.aviso_texto))
+
+                    def ocorrencias(n):
+                        return f"{n} {'ocorrência' if n == 1 else 'ocorrências'}"
+
+                    avisos_escopo = []
                     if protegidas:
-                        n = len(protegidas)
-                        conteudo_escopo = ft.Column(tight=True, spacing=12, controls=[
-                            texto_escopo,
-                            ft.Container(
-                                data="pp_aviso_protegidas",
-                                bgcolor=cores.aviso_fundo, border_radius=10, padding=12,
-                                content=ft.Text(
-                                    "Em \"Este mês em diante\", algumas ocorrências possuem histórico de "
-                                    "pagamentos e manterão seus valores atuais "
-                                    f"({n} {'ocorrência' if n == 1 else 'ocorrências'}). "
-                                    "As demais serão atualizadas.",
-                                    size=13, color=cores.aviso_texto),
-                            ),
-                        ])
+                        avisos_escopo.append(aviso_do_escopo(
+                            "pp_aviso_protegidas",
+                            "Em \"Este mês em diante\", algumas ocorrências possuem histórico de "
+                            f"pagamentos e manterão seus valores atuais ({ocorrencias(len(protegidas))}). "
+                            "As demais serão atualizadas."))
+                    if mantidas:
+                        avisos_escopo.append(aviso_do_escopo(
+                            "pp_aviso_vencimento",
+                            "Ocorrências com pagamentos registrados manterão seus meses originais "
+                            f"({ocorrencias(len(mantidas))})."))
+                    conteudo_escopo = texto_escopo
+                    if avisos_escopo:
+                        conteudo_escopo = ft.Column(tight=True, spacing=12, controls=[texto_escopo, *avisos_escopo],
+                                                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
                     dialogo = ft.AlertDialog(
                         modal=True,
                         title=ft.Text("Como deseja aplicar esta alteração?", color=cores.texto_principal),

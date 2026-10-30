@@ -11,6 +11,7 @@ Hoje fixo: 15/09/2026.
 
 import os
 import sys
+from datetime import datetime
 from unittest import mock
 
 import apoio_banco
@@ -1517,3 +1518,116 @@ class TestExcluirEstornadoNosDetalhes(TesteInterfacePagamentos):
         self.assertEqual(historico[historico.index("05/09/2026"):][:2], ["05/09/2026", "Pagamento parcial"])
         self.assertIn("Pagamento do saldo", historico)
         self.assertIn("Conta quitada", historico)
+
+
+class TestEtapa4AvisoDoVencimento(TesteInterfacePagamentos):
+    """Sino 6.10, etapa 4 da integração (I3/I4 pela tela): no diálogo "Como
+    deseja aplicar esta alteração?", com um novo vencimento, o aviso
+    "Ocorrências com pagamentos registrados manterão seus meses originais
+    (N ...)" aparece só quando a proteção realmente impede uma mudança de mês
+    (só o dia não conta; a selecionada não conta; sem pagamentos, nada; uma
+    alteração que seria recusada, nada). Convive com o aviso do valor. A
+    recusa da I4 mostra a mensagem e não grava nada. Hoje fixo: 15/09/2026;
+    série mensal desde 10/09/2026 (setembro é a selecionada)."""
+
+    NOME = "Série I3"
+
+    def setUp(self):
+        super().setUp()
+        _, self.ids = db.criar_serie_recorrente(self.usuario_id, self.NOME, 100.0, "2026-09-10", "mensal")
+        self.set, self.out, self.nov, self.dez, self.jan = self.ids[:5]
+
+    def pagar(self, conta):
+        pagamentos.registrar_pagamento_parcial(conta, 40_00, "2026-09-05")
+
+    def escopo(self, nova_data, valor=None):
+        """Detalhes de setembro › Editar › calendário do vencimento › Salvar."""
+        self.abrir_detalhes(self.NOME)
+        self.clicar(self.botao("Editar"))
+        seletor = [c.args[0] for c in self.pagina.overlay.append.call_args_list
+                   if isinstance(c.args[0], ft.DatePicker)][-1]
+        seletor.value = datetime.fromisoformat(nova_data)
+        seletor.on_change(Evento(self.pagina, seletor))
+        if valor is not None:
+            campo = self.campo("Valor")
+            campo.value = valor
+            campo.on_change(Evento(self.pagina, campo))
+        self.clicar(self.botao("Salvar alterações"))
+        dialogo = self.dialogo()
+        self.assertEqual(dialogo.title.value, "Como deseja aplicar esta alteração?")
+        return dialogo
+
+    def avisos(self, dialogo):
+        return {c.data: c.content.value for c in percorrer(dialogo.content)
+                if isinstance(c, ft.Container) and (c.data or "").startswith("pp_aviso_")}
+
+    def venc(self, conta):
+        return self.consultar("SELECT data_vencimento FROM contas WHERE id = ?", (conta,))[0][0]
+
+    def tudo(self):
+        return (self.consultar("SELECT * FROM contas ORDER BY id"),
+                self.consultar("SELECT * FROM series_recorrencia ORDER BY id"),
+                self.consultar("SELECT * FROM pp_pagamentos ORDER BY id"))
+
+    def test_aviso_com_uma_e_com_varias(self):
+        self.pagar(self.nov)
+        self.assertEqual(self.avisos(self.escopo("2026-10-10")), {
+            "pp_aviso_vencimento": "Ocorrências com pagamentos registrados manterão seus meses originais "
+                                   "(1 ocorrência)."})
+        self.pagar(self.jan)
+        self.assertEqual(self.avisos(self.escopo("2026-10-10"))["pp_aviso_vencimento"],
+                         "Ocorrências com pagamentos registrados manterão seus meses originais (2 ocorrências).")
+
+    def test_sem_aviso_so_com_o_dia(self):
+        self.pagar(self.nov)
+        self.assertEqual(self.avisos(self.escopo("2026-09-20")), {})
+
+    def test_sem_aviso_sem_ocorrencias_com_pagamentos(self):
+        db.editar_conta_ocorrencia(self.nov, nome="Editada")                     # só editada: não conta
+        self.assertEqual(self.avisos(self.escopo("2026-10-10")), {})
+
+    def test_a_selecionada_movida_nao_conta(self):
+        self.pagar(self.set)                                                       # I1: a própria selecionada
+        dialogo = self.escopo("2026-10-10")
+        self.assertEqual(self.avisos(dialogo), {})
+        self.clicar(self.acao_do_dialogo("Este mês em diante"))
+        self.assertEqual(self.venc(self.set), "2026-10-10")                        # mudou de mês, com o pagamento
+        self.assertEqual(pagamentos.obter_situacao(self.set)["pago_centavos"], 40_00)
+
+    def test_avisos_de_valor_e_de_vencimento_juntos(self):
+        self.pagar(self.nov)
+        dialogo = self.escopo("2026-10-10", valor="120,00")
+        avisos = self.avisos(dialogo)
+        self.assertEqual(set(avisos), {"pp_aviso_protegidas", "pp_aviso_vencimento"})
+        self.assertIn("manterão seus valores atuais (1 ocorrência)", avisos["pp_aviso_protegidas"])
+        self.assertIn("manterão seus meses originais (1 ocorrência)", avisos["pp_aviso_vencimento"])
+        ordem = [c.data for c in percorrer(dialogo.content) if isinstance(c, ft.Container) and c.data]
+        self.assertEqual(ordem, ["pp_aviso_protegidas", "pp_aviso_vencimento"])     # valor, depois mês
+
+    def test_dialogo_continua_utilizavel_e_aplica(self):
+        self.pagar(self.nov)
+        dialogo = self.escopo("2026-10-10")
+        self.assertEqual([b.content for b in dialogo.actions], ["Cancelar", "Somente este mês", "Este mês em diante"])
+        self.assertIsInstance(dialogo.content, ft.Column)
+        self.clicar(self.acao_do_dialogo("Este mês em diante"))
+        self.assertEqual(self.dialogo().title.value, "Alteração salva")
+        self.assertEqual((self.venc(self.set), self.venc(self.out), self.venc(self.nov), self.venc(self.dez)),
+                         ("2026-10-10", "2026-12-10", "2026-11-10", "2027-01-10"))  # nov fica; out pula nov
+
+    def test_recusas_da_i4_mostram_a_mensagem_e_nao_gravam(self):
+        self.pagar(self.nov)
+        for data, motivo in (("2026-11-20", "mesmo_mes"), ("2026-12-10", "depois")):
+            with self.subTest(motivo=motivo):
+                antes = self.tudo()
+                dialogo = self.escopo(data)
+                self.assertEqual(self.avisos(dialogo), {})                         # sem aviso de sucesso
+                self.clicar(self.acao_do_dialogo("Este mês em diante"))
+                self.assertIn(db.MENSAGENS_COMPETENCIA_COM_PAGAMENTOS[motivo], self.textos())
+                self.assertNotEqual(self.dialogo().title.value, "Alteração salva")
+                self.assertEqual(self.tudo(), antes)
+
+    def test_somente_este_mes_continua_disponivel(self):
+        self.pagar(self.nov)
+        self.escopo("2026-12-10")
+        self.clicar(self.acao_do_dialogo("Somente este mês"))
+        self.assertEqual((self.venc(self.set), self.venc(self.nov)), ("2026-12-10", "2026-11-10"))

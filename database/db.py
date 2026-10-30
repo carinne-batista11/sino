@@ -3534,6 +3534,136 @@ def _competencias_ocupadas(cursor, serie_id, apos_posicao):
     return {_competencia(linha[0]) for linha in cursor.fetchall()}
 
 
+def _mesmo_mes_com_dia(data_iso, dia):
+    """A data no mesmo mês e ano de `data_iso`, com o `dia` ajustado ao mês (31 -> 28/29/30)."""
+    ano, mes = int(data_iso[:4]), int(data_iso[5:7])
+    return date(ano, mes, _ajustar_dia(ano, mes, dia)).isoformat()
+
+
+def _plano_do_vencimento(conta_id, data_vencimento, frequencia, mes_ancora_atual, data_termino,
+                         futuras, com_pagamentos):
+    """
+    Sino 6.10 (H2, I1, I2, I4) -- plano de "Este mês em diante" com um novo
+    vencimento para a selecionada `conta_id`. Só calcula; não grava. `futuras`
+    = linhas (id, data_prevista, editado_individualmente, data_vencimento) das
+    ocorrências depois da selecionada, em ordem de posição; `com_pagamentos` =
+    ids delas com registros de pagamento, ativos ou estornados (vazio = o
+    comportamento sem a proteção, usado para descobrir quais meses a proteção
+    manteve -- I3).
+
+    - D2 (inalterado): uma EDITADA fora da grade atual mantém data e vaga.
+    - H2: uma ocorrência com pagamentos fica no próprio mês e ano (vencimento
+      e vaga), só com o novo dia ajustado ao mês; nunca é levada a outra
+      competência. A selecionada não está em `futuras`: o novo vencimento
+      dela é a escolha expressa da usuária (I1).
+    - As demais seguem a nova sequência, que pula os meses ocupados pelas que
+      ficam. I2 (série anual): uma que tem pagamentos e estava NA grade anual
+      vigente era a cobrança daquele ano -- o ano fica ocupado e não ganha
+      outra cobrança. Uma com pagamentos fora da grade (ex.: mês herdado de
+      antes de mensal -> anual) ocupa só o próprio mês; numa série mensal,
+      nenhuma ocupa o ano.
+    - I4: a selecionada não pode ir para o mês de uma seguinte com pagamentos
+      ("mesmo_mes"), nem para depois dele ("depois" -- a série sairia da ordem
+      do calendário), nem, numa série anual, para um ano ocupado pela I2
+      ("ano"). Nesses casos `recusa` traz o motivo e quem chama recusa a
+      operação inteira, antes de gravar (CompetenciaComPagamentosError).
+
+    Retorna {"datas": {id: (vencimento, vaga)}, "horizonte": última vaga da
+    nova sequência (para o término), "horizonte_gerado": a mesma ou a vaga
+    do último ano ocupado, se for depois -- a geração sob demanda nunca volta
+    a um ano ocupado --, "fixas_pagamento": ids mantidos no mês por H2,
+    "recusa": None ou o motivo da I4}.
+    """
+    dia_novo = int(data_vencimento[8:10])
+    mes_novo = int(data_vencimento[5:7])
+    avancar = (
+        (lambda ano, mes: _somar_mes(ano, mes, dia_novo))
+        if frequencia == "mensal"
+        else (lambda ano, mes: _somar_ano(ano, mes_novo, dia_novo))
+    )
+    datas = {conta_id: (data_vencimento, data_vencimento)}
+    da_grade, ocupadas, anos_ocupados, fixas_pagamento = [], set(), set(), []
+    for oc_id, prevista, editado, vencimento in futuras:
+        if editado and not _vaga_na_grade(prevista, frequencia, mes_ancora_atual, data_termino):
+            ocupadas.add(_competencia(prevista))                       # D2: fica como está
+        elif oc_id in com_pagamentos:
+            datas[oc_id] = (_mesmo_mes_com_dia(vencimento, dia_novo), _mesmo_mes_com_dia(prevista, dia_novo))
+            ocupadas.update({_competencia(prevista), _competencia(vencimento)})
+            if frequencia == "anual" and _vaga_na_grade(prevista, frequencia, mes_ancora_atual, data_termino):
+                anos_ocupados.add(int(vencimento[:4]))
+            fixas_pagamento.append(oc_id)
+        else:
+            da_grade.append(oc_id)
+    novas_datas = []
+    ultima = data_vencimento
+    while len(novas_datas) < len(da_grade):
+        ano_atual, mes_atual, _ = map(int, ultima.split("-"))
+        ultima = avancar(ano_atual, mes_atual)
+        if _competencia(ultima) not in ocupadas and int(ultima[:4]) not in anos_ocupados:
+            novas_datas.append(ultima)
+    datas.update({oc_id: (nova, nova) for oc_id, nova in zip(da_grade, novas_datas)})
+    horizonte = novas_datas[-1] if novas_datas else data_vencimento
+    vagas_ocupadas = [date(ano, mes_novo, _ajustar_dia(ano, mes_novo, dia_novo)).isoformat() for ano in anos_ocupados]
+
+    # I4: meses (vaga e vencimento real) de TODAS as seguintes com pagamentos,
+    # inclusive uma editada fora da grade, que fica onde está pela D2.
+    meses_com_pagamentos = {c for oc_id, prevista, _, vencimento in futuras if oc_id in com_pagamentos
+                            for c in (_competencia(prevista), _competencia(vencimento))}
+    competencia_nova = _competencia(data_vencimento)
+    recusa = None
+    if competencia_nova in meses_com_pagamentos:
+        recusa = "mesmo_mes"
+    elif meses_com_pagamentos and competencia_nova > min(meses_com_pagamentos):
+        recusa = "depois"
+    elif int(data_vencimento[:4]) in anos_ocupados:
+        recusa = "ano"
+    return {"datas": datas, "horizonte": horizonte, "horizonte_gerado": max([horizonte, *vagas_ocupadas]),
+            "fixas_pagamento": fixas_pagamento, "recusa": recusa}
+
+
+def ocorrencias_mantidas_no_vencimento(conta_id, data_vencimento):
+    """
+    Sino 6.10 (I3): vencimentos das ocorrências seguintes que, em "Este mês em
+    diante" com `data_vencimento` ("AAAA-MM-DD") para a selecionada, MANTÊM o
+    mês por terem pagamentos -- só as que, sem essa proteção, iriam para outro
+    mês ou ano (uma mudança só do dia não conta; a selecionada nunca conta;
+    editadas sem pagamentos seguem a D2 e não contam). Vazia também quando
+    "Este mês em diante" seria recusado (D5, I4 ou término): o aviso só
+    descreve uma alteração que de fato pode ser aplicada. Só leitura.
+    """
+    conexao = conectar()
+    try:
+        cursor = conexao.cursor()
+        linha = cursor.execute("SELECT serie_id, posicao, data_vencimento FROM contas WHERE id = ?",
+                               (conta_id,)).fetchone()
+        if linha is None or linha[0] is None or linha[2] == data_vencimento:
+            return []
+        serie_id, posicao = linha[0], linha[1]
+        serie = cursor.execute("SELECT frequencia, mes_ancora, data_termino, ativa FROM series_recorrencia "
+                               "WHERE id = ?", (serie_id,)).fetchone()
+        if serie is None or serie[3] == 0:
+            return []
+        frequencia, mes_ancora, data_termino, _ = serie
+        anterior = cursor.execute("SELECT data_prevista FROM contas WHERE serie_id = ? AND posicao < ? "
+                                  "ORDER BY posicao DESC LIMIT 1", (serie_id, posicao)).fetchone()
+        if anterior is not None and _competencia(data_vencimento) <= _competencia(anterior[0]):
+            return []                                                   # D5: seria recusado
+        futuras = cursor.execute(
+            "SELECT id, data_prevista, editado_individualmente, data_vencimento FROM contas "
+            "WHERE serie_id = ? AND posicao > ? ORDER BY posicao", (serie_id, posicao)).fetchall()
+        com_pagamentos = set(_contas_com_pagamentos(cursor, "serie_id = ? AND posicao > ?", (serie_id, posicao)))
+    finally:
+        conexao.close()
+    com = _plano_do_vencimento(conta_id, data_vencimento, frequencia, mes_ancora, data_termino,
+                               futuras, com_pagamentos)
+    if com["recusa"] is not None or (data_termino is not None and _competencia(com["horizonte"]) > data_termino):
+        return []                                                       # I4 ou término: seria recusado
+    sem = _plano_do_vencimento(conta_id, data_vencimento, frequencia, mes_ancora, data_termino, futuras, set())
+    vencimentos = {oc_id: vencimento for oc_id, _, _, vencimento in futuras}
+    return [vencimentos[oc_id] for oc_id in com["fixas_pagamento"]
+            if oc_id in sem["datas"] and _competencia(sem["datas"][oc_id][0]) != _competencia(vencimentos[oc_id])]
+
+
 def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
                             data_termino=None, categoria_id=None, descricao=None):
     """
@@ -4357,6 +4487,36 @@ MENSAGEM_VENCIMENTO_ANTES_DA_PARCELA_ANTERIOR = (
 )
 
 
+MENSAGEM_COMPETENCIA_COM_PAGAMENTOS = (
+    "O mês escolhido já tem uma ocorrência com pagamentos registrados desta recorrência. "
+    "Escolha outro mês ou altere somente esta ocorrência."
+)
+
+MENSAGENS_COMPETENCIA_COM_PAGAMENTOS = {
+    "mesmo_mes": MENSAGEM_COMPETENCIA_COM_PAGAMENTOS,
+    "depois": "Há uma ocorrência com pagamentos registrados desta recorrência antes do mês escolhido. "
+              "Escolha um mês anterior a ela ou altere somente esta ocorrência.",
+    "ano": "O ano escolhido já tem uma ocorrência com pagamentos registrados desta recorrência anual. "
+           "Escolha outro ano ou altere somente esta ocorrência.",
+}
+
+
+class CompetenciaComPagamentosError(ValueError):
+    """
+    Sino 6.10 (I4, complementar à I1): "Este mês em diante" levaria a
+    selecionada para o mesmo mês de uma ocorrência seguinte que tem pagamentos
+    (e por isso fica no mês, H2) -- seriam duas cobranças no mesmo mês --, para
+    depois desse mês (a série sairia da ordem do calendário) ou, numa série
+    anual, para um ano já ocupado por uma ocorrência paga (I2). Recusado
+    integralmente, antes de qualquer gravação; nada é excluído, substituído ou
+    fundido. `motivo` = "mesmo_mes", "depois" ou "ano".
+    """
+
+    def __init__(self, motivo="mesmo_mes"):
+        self.motivo = motivo
+        super().__init__(MENSAGENS_COMPETENCIA_COM_PAGAMENTOS[motivo])
+
+
 class VencimentoAntesDaParcelaAnteriorError(ValueError):
     """
     D5 (Etapa 2b): "Este mês em diante" com um novo vencimento cuja
@@ -4407,6 +4567,13 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     ocorrência imediatamente anterior levanta
     `VencimentoAntesDaParcelaAnteriorError` antes de qualquer gravação
     (nenhum campo é alterado). Na primeira ocorrência não há limite.
+    Sino 6.10 (exceção aprovada à ERS 5.1 -- ver `_plano_do_vencimento`):
+    H2 -- as seguintes com pagamentos (ativos ou estornados) mantêm mês e
+    ano, só com o novo dia; I1 -- a selecionada pode mudar de mês com os
+    próprios pagamentos; I2 -- numa série anual, um ano já cobrado por uma
+    ocorrência paga não ganha outra cobrança; I4 -- colisão da selecionada
+    com uma seguinte com pagamentos levanta `CompetenciaComPagamentosError`
+    antes de qualquer gravação.
     Se a série tem `data_termino` e a reorganização ultrapassaria esse
     limite, a chamada inteira é rejeitada (nada é alterado) e a função
     retorna False.
@@ -4527,13 +4694,16 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     # o vencimento real), em ordem de posição.
     cursor_leitura.execute(
         """
-        SELECT id, data_prevista, editado_individualmente FROM contas
+        SELECT id, data_prevista, editado_individualmente, data_vencimento FROM contas
         WHERE serie_id = ? AND posicao > ?
         ORDER BY posicao
         """,
         (serie_id, posicao_referencia),
     )
     ocorrencias_futuras = cursor_leitura.fetchall()
+    # H2: as seguintes com pagamentos (ativos ou estornados) não mudam de mês nem de ano.
+    com_pagamentos = set(_contas_com_pagamentos(cursor_leitura, "serie_id = ? AND posicao > ?",
+                                                (serie_id, posicao_referencia)))
     conexao_leitura.close()
 
     novas_datas_por_id = None
@@ -4542,36 +4712,23 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     if data_vencimento is not None:
         data_nova = date.fromisoformat(data_vencimento)
         dia_ancora_novo, mes_ancora_novo = data_nova.day, data_nova.month
-        avancar = (
-            (lambda ano, mes: _somar_mes(ano, mes, dia_ancora_novo))
-            if frequencia == "mensal"
-            else (lambda ano, mes: _somar_ano(ano, mes_ancora_novo, dia_ancora_novo))
-        )
         # D2: as futuras são resequenciadas, exceto as EDITADAS preservadas
         # fora da grade atual (outro mês numa série anual, ou além do
         # término -- D4), que mantêm data e vaga; a nova sequência pula as
         # competências que elas ocupam. Uma não editada é sempre mecânica
         # e sempre resequenciada, mesmo vinda de um bloco antigo da grade
         # (ex.: meses de antes de uma mudança mensal -> anual) -- C3.
-        da_grade = [oc_id for oc_id, prevista, editado in ocorrencias_futuras
-                    if not editado or _vaga_na_grade(prevista, frequencia, mes_ancora_atual, data_termino)]
-        ocupadas_fora_da_grade = {
-            _competencia(prevista) for oc_id, prevista, _ in ocorrencias_futuras if oc_id not in da_grade
-        }
-        novas_datas = []
-        ultima = data_vencimento
-        while len(novas_datas) < len(da_grade):
-            ano_atual, mes_atual, _ = map(int, ultima.split("-"))
-            ultima = avancar(ano_atual, mes_atual)
-            if _competencia(ultima) not in ocupadas_fora_da_grade:
-                novas_datas.append(ultima)
-        horizonte_novo = novas_datas[-1] if novas_datas else data_vencimento
-
-        if data_termino is not None and _competencia(horizonte_novo) > data_termino:
+        # Sino 6.10: H2, I1, I2 e I4 no plano (_plano_do_vencimento).
+        plano = _plano_do_vencimento(conta_id, data_vencimento, frequencia, mes_ancora_atual, data_termino,
+                                     ocorrencias_futuras, com_pagamentos)
+        # I4: colisão com uma seguinte com pagamentos -- recusa integral, nada gravado.
+        if plano["recusa"] is not None:
+            raise CompetenciaComPagamentosError(plano["recusa"])
+        if data_termino is not None and _competencia(plano["horizonte"]) > data_termino:
             return False
+        horizonte_novo = plano["horizonte_gerado"]
 
-        novas_datas_por_id = {conta_id: data_vencimento}
-        novas_datas_por_id.update(zip(da_grade, novas_datas))
+        novas_datas_por_id = plano["datas"]
 
     conexao = sqlite3.connect(NOME_DO_BANCO)
     conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
@@ -4611,10 +4768,10 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
 
         if novas_datas_por_id is not None:
-            for oc_id, nova_data in novas_datas_por_id.items():
+            for oc_id, (novo_vencimento, nova_vaga) in novas_datas_por_id.items():
                 cursor.execute(
                     "UPDATE contas SET data_vencimento = ?, data_prevista = ? WHERE id = ?",
-                    (nova_data, nova_data, oc_id),
+                    (novo_vencimento, nova_vaga, oc_id),
                 )
             _renumerar_segmento(cursor, serie_id, posicao_referencia)
 
