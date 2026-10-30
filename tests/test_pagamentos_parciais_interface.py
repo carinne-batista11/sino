@@ -9,6 +9,7 @@ rastreável, Início e Editar conta (só dados gerais, desde a reorganização).
 Hoje fixo: 15/09/2026.
 """
 
+import asyncio
 import os
 import sys
 from datetime import datetime
@@ -110,6 +111,11 @@ class TesteInterfacePagamentos(TesteComBancoTemporario):
 
     def estrutura(self):
         return [t for t in self.textos() if t in ESTRUTURA]
+
+    def acao_da_recorrencia(self, rotulo):
+        """Item do menu do lápis da Recorrência em Editar (as ações de antes)."""
+        menu = self.campo("Recorrência").suffix_icon
+        return next(i for i in menu.items if i.content == rotulo)
 
     def acao_do_historico(self, dado):
         return next(b for b in self.controles(ft.IconButton) if b.data == dado)
@@ -273,13 +279,16 @@ class TestInicioEEditar(TesteInterfacePagamentos):
         self.assertIn("pago R$ 150,00", self.textos())
         self.assertIn("pendente R$ 250,00", self.textos())
 
-    def test_editar_com_pagamento_parcial_mantem_o_valor_editavel(self):
+    def test_editar_mostra_pago_e_saldo_e_o_valor_continua_editavel(self):
         pagamentos.registrar_pagamento_parcial(self.conta, 150_00)
         self.abrir_detalhes()
         self.clicar(self.botao("Editar"))
         self.assertFalse(self.campo("Valor").read_only)
-        situacao = pagamentos.obter_situacao(self.conta)
+        situacao = pagamentos.obter_situacao(self.conta)                          # o banco segue igual
         self.assertEqual((situacao["pago_centavos"], situacao["saldo_centavos"]), (150_00, 250_00))
+        textos = self.textos()
+        self.assertEqual(textos[textos.index("Resumo dos pagamentos"):][:5],
+                         ["Resumo dos pagamentos", "Total pago", "R$ 150,00", "Saldo devedor", "R$ 250,00"])
         self.assertFalse(self.tem_botao("Marcar como paga"))                     # pagar fica nos Detalhes
 
     def editar_valor(self, valor):
@@ -728,7 +737,7 @@ class TestEtapa4Interface(TesteInterfacePagamentos):
         db.marcar_conta_como_paga(ids[3])
         self.abrir_detalhes("Academia")
         self.clicar(self.botao("Editar"))
-        self.clicar(self.botao("Alterar frequência"))
+        self.clicar(self.acao_da_recorrencia("Alterar frequência"))
         aviso = next(c for c in percorrer(self.dialogo().content)
                      if isinstance(c, ft.Container) and c.data == "pp_aviso_frequencia")
         self.assertEqual(aviso.content.value,
@@ -754,6 +763,8 @@ class TestRolagemDetalhesEditar(TesteInterfacePagamentos):
     def coluna(self):
         self.assertEqual(len(self.pagina.controls), 1)
         coluna = self.pagina.controls[0]
+        if coluna.data == "pp_editar_com_rodape":             # Editar: área rolável + barra fixa
+            coluna = coluna.controls[0]
         self.assertIsInstance(coluna, ft.Column)
         self.assertEqual(coluna.scroll, ft.ScrollMode.AUTO)
         self.assertTrue(coluna.expand)
@@ -1066,6 +1077,17 @@ class TestEditarDadosGerais(TesteInterfacePagamentos):
         self.abrir_detalhes(nome)
         self.clicar(self.botao("Editar"))
 
+    def caixa_do_resumo(self):
+        return next(c for c in self.controles(ft.Container) if c.data == "pp_resumo_edicao")
+
+    def resumo(self):
+        """O resumo como a usuária o lê: "Total pago: X · <rótulo do saldo>: Y"."""
+        t = {c.data: c.value for c in percorrer(self.caixa_do_resumo()) if isinstance(c, ft.Text) and c.data}
+        return f"Total pago: {t['pp_valor_pago_edicao']} · {t['pp_rotulo_saldo_edicao']}: {t['pp_valor_saldo_edicao']}"
+
+    def nota(self):
+        return next(c for c in self.controles(ft.Text) if c.data == "pp_nota_resumo_edicao")
+
     def mudar(self, rotulo, valor):
         campo = self.campo(rotulo)
         campo.value = valor
@@ -1084,9 +1106,9 @@ class TestEditarDadosGerais(TesteInterfacePagamentos):
             self.assertFalse(self.tem_botao(acao), acao)
         self.assertEqual([b.data for b in self.controles(ft.IconButton) if (b.data or "").startswith("pp_")], [])
         self.assertFalse(any(c.data == "pp_pagamentos_edicao" for c in self.controles(ft.Container)))
-        for rotulo in ("Nome da conta", "Valor", "Data de vencimento", "Categoria", "Descrição (opcional)"):
+        for rotulo in ("Nome da conta", "Valor", "Data de vencimento", "Categoria", "Recorrência",
+                       "Descrição (opcional)"):
             self.assertTrue(self.campo(rotulo))
-        self.assertIn("Recorrência", textos)
 
     # ------------------------------------------------------------- estrutura
     def situacao(self):
@@ -1094,19 +1116,69 @@ class TestEditarDadosGerais(TesteInterfacePagamentos):
         return s["pago_centavos"], s["saldo_centavos"], s["status"]
 
     def test_editar_sem_acoes_financeiras_em_qualquer_situacao(self):
-        situacoes = []
+        situacoes, resumos = [], []
         self.editar()
         situacoes.append(self.situacao())
+        resumos.append(self.resumo())
         self.conferir_editar_sem_financeiro()
         pagamentos.registrar_pagamento_parcial(self.conta, 150_00, "2026-09-05")
         self.editar()
         situacoes.append(self.situacao())
+        resumos.append(self.resumo())
         self.conferir_editar_sem_financeiro()
         db.marcar_conta_como_paga(self.conta)
         self.editar()
         situacoes.append(self.situacao())
+        resumos.append(self.resumo())
         self.conferir_editar_sem_financeiro()
         self.assertEqual(situacoes, [(0, 400_00, "pendente"), (150_00, 250_00, "pendente"), (400_00, 0, "pago")])
+        self.assertEqual(resumos, ["Total pago: R$ 0,00 · Saldo devedor: R$ 400,00",
+                                   "Total pago: R$ 150,00 · Saldo devedor: R$ 250,00",
+                                   "Total pago: R$ 400,00 · Saldo devedor: R$ 0,00"])
+
+    def test_resumo_em_conteiner_depois_dos_dados_gerais_e_so_leitura(self):
+        pagamentos.registrar_pagamento_parcial(self.conta, 150_00, "2026-09-05")
+        self.editar()
+        grade = next(c for c in self.controles(ft.ResponsiveRow) if c.data == "pp_grade_edicao")
+        self.assertIs(grade.controls[-1].content, self.caixa_do_resumo())          # duas colunas: por último
+        caixa = self.caixa_do_resumo()
+        self.assertEqual(caixa.border_radius, main.RAIO_EDICAO)                   # o raio dos campos de Editar
+        self.assertIsNotNone(caixa.bgcolor)
+        textos = [c.value for c in percorrer(caixa) if isinstance(c, ft.Text) and c.visible is not False]
+        self.assertEqual(textos, ["Resumo dos pagamentos", "Total pago", "R$ 150,00", "Saldo devedor", "R$ 250,00"])
+        self.assertFalse(any(isinstance(c, (ft.Button, ft.TextButton, ft.IconButton, ft.TextField, ft.Dropdown))
+                             or getattr(c, "on_click", None) for c in percorrer(caixa)))
+
+    def test_previa_do_saldo_devedor(self):
+        self.executar("UPDATE contas SET valor = 200.0 WHERE id = ?", (self.conta,))
+        db.marcar_conta_como_paga(self.conta, "2026-09-10")                      # exemplo: 200 pagos de 200
+        antes = (self.consultar("SELECT * FROM contas"), self.consultar("SELECT * FROM pp_pagamentos"))
+        self.editar()
+        self.assertEqual(self.resumo(), "Total pago: R$ 200,00 · Saldo devedor: R$ 0,00")
+        self.assertFalse(self.nota().visible)
+        previa = "Prévia considerando o novo valor. Nenhuma alteração foi salva."
+        invalido = "Informe um valor válido para ver o saldo devedor previsto."
+        casos = [("250,00", "Total pago: R$ 200,00 · Saldo devedor previsto: R$ 50,00", previa),
+                 ("250,1", "Total pago: R$ 200,00 · Saldo devedor previsto: R$ 50,10", previa),
+                 ("1.200", "Total pago: R$ 200,00 · Saldo devedor previsto: R$ 1.000,00", previa),
+                 ("", "Total pago: R$ 200,00 · Saldo devedor: R$ 0,00", invalido),
+                 ("25x", "Total pago: R$ 200,00 · Saldo devedor: R$ 0,00", invalido),
+                 ("0", "Total pago: R$ 200,00 · Saldo devedor: R$ 0,00", invalido),
+                 ("150", "Total pago: R$ 200,00 · Saldo devedor previsto: —",
+                  "O novo valor é menor que o total pago (R$ 200,00) e não poderá ser salvo.")]
+        for digitado, resumo, nota in casos:
+            with self.subTest(digitado=digitado):
+                self.mudar("Valor", digitado)
+                self.assertEqual(self.resumo(), resumo)
+                self.assertTrue(self.nota().visible)
+                self.assertEqual(self.nota().value, nota)
+        self.mudar("Valor", "200")                                                # valor original de volta
+        self.assertEqual(self.resumo(), "Total pago: R$ 200,00 · Saldo devedor: R$ 0,00")
+        self.assertFalse(self.nota().visible)
+        self.mudar("Nome da conta", "Internet casa")                              # outro campo: sem prévia
+        self.assertFalse(self.nota().visible)
+        self.assertEqual((self.consultar("SELECT * FROM contas"), self.consultar("SELECT * FROM pp_pagamentos")),
+                         antes)                                                   # nada gravado
 
     def test_previa_nao_substitui_o_dialogo_da_diferenca(self):
         self.executar("UPDATE contas SET valor = 200.0 WHERE id = ?", (self.conta,))
@@ -1117,10 +1189,11 @@ class TestEditarDadosGerais(TesteInterfacePagamentos):
         self.assertEqual(self.dialogo().title.value, "Como deseja registrar a diferença?")
         self.assertEqual(self.consultar("SELECT valor FROM contas"), [(200.0,)])
 
-    def test_valor_maior_em_conta_parcial_salva_sem_dialogo_da_diferenca(self):
+    def test_previa_em_conta_parcial_e_salvar_normal(self):
         pagamentos.registrar_pagamento_parcial(self.conta, 150_00, "2026-09-05")
         self.editar()
         self.mudar("Valor", "500,00")
+        self.assertEqual(self.resumo(), "Total pago: R$ 150,00 · Saldo devedor previsto: R$ 350,00")
         self.clicar(self.botao("Salvar alterações"))
         self.assertEqual(self.dialogo().title.value, "Alteração salva")             # sem diálogo da diferença
         self.assertEqual(pagamentos.obter_situacao(self.conta)["saldo_centavos"], 350_00)
@@ -1131,6 +1204,7 @@ class TestEditarDadosGerais(TesteInterfacePagamentos):
         self.editar()
         self.conferir_editar_sem_financeiro()
         self.assertEqual(self.situacao(), (400_00, 0, "pago"))                       # legado: pago sem registros
+        self.assertEqual(self.resumo(), "Total pago: R$ 400,00 · Saldo devedor: R$ 0,00")
         self.mudar("Nome da conta", "Internet casa")
         self.clicar(self.botao("Salvar alterações"))
         self.assertEqual(self.consultar("SELECT nome, status, data_pagamento FROM contas"),
@@ -1520,6 +1594,306 @@ class TestExcluirEstornadoNosDetalhes(TesteInterfacePagamentos):
         self.assertIn("Conta quitada", historico)
 
 
+class TestVisualEditar(TesteInterfacePagamentos):
+    """Refinamento visual de Editar conta (28/10): título do resumo com o mês e o
+    ano da ocorrência (vencimento gravado, nunca o mês do sistema nem o do
+    pagamento), Total pago e Saldo lado a lado só com largura, barra fixa com
+    Cancelar e Salvar fora da área rolável e campos com o mesmo raio e bordas.
+    Nada financeiro muda. Hoje fixo: 15/09/2026."""
+
+    def editar(self, nome="Internet"):
+        self.abrir_detalhes(nome)
+        self.clicar(self.botao("Editar"))
+
+    def titulo(self):
+        texto = next(c for c in self.controles(ft.Text) if c.data == "pp_titulo_resumo_edicao")
+        visivel = (texto.value + "".join(s.text for s in texto.spans)).replace(" ", " ")
+        self.assertEqual(texto.semantics_label, visivel)                      # leitor de tela lê o mesmo
+        return visivel
+
+    def mudar(self, rotulo, valor):
+        campo = self.campo(rotulo)
+        campo.value = valor
+        campo.on_change(Evento(self.pagina, campo))
+
+    def raiz(self):
+        self.assertEqual(len(self.pagina.controls), 1)
+        return self.pagina.controls[0]
+
+    def rodape(self):
+        return next(c for c in self.controles(ft.Container) if c.data == "pp_rodape_edicao")
+
+    # --------------------------------------------------------- mês e ano
+    def test_competencia_pelo_vencimento(self):
+        self.assertEqual(main.competencia_da_ocorrencia("2026-10-31"), "Outubro de 2026")
+        self.assertEqual(main.competencia_da_ocorrencia("2026-11-01"), "Novembro de 2026")
+        self.assertEqual(main.competencia_da_ocorrencia("2027-01-15"), "Janeiro de 2027")
+
+    def test_titulo_da_conta_avulsa(self):
+        self.editar()
+        self.assertEqual(self.titulo(), "Resumo dos pagamentos — Setembro de 2026")
+
+    def test_titulo_de_outro_mes_nao_usa_o_mes_atual(self):
+        db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-11-05")
+        self.entrar()
+        self.clicar(next(b for b in self.controles(ft.IconButton) if b.data == "proximo_mes"))
+        self.clicar(next(b for b in self.controles(ft.IconButton) if b.data == "proximo_mes"))
+        self.clicar(self.linha_da_conta("Seguro"))
+        self.clicar(self.botao("Editar"))
+        self.assertEqual(self.titulo(), "Resumo dos pagamentos — Novembro de 2026")   # hoje é setembro
+
+    def test_titulo_nao_segue_o_mes_do_pagamento(self):
+        pagamentos.registrar_pagamento_parcial(self.conta, 100_00, "2026-08-30")   # pago antes, em agosto
+        self.editar()
+        self.assertEqual(self.titulo(), "Resumo dos pagamentos — Setembro de 2026")
+
+    def test_titulo_de_cada_ocorrencia_recorrente(self):
+        db.criar_serie_recorrente(self.usuario_id, "Academia", 120.0, "2026-09-10", "mensal")
+        self.editar("Academia")
+        self.assertEqual(self.titulo(), "Resumo dos pagamentos — Setembro de 2026")
+        self.entrar()
+        self.clicar(next(b for b in self.controles(ft.IconButton) if b.data == "proximo_mes"))
+        self.clicar(self.linha_da_conta("Academia"))
+        self.clicar(self.botao("Editar"))
+        self.assertEqual(self.titulo(), "Resumo dos pagamentos — Outubro de 2026")
+        self.assertEqual(self.campo("Data de vencimento").value, "10/10/2026")
+
+    def test_titulo_e_resumo_ficam_no_gravado_durante_a_previa(self):
+        pagamentos.registrar_pagamento_parcial(self.conta, 150_00)
+        self.editar()
+        self.mudar("Valor", "500,00")
+        self.assertEqual(self.titulo(), "Resumo dos pagamentos — Setembro de 2026")
+        textos = {c.data: c.value for c in self.controles(ft.Text) if c.data}
+        self.assertEqual((textos["pp_rotulo_saldo_edicao"], textos["pp_valor_saldo_edicao"]),
+                         ("Saldo devedor previsto", "R$ 350,00"))
+        self.assertEqual(textos["pp_nota_resumo_edicao"],
+                         "Prévia considerando o novo valor. Nenhuma alteração foi salva.")
+        self.assertEqual(self.consultar("SELECT valor FROM contas"), [(400.0,)])
+
+    # --------------------------------------------------------- resumo
+    def test_resumo_lado_a_lado_so_com_largura(self):
+        self.editar()
+        caixa = next(c for c in self.controles(ft.Container) if c.data == "pp_resumo_edicao")
+        linha = next(c for c in percorrer(caixa) if isinstance(c, ft.ResponsiveRow))
+        pago, traco, linha_horizontal, saldo = linha.controls
+        self.assertEqual(linha.columns, 25)
+        self.assertEqual(pago.col, {"xs": 25, "sm": 12})                     # estreito: um embaixo do outro
+        self.assertEqual(saldo.col, {"xs": 25, "sm": 12})
+        self.assertEqual(traco.col, {"xs": 0, "sm": 1})                      # traço vertical só lado a lado
+        self.assertEqual(linha_horizontal.col, {"xs": 25, "sm": 0})          # e o horizontal só empilhado
+        self.assertEqual(caixa.border_radius, main.RAIO_EDICAO)
+        self.assertFalse(any(isinstance(c, (ft.Button, ft.TextButton, ft.IconButton, ft.TextField, ft.Dropdown))
+                             or getattr(c, "on_click", None) for c in percorrer(caixa)))
+
+    # --------------------------------------------------------- campos
+    def test_campos_com_o_mesmo_raio_borda_e_fonte(self):
+        self.editar()
+        for rotulo in ("Nome da conta", "Valor", "Data de vencimento", "Categoria", "Descrição (opcional)"):
+            with self.subTest(rotulo=rotulo):
+                campo = self.campo(rotulo)
+                self.assertEqual((campo.border_radius, campo.border_width, campo.focused_border_width,
+                                  campo.text_size), (main.RAIO_EDICAO, 1, 2, 15))
+        self.assertEqual(self.campo("Valor").value, "400,00")                 # "R$" é só o prefixo visual
+        self.assertEqual(self.campo("Nome da conta").counter, "8/30")         # contadores mantidos
+        self.assertEqual(self.campo("Descrição (opcional)").counter, "0/1000")
+
+    # --------------------------------------------------------- barra inferior
+    def test_botoes_na_barra_fixa_fora_da_area_rolavel(self):
+        self.editar()
+        raiz = self.raiz()
+        self.assertEqual(raiz.data, "pp_editar_com_rodape")
+        area, rodape = raiz.controls
+        self.assertEqual(area.scroll, ft.ScrollMode.AUTO)
+        self.assertTrue(area.expand)
+        self.assertIs(rodape, self.rodape())
+        botoes = [c.content for c in percorrer(rodape) if isinstance(c, ft.Button)]
+        self.assertEqual(botoes, ["Cancelar", "Salvar alterações"])          # ordem do Tab: Cancelar, Salvar
+        self.assertFalse(any(isinstance(c, ft.Button) for c in percorrer(area)))
+        self.assertIn("Descrição (opcional)", [c.label for c in percorrer(area) if isinstance(c, ft.TextField)])
+
+    def test_salvar_desabilitado_ate_haver_alteracao(self):
+        self.editar()
+        salvar = self.botao("Salvar alterações")
+        self.assertTrue(salvar.disabled)
+        self.mudar("Nome da conta", "Internet casa")
+        self.assertFalse(salvar.disabled)
+        self.mudar("Nome da conta", "Internet")
+        self.assertTrue(salvar.disabled)
+
+    def test_erro_de_valor_invalido_aparece_na_barra(self):
+        self.editar()
+        self.mudar("Valor", "abc")
+        self.clicar(self.botao("Salvar alterações"))
+        erros = [c.value for c in percorrer(self.rodape()) if isinstance(c, ft.Text) and c.value]
+        self.assertEqual(erros, ["Informe um valor válido."])
+        self.assertEqual(self.consultar("SELECT valor FROM contas"), [(400.0,)])
+
+    def test_cancelar_nao_grava_e_volta_aos_detalhes(self):
+        antes = self.consultar("SELECT * FROM contas")
+        self.editar()
+        self.mudar("Nome da conta", "Outro nome")
+        self.mudar("Valor", "999,00")
+        self.clicar(self.botao("Cancelar"))
+        self.assertTrue(any(getattr(c, "data", None) == "tela_detalhes" for c in self.controles()))
+        self.assertNotEqual(self.raiz().data, "pp_editar_com_rodape")        # Detalhes sem barra
+        self.assertEqual(self.consultar("SELECT * FROM contas"), antes)
+
+    def test_salvar_pela_barra_grava(self):
+        self.editar()
+        self.mudar("Nome da conta", "Internet casa")
+        self.mudar("Valor", "450,00")
+        self.clicar(self.botao("Salvar alterações"))
+        self.assertEqual(self.dialogo().title.value, "Alteração salva")
+        self.assertEqual(self.consultar("SELECT nome, valor FROM contas"), [("Internet casa", 450.0)])
+
+
+class TestEditarDuasColunas(TesteInterfacePagamentos):
+    """Editar em duas colunas com lápis (28/10): Nome; Valor | Data; Categoria |
+    Recorrência; Descrição; Resumo -- uma coluna abaixo de md, mesma ordem. Os
+    campos continuam editáveis por si; o lápis é só um atalho para a MESMA ação
+    (foco, calendário, lista, menu da Recorrência) e nunca salva. Hoje fixo:
+    15/09/2026."""
+
+    def editar(self, nome="Internet"):
+        self.abrir_detalhes(nome)
+        self.clicar(self.botao("Editar"))
+
+    def grade(self):
+        return next(c for c in self.controles(ft.ResponsiveRow) if c.data == "pp_grade_edicao")
+
+    def celulas(self):
+        """O controle de cada célula da grade (Categoria vem numa Row; Recorrência
+        no contêiner que o rascunho recompõe; o resumo é o próprio contêiner)."""
+        for item in self.grade().controls:
+            c = item.content
+            if isinstance(c, ft.Row):
+                c = c.controls[0]
+            elif isinstance(c, ft.Container) and c.data != "pp_resumo_edicao":
+                c = c.content
+            yield c, item.col
+
+    def clicar_e_esperar(self, controle):
+        resultado = controle.on_click(Evento(self.pagina, controle))
+        if asyncio.iscoroutine(resultado):
+            asyncio.run(resultado)
+
+    def menu(self):
+        return self.campo("Recorrência").suffix_icon
+
+    def itens(self):
+        return [i.content for i in self.menu().items]
+
+    def conferir_lapis(self, lapis, nome):
+        self.assertIsInstance(lapis, ft.IconButton)                         # focável: Tab e Enter/Espaço
+        self.assertEqual((lapis.icon.icon, lapis.icon.semantics_label, lapis.tooltip),
+                         (ft.Icons.EDIT_OUTLINED, nome, nome))
+
+    # --------------------------------------------------------------- grade
+    def test_duas_colunas_em_md_e_uma_abaixo(self):
+        self.editar()
+        conteudos = [(getattr(c, "label", None) or c.data, col) for c, col in self.celulas()]
+        meia = {"xs": 12, "md": 6}
+        self.assertEqual(conteudos, [("Nome da conta", 12), ("Valor", meia), ("Data de vencimento", meia),
+                                     ("Categoria", meia), ("Recorrência", meia),
+                                     ("Descrição (opcional)", 12), ("pp_resumo_edicao", 12)])
+
+    def test_campos_continuam_editaveis_diretamente(self):
+        self.editar()
+        for rotulo in ("Nome da conta", "Valor", "Descrição (opcional)"):
+            self.assertFalse(self.campo(rotulo).read_only, rotulo)
+        self.assertIsNotNone(self.campo("Categoria").on_select)
+        self.assertTrue(self.campo("Data de vencimento").read_only)            # como antes: só pelo calendário
+
+    # --------------------------------------------------------------- lápis
+    def test_lapis_de_nome_valor_e_descricao_so_poem_o_foco(self):
+        antes = self.consultar("SELECT * FROM contas")
+        self.editar()
+        for rotulo, nome in (("Nome da conta", "Editar nome da conta"), ("Valor", "Editar valor"),
+                             ("Descrição (opcional)", "Editar descrição")):
+            with self.subTest(rotulo=rotulo):
+                campo = self.campo(rotulo)
+                self.conferir_lapis(campo.suffix_icon, nome)
+                with mock.patch.object(type(campo), "focus", new_callable=mock.AsyncMock) as focar:
+                    self.clicar_e_esperar(campo.suffix_icon)
+                focar.assert_awaited_once()
+        self.assertTrue(self.botao("Salvar alterações").disabled)              # nada mudou, nada salvo
+        self.assertEqual(self.consultar("SELECT * FROM contas"), antes)
+
+    def test_lapis_e_clique_da_data_abrem_o_calendario_de_sempre(self):
+        self.editar()
+        data = self.campo("Data de vencimento")
+        self.conferir_lapis(data.suffix_icon, "Editar data de vencimento")
+        self.clicar(data.suffix_icon)
+        seletor = self.dialogo()
+        self.assertIsInstance(seletor, ft.DatePicker)
+        self.assertIn(seletor, self.pagina.overlay.append.call_args_list[-1][0])   # o mesmo seletor do overlay
+        self.pagina.show_dialog.reset_mock()
+        data.on_click(Evento(self.pagina, data))                                # clique no próprio campo
+        self.assertIs(self.dialogo(), seletor)
+
+    def test_lapis_da_categoria_no_botao_da_lista(self):
+        self.editar()
+        categoria = self.campo("Categoria")
+        for icone, seta in ((categoria.trailing_icon, ft.Icons.ARROW_DROP_DOWN),
+                            (categoria.selected_trailing_icon, ft.Icons.ARROW_DROP_UP)):
+            self.assertIsInstance(icone, ft.Row)
+            icones = [c for c in icone.controls if isinstance(c, ft.Icon)]
+            self.assertEqual([i.icon for i in icones], [seta, ft.Icons.EDIT_OUTLINED])
+            self.assertEqual(icones[1].semantics_label, "Editar categoria")
+
+    # --------------------------------------------------------------- recorrência
+    def test_recorrencia_avulsa_com_menu_transformar(self):
+        self.editar()
+        campo = self.campo("Recorrência")
+        self.assertEqual(campo.value, main.TEXTO_NAO_RECORRENTE)
+        self.assertTrue(campo.read_only)
+        self.assertFalse(campo.can_request_focus)                              # o foco vai para o lápis
+        self.assertIsInstance(self.menu(), ft.PopupMenuButton)
+        self.assertEqual((self.menu().content.semantics_label, self.menu().tooltip),
+                         ("Editar recorrência", "Editar recorrência"))
+        self.assertEqual(self.itens(), ["Transformar em recorrente"])
+        self.clicar(self.acao_da_recorrencia("Transformar em recorrente"))
+        self.assertEqual(self.dialogo().title.value, "Transformar em recorrente")   # o diálogo de sempre
+
+    def test_recorrencia_ativa_rascunho_e_desfazer(self):
+        db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal", data_termino="2027-10")
+        self.editar("Academia")
+        self.assertEqual(self.campo("Recorrência").value, main.frase_recorrencia("mensal", "2027-10"))
+        self.assertEqual(self.itens(), ["Alterar frequência", "Encerrar recorrência"])
+        self.assertIsNone(self.campo("Recorrência").helper)
+        self.clicar(self.acao_da_recorrencia("Encerrar recorrência"))
+        self.assertEqual(self.dialogo().title.value, "Encerrar recorrência")
+        self.clicar(self.acao_do_dialogo("Encerrar recorrência"))
+        self.assertEqual(self.campo("Recorrência").value, main.TEXTO_NAO_RECORRENTE)   # prévia do rascunho
+        self.assertEqual(self.campo("Recorrência").helper, "Alteração pendente: será aplicada ao salvar.")
+        self.assertEqual(self.itens(), ["Transformar em recorrente", "Desfazer esta alteração"])
+        self.assertFalse(self.botao("Salvar alterações").disabled)
+        self.assertEqual(self.consultar("SELECT ativa FROM series_recorrencia"), [(1,)])  # nada gravado
+        self.clicar(self.acao_da_recorrencia("Desfazer esta alteração"))
+        self.assertEqual(self.itens(), ["Alterar frequência", "Encerrar recorrência"])
+        self.assertTrue(self.botao("Salvar alterações").disabled)
+
+    # --------------------------------------------------------------- teclado
+    def test_ordem_do_tab_campo_e_seu_lapis(self):
+        """A ordem de Tab segue a árvore: cada campo e, logo depois, o seu lápis
+        (dentro do próprio campo); Recorrência só pelo lápis; a barra no fim."""
+        self.editar()
+        ordem = []
+        for c, _ in self.celulas():
+            if isinstance(c, ft.TextField):
+                if c.can_request_focus is not False:
+                    ordem.append(c.label)
+                ordem.append(c.suffix_icon.tooltip)
+            elif isinstance(c, ft.Dropdown):
+                ordem.append(c.label)
+        self.assertEqual(ordem, ["Nome da conta", "Editar nome da conta", "Valor", "Editar valor",
+                                 "Data de vencimento", "Editar data de vencimento", "Categoria",
+                                 "Editar recorrência", "Descrição (opcional)", "Editar descrição"])
+        raiz = self.pagina.controls[0]
+        self.assertIs(raiz.controls[-1].data, "pp_rodape_edicao")                # Cancelar e Salvar por último
+
+
+
 class TestEtapa4AvisoDoVencimento(TesteInterfacePagamentos):
     """Sino 6.10, etapa 4 da integração (I3/I4 pela tela): no diálogo "Como
     deseja aplicar esta alteração?", com um novo vencimento, o aviso
@@ -1631,3 +2005,123 @@ class TestEtapa4AvisoDoVencimento(TesteInterfacePagamentos):
         self.escopo("2026-12-10")
         self.clicar(self.acao_do_dialogo("Somente este mês"))
         self.assertEqual((self.venc(self.set), self.venc(self.nov)), ("2026-12-10", "2026-11-10"))
+
+
+class TestEtapa5EditarIntegrado(TesteInterfacePagamentos):
+    """Sino 6.10, etapa 5 da integração: o Editar novo (resumo, prévia do saldo,
+    lápis, barra fixa e menu da Recorrência) com as regras das etapas 3 e 4 --
+    estornados fora do total pago, recusas visíveis na barra, aviso I3 pelo
+    lápis da data e nenhuma mensagem de sucesso numa recusa. Hoje fixo:
+    15/09/2026."""
+
+    def editar(self, nome="Internet"):
+        self.abrir_detalhes(nome)
+        self.clicar(self.botao("Editar"))
+
+    def resumo(self):
+        caixa = next(c for c in self.controles(ft.Container) if c.data == "pp_resumo_edicao")
+        t = {c.data: c.value for c in percorrer(caixa) if isinstance(c, ft.Text) and c.data}
+        return f"Total pago: {t['pp_valor_pago_edicao']} · {t['pp_rotulo_saldo_edicao']}: {t['pp_valor_saldo_edicao']}"
+
+    def mudar(self, rotulo, valor):
+        campo = self.campo(rotulo)
+        campo.value = valor
+        campo.on_change(Evento(self.pagina, campo))
+
+    def escolher_data(self, nova_data):
+        self.clicar(self.campo("Data de vencimento").suffix_icon)                 # lápis da data
+        seletor = self.dialogo()
+        self.assertIsInstance(seletor, ft.DatePicker)
+        seletor.value = datetime.fromisoformat(nova_data)
+        seletor.on_change(Evento(self.pagina, seletor))
+
+    def textos_da_barra(self):
+        barra = next(c for c in self.controles(ft.Container) if c.data == "pp_rodape_edicao")
+        return [c.value for c in percorrer(barra) if isinstance(c, ft.Text) and c.value]
+
+    def tudo(self):
+        return (self.consultar("SELECT * FROM contas ORDER BY id"),
+                self.consultar("SELECT * FROM series_recorrencia ORDER BY id"),
+                self.consultar("SELECT * FROM pp_pagamentos ORDER BY id"))
+
+    def test_resumo_ignora_estornados_e_segue_o_modulo_financeiro(self):
+        pagamentos.registrar_pagamento_parcial(self.conta, 100_00, "2026-09-05")
+        pagamentos.registrar_pagamento_parcial(self.conta, 50_00, "2026-09-06")
+        pid = self.consultar("SELECT MAX(id) FROM pp_pagamentos")[0][0]
+        pagamentos.estornar_pagamento(pid, (50_00, "2026-09-06"))
+        self.editar()
+        s = pagamentos.obter_situacao(self.conta)
+        self.assertEqual((s["pago_centavos"], s["saldo_centavos"]), (100_00, 300_00))
+        self.assertEqual(self.resumo(), "Total pago: R$ 100,00 · Saldo devedor: R$ 300,00")
+        self.mudar("Valor", "350,00")
+        self.assertEqual(self.resumo(), "Total pago: R$ 100,00 · Saldo devedor previsto: R$ 250,00")
+
+    def test_resumo_de_conta_quitada_por_pagamentos(self):
+        db.marcar_conta_como_paga(self.conta, "2026-09-10")
+        self.editar()
+        self.assertEqual(self.resumo(), "Total pago: R$ 400,00 · Saldo devedor: R$ 0,00")
+
+    def test_valor_menor_que_o_pago_e_recusado_sem_gravar(self):
+        pagamentos.registrar_pagamento_parcial(self.conta, 250_00, "2026-09-05")
+        antes = self.tudo()
+        self.editar()
+        self.mudar("Valor", "200,00")
+        self.assertEqual(self.resumo(), "Total pago: R$ 250,00 · Saldo devedor previsto: —")
+        self.clicar(self.botao("Salvar alterações"))
+        self.assertEqual(self.dialogo().title.value, "O valor informado é menor que o total já pago.")
+        self.assertEqual(self.tudo(), antes)
+
+    def test_recusas_da_etapa4_aparecem_na_barra_e_nada_e_gravado(self):
+        _, ids = db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal")
+        pagamentos.registrar_pagamento_parcial(ids[2], 40_00, "2026-09-05")          # novembro com pagamento
+        for data, motivo in (("2026-11-20", "mesmo_mes"), ("2026-12-10", "depois")):
+            with self.subTest(motivo=motivo):
+                antes = self.tudo()
+                self.editar("Academia")
+                self.escolher_data(data)
+                self.clicar(self.botao("Salvar alterações"))
+                self.assertEqual(self.avisos_do_escopo(), {})                        # nada de aviso I3
+                self.clicar(self.acao_do_dialogo("Este mês em diante"))
+                self.assertEqual(self.textos_da_barra(), [db.MENSAGENS_COMPETENCIA_COM_PAGAMENTOS[motivo]])
+                self.assertNotEqual(self.dialogo().title.value, "Alteração salva")
+                self.assertEqual(self.tudo(), antes)
+
+    def test_recusa_anual_aparece_na_barra(self):
+        _, ids = db.criar_serie_recorrente(self.usuario_id, "Seguro", 900.0, "2026-09-10", "anual")
+        pagamentos.registrar_pagamento_parcial(ids[1], 40_00, "2026-09-05")          # setembro/2027 pago
+        antes = self.tudo()
+        self.editar("Seguro")
+        self.escolher_data("2027-03-10")
+        self.clicar(self.botao("Salvar alterações"))
+        self.clicar(self.acao_do_dialogo("Este mês em diante"))
+        self.assertEqual(self.textos_da_barra(), [db.MENSAGENS_COMPETENCIA_COM_PAGAMENTOS["ano"]])
+        self.assertEqual(self.tudo(), antes)
+
+    def avisos_do_escopo(self):
+        return {c.data: c.content.value for c in percorrer(self.dialogo().content)
+                if isinstance(c, ft.Container) and (c.data or "").startswith("pp_aviso_")}
+
+    def test_aviso_i3_pelo_lapis_da_data_e_aplicacao(self):
+        _, ids = db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal")
+        pagamentos.registrar_pagamento_parcial(ids[2], 40_00, "2026-09-05")
+        self.editar("Academia")
+        self.escolher_data("2026-10-10")
+        self.assertEqual(self.campo("Data de vencimento").value, "10/10/2026")
+        self.assertEqual(self.consultar("SELECT data_vencimento FROM contas WHERE id = ?", (ids[0],)),
+                         [("2026-09-10",)])                                           # nada salvo ainda
+        self.clicar(self.botao("Salvar alterações"))
+        self.assertEqual(self.avisos_do_escopo(), {
+            "pp_aviso_vencimento": "Ocorrências com pagamentos registrados manterão seus meses originais "
+                                   "(1 ocorrência)."})
+        self.clicar(self.acao_do_dialogo("Este mês em diante"))
+        self.assertEqual(self.dialogo().title.value, "Alteração salva")
+        self.assertEqual(self.consultar("SELECT data_vencimento FROM contas WHERE id = ?", (ids[2],)),
+                         [("2026-11-10",)])                                           # H2: novembro fica
+
+    def test_menu_da_recorrencia_leva_ao_aviso_de_pagamentos_na_frequencia(self):
+        _, ids = db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal")
+        pagamentos.registrar_pagamento_parcial(ids[2], 40_00, "2026-09-05")
+        self.editar("Academia")
+        self.clicar(self.acao_da_recorrencia("Alterar frequência"))
+        self.assertTrue(any(isinstance(c, ft.Container) and c.data == "pp_aviso_frequencia"
+                            for c in percorrer(self.dialogo().content)))

@@ -83,7 +83,15 @@ class TestVoltarECalendario(BaseNomes):
         self.entrar()
         self.clicar(self.icones("Editar conta")[0])
         self.assertIn("Editar conta", self.textos())
-        self.assert_calendario_abre_o_seletor()
+        # Sino 6.10 (Editar em duas colunas): o calendário abre pelo lápis da data,
+        # dentro do campo, com nome e dica próprios.
+        data = next(c for c in self.controles() if isinstance(c, ft.TextField) and c.label == "Data de vencimento")
+        lapis = data.suffix_icon
+        self.assert_nome_no_icone(lapis, "Editar data de vencimento", 20, CLARO["texto_secundario"],
+                                  dica="Editar data de vencimento")
+        self.clicar(lapis)
+        self.assertIsInstance(self.pagina.dialogos[-1], ft.DatePicker)
+        self.assertTrue(self.pagina.dialogos[-1].open)
         self.clicar(self.assert_voltar())
         self.assertTrue(self.em_inicio())                               # o lápis volta para Início
 

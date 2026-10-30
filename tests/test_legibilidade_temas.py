@@ -155,8 +155,13 @@ class TesteDeLegibilidade(TesteDeSessao):
 
     def botao(self, pagina, rotulo, raiz=None):
         controles = self.todos(pagina) if raiz is None else [c for c, _ in percorrer_com_fundo(raiz, "#000000")]
-        return next((c for c in controles if isinstance(c, (ft.Button, ft.TextButton, ft.OutlinedButton))
-                     and c.content == rotulo), None)
+        botao = next((c for c in controles if isinstance(c, (ft.Button, ft.TextButton, ft.OutlinedButton))
+                      and c.content == rotulo), None)
+        if botao is None:  # Sino 6.10: ações da Recorrência no menu do lápis, em Editar
+            menus = [c.suffix_icon for c in controles if isinstance(c, ft.TextField)
+                     and isinstance(c.suffix_icon, ft.PopupMenuButton)]
+            botao = next((i for m in menus for i in m.items if i.content == rotulo), None)
+        return botao
 
     def clicavel_com_texto(self, pagina, texto):
         return next((c for c in self.todos(pagina) if isinstance(c, ft.Container) and c.on_click is not None

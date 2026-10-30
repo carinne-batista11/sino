@@ -631,6 +631,8 @@ def filtrar_por_status(contas, filtro):
 
 
 TEXTO_NAO_RECORRENTE = "Esta conta não é recorrente."
+# Sino 6.10 (visual de Editar): um só raio para campos, painéis e botões do formulário.
+RAIO_EDICAO = 10
 # ERS v7.0 5.43 (M2, U2): orientação de Início para o usuário sem nenhuma conta.
 TEXTO_USUARIO_SEM_CONTAS = "Registre suas primeiras contas e tenha tudo sob controle."
 # Etapa 10 (8.4): Detalhes mostra sempre os mesmos campos; sem informação,
@@ -729,6 +731,15 @@ def intervalo_do_periodo(modo, ano, mes=None):
 
 def rotulo_periodo(modo, ano, mes=None):
     return str(ano) if modo == "anual" else f"{MESES_PT[mes - 1]} de {ano}"
+
+
+def competencia_da_ocorrencia(data_vencimento):
+    """Sino 6.10 (Editar conta): "Outubro de 2026" -- mês e ano da ocorrência
+    pelo vencimento GRAVADO, o mesmo critério que põe a conta na lista de cada
+    mês (listar_contas filtra por data_vencimento). Nunca o mês atual do
+    sistema nem o do pagamento."""
+    vencimento = date.fromisoformat(data_vencimento)
+    return rotulo_periodo("mensal", vencimento.year, vencimento.month)
 
 
 def faixa_de_anos(anos_com_contas, ano_atual, ano_exibido):
@@ -3253,74 +3264,24 @@ def main(page: ft.Page):
                 if conta.get("serie_id") is not None else None
             )
 
-            def bloco_rotulado(rotulo, controles):
-                # Padronização visual (pós-validação manual do RF07): Status e
-                # Recorrência devem ter a MESMA linguagem visual dos campos
-                # normais (contorno + label encaixado na borda superior), não a
-                # aparência esmaecida de um TextField(disabled=True). Reaproveita
-                # a mesma técnica já usada nos grupos do seletor de emojis
-                # (abrir_seletor_emoji_geral/construir_grupo): Stack com
-                # clip_behavior=NONE para o rótulo "recortar" a borda superior
-                # sem ser cortado -- só troca as cores para o contorno escuro
-                # (#0B1410, igual ao texto principal do app) e o fundo do rótulo
-                # para a cor de fundo real desta tela (#F4F4F1), não branco.
-                #
-                # Causa real do encolhimento (achado após teste visual real):
-                # `expand` é um sinalizador de FLEX (equivalente a `Expanded`),
-                # só tem efeito quando o pai imediato é um Row/Column -- dentro
-                # de um Stack ele não faz nada, porque Stack não usa layout de
-                # flex. Por isso `expand=True` direto em `caixa` não tinha efeito
-                # algum no runtime real, mesmo parecendo correto na teoria.
-                #
-                # A propriedade que realmente força um Container-com-filho a
-                # ocupar toda a largura que o pai oferece é `alignment`: um
-                # Container com filho e sem width explícita normalmente encolhe
-                # para o tamanho do próprio filho (mesmo se o pai oferecer mais
-                # espaço) -- mas, ao definir `alignment`, o Flutter/Flet passa a
-                # expandir o Container até o limite (bound) que o pai oferece
-                # SOMENTE nos eixos em que esse limite é finito, e usa o
-                # alignment só para posicionar o filho dentro dessa caixa maior.
-                # Aqui o eixo horizontal É finito (largura do Column em
-                # horizontal_alignment=STRETCH, propagada pelo Stack), então a
-                # borda passa a ocupar a largura total; o eixo vertical não é
-                # limitado (a coluna do formulário rola, então a altura
-                # disponível é efetivamente infinita), então a altura continua
-                # determinada pelo próprio conteúdo -- exatamente o comportamento
-                # desejado (borda larga, bloco compacto). TOP_LEFT preserva o
-                # texto/ações alinhados à esquerda, sem esticar o conteúdo
-                # interno (Row/Text) -- só a borda externa passa a ir até o fim.
-                caixa = ft.Container(
-                    border=ft.Border.all(1, cores.borda_campo),
-                    border_radius=8,
-                    padding=ft.Padding(12, 14, 12, 10),
-                    alignment=ft.Alignment.TOP_LEFT,
-                    content=ft.Column(spacing=8, controls=controles),
-                )
-                rotulo_flutuante = ft.Container(
-                    content=ft.Text(rotulo, size=12, color=cores.texto_principal),
-                    bgcolor=cores.fundo_pagina,
-                    padding=ft.Padding(4, 0, 4, 0),
-                    left=10,
-                    top=-8,
-                )
-                return ft.Stack(controls=[caixa, rotulo_flutuante], clip_behavior=ft.ClipBehavior.NONE)
+            # Sino 6.10 (visual de Editar, duas colunas): todos os campos com o
+            # mesmo raio, bordas e fonte; ícone de identificação à esquerda (só
+            # decorativo -- o nome acessível é o rótulo) e lápis à direita.
+            def estilo_edicao(icone=None):
+                estilo = dict(**estilo_campo_texto(), border_radius=RAIO_EDICAO, border_width=1,
+                              focused_border_width=2, text_size=15)
+                if icone is not None:
+                    estilo["prefix_icon"] = ft.Icon(icone, size=20, color=cores.texto_secundario)
+                return estilo
 
-            def linha_info_acoes(texto_info, acoes):
-                # Refinamento de layout: informação e ações contextuais na
-                # MESMA linha, separadas por uma linha vertical discreta (um
-                # Container fino, não o caractere "|" nem ft.VerticalDivider --
-                # este último exige altura explícita dentro de uma Row, o que
-                # não é um padrão já usado em nenhum outro lugar do Sino; um
-                # Container de 1px já é um separador visual seguro e simples).
-                # wrap=True é a rede de segurança pedida: se não houver espaço
-                # (texto de recorrência longo, por exemplo), o conteúdo passa a
-                # quebrar em nova linha em vez de cortar texto ou estourar a
-                # largura -- nunca altera o texto em si.
-                controles = [ft.Text(texto_info, size=14, color=cores.texto_principal)]
-                for acao in acoes:
-                    controles.append(ft.Container(width=1, height=18, bgcolor=cores.divisor))
-                    controles.append(acao)
-                return ft.Row(wrap=True, spacing=10, run_spacing=6, controls=controles)
+            def icone_lapis(nome):
+                return icone_com_nome(ft.Icons.EDIT_OUTLINED, nome, cores.texto_secundario, 20)
+
+            # O lápis é só um atalho: o campo continua editável por si; o lápis
+            # chama a MESMA ação do campo (foco, calendário, lista) e nunca salva.
+            def botao_lapis(nome, ao_clicar):
+                return ft.IconButton(icon=icone_lapis(nome), icon_size=20, icon_color=cores.texto_secundario,
+                                     tooltip=nome, data="pp_lapis", on_click=ao_clicar)
 
             # Indireção: atualizar_estado_botao_salvar() (o que liga cinza/verde)
             # vive dentro de mostrar_formulario_edicao, porque depende de widgets
@@ -3408,41 +3369,45 @@ def main(page: ft.Page):
                         termino_exibido = info_serie["data_termino"]
                     texto_recorrencia = frase_recorrencia(frequencia_exibida, termino_exibido)
                     acoes_recorrencia = [
-                        ft.TextButton(
-                            content="Alterar frequência",
-                            on_click=lambda e: mostrar_dialogo_alterar_frequencia(),
-                            style=ft.ButtonStyle(color=cores.acao_primaria),
-                        ),
-                        ft.TextButton(
-                            content="Encerrar recorrência",
-                            on_click=lambda e: mostrar_dialogo_encerrar_recorrencia(),
-                            style=ft.ButtonStyle(color=cores.acao_primaria),
-                        ),
+                        item_recorrencia("Alterar frequência", lambda e: mostrar_dialogo_alterar_frequencia()),
+                        item_recorrencia("Encerrar recorrência", lambda e: mostrar_dialogo_encerrar_recorrencia()),
                     ]
                 else:
                     texto_recorrencia = TEXTO_NAO_RECORRENTE
                     acoes_recorrencia = [
-                        ft.TextButton(
-                            content="Transformar em recorrente",
-                            on_click=lambda e: mostrar_dialogo_transformar_recorrente(),
-                            style=ft.ButtonStyle(color=cores.acao_primaria),
-                        ),
+                        item_recorrencia("Transformar em recorrente",
+                                         lambda e: mostrar_dialogo_transformar_recorrente()),
                     ]
 
                 if acao_pendente is not None:
                     acoes_recorrencia.append(
-                        ft.TextButton(
-                            content="Desfazer esta alteração",
-                            on_click=lambda e: limpar_rascunho_recorrencia(),
-                            style=ft.ButtonStyle(color=cores.acao_primaria),
-                        )
+                        item_recorrencia("Desfazer esta alteração", lambda e: limpar_rascunho_recorrencia())
                     )
 
-                return linha_info_acoes(texto_recorrencia, acoes_recorrencia)
+                # Visual de Editar: Recorrência com a mesma aparência dos campos
+                # (somente leitura, fora da ordem do Tab -- quem recebe o foco é o
+                # lápis). O lápis abre um menu com as MESMAS ações de antes, que
+                # seguem para os mesmos diálogos (escopos, confirmações e
+                # proteções intactos). Com decisão pendente, a frase é a prévia e
+                # o aviso lembra que só será aplicada ao salvar.
+                return ft.TextField(
+                    label="Recorrência", value=texto_recorrencia, data="pp_recorrencia_edicao",
+                    read_only=True, can_request_focus=False, multiline=True, min_lines=1, max_lines=3,
+                    color=cores.texto_principal,
+                    helper="Alteração pendente: será aplicada ao salvar." if acao_pendente is not None else None,
+                    suffix_icon=ft.PopupMenuButton(
+                        content=icone_lapis("Editar recorrência"), tooltip="Editar recorrência",
+                        data="pp_menu_recorrencia", items=acoes_recorrencia,
+                        menu_position=ft.PopupMenuPosition.UNDER, bgcolor=cores.fundo_dialogo,
+                    ),
+                    **estilo_edicao(ft.Icons.REPEAT),
+                )
 
-            bloco_recorrencia = ft.Container(
-                content=bloco_rotulado("Recorrência", [construir_conteudo_recorrencia()]),
-            )
+            def item_recorrencia(rotulo, ao_clicar):
+                return ft.PopupMenuItem(content=rotulo, on_click=ao_clicar,
+                                        label_text_style=ft.TextStyle(color=cores.texto_principal, size=14))
+
+            bloco_recorrencia = ft.Container(content=construir_conteudo_recorrencia())
 
             def atualizar_bloco_recorrencia():
                 # Recorrência agora só altera rascunho_recorrencia em memória
@@ -3450,7 +3415,7 @@ def main(page: ft.Page):
                 # info_serie reais não são mais tocados aqui; só voltam a ser
                 # lidos do banco quando o Salvar de verdade aplicar a
                 # operação, e nesse ponto a tela já está de saída).
-                bloco_recorrencia.content = bloco_rotulado("Recorrência", [construir_conteudo_recorrencia()])
+                bloco_recorrencia.content = construir_conteudo_recorrencia()
                 page.update()
 
             # Rolagem: Detalhes e Editar dividiam uma só
@@ -3460,12 +3425,21 @@ def main(page: ft.Page):
             # no topo); redesenhar os próprios Detalhes mantém a coluna vigente.
             corpo = {"area": None, "tela": None}
 
-            def exibir_no_corpo(conteudo, tela):
+            # `rodape` (Editar): fica abaixo da coluna rolável, sempre visível, e
+            # nunca cobre o conteúdo -- a coluna só ocupa o espaço que sobra.
+            def exibir_no_corpo(conteudo, tela, rodape=None):
                 if corpo["tela"] != tela:
                     corpo["area"] = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[])
                     corpo["tela"] = tela
                     page.controls.clear()
-                    page.controls.append(corpo["area"])
+                    if rodape is None:
+                        page.controls.append(corpo["area"])
+                    else:
+                        page.controls.append(ft.Column(
+                            data="pp_editar_com_rodape", expand=True, spacing=0,
+                            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                            controls=[corpo["area"], rodape],
+                        ))
                 corpo["area"].controls = [conteudo]
 
             def construir_seletor_frequencia(estado):
@@ -4190,12 +4164,19 @@ def main(page: ft.Page):
                 # sendo editado aqui -- reset a cada abertura de Editar.
                 vencimento_pendente["valor"] = data_venc_atual
 
+                def seta_e_lapis(seta):
+                    return ft.Row(tight=True, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                        ft.Icon(seta, size=24, color=cores.texto_secundario),
+                        ft.Container(width=1, height=24, bgcolor=cores.divisor),
+                        icone_lapis("Editar categoria"),
+                    ])
+
                 # 5.23/P4: sem max_length -- dados antigos acima do limite
                 # aparecem inteiros; contador e mensagem explicam o excesso e
                 # Salvar só é aceito depois de ajustados.
                 campo_nome_edit = ft.TextField(
                     label="Nome da conta", value=conta["nome"], color=cores.texto_principal,
-                    **estilo_campo_texto(),
+                    **estilo_edicao(ft.Icons.DESCRIPTION_OUTLINED),
                 )
                 # RF07/RF32 (5.22): descrição pode ser adicionada, editada ou
                 # removida (campo vazio = remover). v7.0 5.45 (M4-2): 2 a 8
@@ -4205,7 +4186,7 @@ def main(page: ft.Page):
                     label="Descrição (opcional)", value=descricao_original or "",
                     hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
                     multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
-                    **estilo_campo_texto(),
+                    **estilo_edicao(ft.Icons.NOTES),
                 )
                 # Pagamentos parciais: o valor continua editável; só não pode ficar abaixo
                 # da soma dos pagamentos ativos (conferido no Salvar e no banco).
@@ -4215,13 +4196,18 @@ def main(page: ft.Page):
                     value=f"{conta['valor']:.2f}".replace(".", ","),
                     keyboard_type=ft.KeyboardType.NUMBER,
                     color=cores.texto_principal,
-                    **estilo_campo_texto(),
+                    # Só visual: o valor do campo continua "300,00" (parse_valor
+                    # também aceitaria o "R$").
+                    prefix=ft.Text("R$ ", size=15, color=cores.texto_secundario),
+                    **estilo_edicao(ft.Icons.PAYMENTS_OUTLINED),
                 )
+                # Somente leitura como antes: a data muda pelo calendário, que agora
+                # abre pelo lápis ou por um clique no próprio campo.
                 campo_data_edit = ft.TextField(
                     label="Data de vencimento",
                     value=data_venc_atual.strftime("%d/%m/%Y"),
-                    read_only=True, expand=True, color=cores.texto_principal,
-                    **estilo_campo_texto(),
+                    read_only=True, color=cores.texto_principal,
+                    **estilo_edicao(ft.Icons.CALENDAR_MONTH_OUTLINED),
                 )
                 # RF07/5.11: categoria agora editável -- mesmo Dropdown/opções de
                 # Nova Conta (montar_opcoes_categoria, promovida a main()),
@@ -4232,7 +4218,13 @@ def main(page: ft.Page):
                     label="Categoria",
                     value=str(categoria_id_original) if categoria_id_original is not None else "",
                     options=montar_opcoes_categoria(), color=cores.texto_principal,
-                    expand=True,
+                    expand=True, border_radius=RAIO_EDICAO, border_width=1, focused_border_width=2,
+                    text_size=15,
+                    leading_icon=ft.Icon(ft.Icons.SELL_OUTLINED, size=20, color=cores.texto_secundario),
+                    # A lista não aceita outro botão dentro dela: o lápis entra no
+                    # botão da seta, que já abre e fecha a mesma lista de opções.
+                    trailing_icon=seta_e_lapis(ft.Icons.ARROW_DROP_DOWN),
+                    selected_trailing_icon=seta_e_lapis(ft.Icons.ARROW_DROP_UP),
                     **estilo_lista(),
                 )
                 ultima_categoria_valida_edit = {"valor": campo_categoria_edit.value}
@@ -4292,6 +4284,17 @@ def main(page: ft.Page):
                 def abrir_seletor_data(e):
                     page.show_dialog(seletor_data)
 
+                def focar(campo):
+                    async def ao_clicar(e):
+                        await campo.focus()
+                    return ao_clicar
+
+                campo_nome_edit.suffix_icon = botao_lapis("Editar nome da conta", focar(campo_nome_edit))
+                campo_valor_edit.suffix_icon = botao_lapis("Editar valor", focar(campo_valor_edit))
+                campo_data_edit.suffix_icon = botao_lapis("Editar data de vencimento", abrir_seletor_data)
+                campo_data_edit.on_click = abrir_seletor_data
+                campo_descricao_edit.suffix_icon = botao_lapis("Editar descrição", focar(campo_descricao_edit))
+
                 def ha_alteracao_pendente():
                     # RF07 (5.11) + RF20 (5.6) + Recorrência como rascunho: mesma
                     # comparação usada para montar a mensagem natural, mas só o
@@ -4339,7 +4342,102 @@ def main(page: ft.Page):
                 rascunho_recorrencia["acao"] = None
                 rascunho_recorrencia["frequencia"] = None
                 rascunho_recorrencia["data_termino"] = None
-                bloco_recorrencia.content = bloco_rotulado("Recorrência", [construir_conteudo_recorrencia()])
+                bloco_recorrencia.content = construir_conteudo_recorrencia()
+
+                # Pagamentos parciais: Editar só cuida dos dados
+                # gerais; pagamentos são geridos nos Detalhes. Fica um resumo só de
+                # leitura, num contêiner discreto: o total pago é sempre o GRAVADO;
+                # com o Valor alterado e ainda não salvo, o saldo vira "previsto"
+                # (valor digitado menos o pago, em centavos), com nota dizendo que
+                # nada foi salvo. Nenhuma gravação acontece aqui.
+                situacao_gravada = situacao_pagamento["atual"]
+                pago_gravado = situacao_gravada["pago_centavos"]
+                rotulo_saldo = ft.Text("", size=13, color=cores.texto_secundario, data="pp_rotulo_saldo_edicao")
+                valor_saldo = ft.Text("", size=17, weight=ft.FontWeight.BOLD, color=cores.texto_principal,
+                                      data="pp_valor_saldo_edicao")
+                nota_resumo = ft.Text("", size=12, color=cores.texto_secundario, visible=False,
+                                      data="pp_nota_resumo_edicao")
+
+                # Visual de Editar: Total pago e Saldo lado a lado, com um traço
+                # entre eles, quando há largura (sm, como as colunas dos Detalhes
+                # usam lg); empilhados na janela estreita, para nenhum valor ser
+                # cortado ou quebrado. Ícones iguais aos dos Detalhes.
+                def item_resumo(icone, rotulo, valor):
+                    return ft.Container(
+                        col={"xs": 25, "sm": 12},
+                        content=ft.Row(spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                            ft.Container(
+                                width=40, height=40, border_radius=20,
+                                bgcolor=ft.Colors.with_opacity(0.12, cores.detalhes_icone),
+                                alignment=ft.Alignment.CENTER,
+                                content=ft.Icon(icone, size=20, color=cores.detalhes_icone),
+                            ),
+                            ft.Column(expand=True, spacing=0, controls=[rotulo, valor]),
+                        ]),
+                    )
+
+                def atualizar_resumo():
+                    """Resumo conforme o campo Valor: igual ao gravado (ou vazio/
+                    inválido) mostra o saldo gravado; outro valor válido, a prévia."""
+                    digitado = parse_valor(campo_valor_edit.value)
+                    novo = database.centavos_de(digitado) if digitado is not None else None
+                    nota_resumo.visible = True
+                    if novo is None:
+                        saldo, previsto = situacao_gravada["saldo_centavos"], False
+                        nota_resumo.value = "Informe um valor válido para ver o saldo devedor previsto."
+                    elif novo == situacao_gravada["valor_centavos"]:
+                        saldo, previsto = situacao_gravada["saldo_centavos"], False
+                        nota_resumo.visible = False
+                    elif novo < pago_gravado:
+                        saldo, previsto = None, True
+                        nota_resumo.value = (f"O novo valor é menor que o total pago "
+                                             f"({formatar_moeda(pagamentos.reais(pago_gravado))}) e não poderá "
+                                             "ser salvo.")
+                    else:
+                        saldo, previsto = novo - pago_gravado, True
+                        nota_resumo.value = "Prévia considerando o novo valor. Nenhuma alteração foi salva."
+                    rotulo_saldo.value = "Saldo devedor previsto" if previsto else "Saldo devedor"
+                    valor_saldo.value = "—" if saldo is None else formatar_moeda(pagamentos.reais(saldo))
+
+                atualizar_resumo()
+                # Mês e ano da ocorrência editada (vencimento gravado); o traço e
+                # o mês ficam juntos (espaços inseparáveis) se o título quebrar.
+                competencia = competencia_da_ocorrencia(conta["data_vencimento"])
+                titulo_resumo = ft.Text(
+                    "Resumo dos pagamentos", size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal,
+                    data="pp_titulo_resumo_edicao",
+                    semantics_label=f"Resumo dos pagamentos — {competencia}",
+                    spans=[ft.TextSpan(" —\u00a0" + competencia.replace(" ", "\u00a0"),
+                                       style=ft.TextStyle(color=cores.detalhes_icone, weight=ft.FontWeight.BOLD),
+                                       data="pp_competencia_edicao")],
+                )
+                resumo_pagamentos = ft.Container(
+                    data="pp_resumo_edicao",
+                    bgcolor=cores.grafico_total_fundo,
+                    border=ft.Border.all(1, cores.grafico_total_borda),
+                    border_radius=RAIO_EDICAO,
+                    padding=ft.Padding(16, 12, 16, 12),
+                    content=ft.Column(spacing=10, controls=[
+                        titulo_resumo,
+                        ft.ResponsiveRow(
+                            columns=25, spacing=0, run_spacing=10,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                item_resumo(ft.Icons.PRICE_CHECK,
+                                            ft.Text("Total pago", size=13, color=cores.texto_secundario),
+                                            ft.Text(formatar_moeda(pagamentos.reais(pago_gravado)), size=17,
+                                                    weight=ft.FontWeight.BOLD, color=cores.texto_principal,
+                                                    data="pp_valor_pago_edicao")),
+                                ft.Container(col={"xs": 0, "sm": 1}, alignment=ft.Alignment.CENTER,
+                                             content=ft.Container(width=1, height=40,
+                                                                  bgcolor=cores.grafico_total_borda)),
+                                ft.Container(col={"xs": 25, "sm": 0}, height=1, bgcolor=cores.grafico_total_borda),
+                                item_resumo(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED, rotulo_saldo, valor_saldo),
+                            ],
+                        ),
+                        nota_resumo,
+                    ]),
+                )
 
                 ligar_contador_de_limite(campo_nome_edit, "nome_conta", limites.LIMITE_NOME_CONTA,
                                          ao_mudar=lambda e: atualizar_estado_botao_salvar())
@@ -4347,6 +4445,7 @@ def main(page: ft.Page):
                                          ao_mudar=lambda e: atualizar_estado_botao_salvar())
                 def ao_mudar_valor_edit(e):
                     escolha_diferenca["valor"] = None  # Pagamentos parciais: valor novo pede nova escolha
+                    atualizar_resumo()
                     atualizar_estado_botao_salvar()
 
                 campo_valor_edit.on_change = ao_mudar_valor_edit
@@ -4819,49 +4918,74 @@ def main(page: ft.Page):
                     content="Cancelar",
                     bgcolor=cores.botao_secundario_fundo,
                     color=cores.botao_secundario_texto,
-                    style=ft.ButtonStyle(side=ft.BorderSide(1, cores.borda_suave)),
-                    width=110,
+                    style=ft.ButtonStyle(side=ft.BorderSide(1, cores.borda_suave),
+                                         shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO),
+                                         padding=ft.Padding(8, 0, 8, 0)),
+                    col={"xs": 4, "sm": 3, "md": 2}, height=44,
                     on_click=lambda e: voltar_do_formulario(),
                 )
                 botao_salvar = ft.Button(
                     content="Salvar alterações",
+                    icon=ft.Icons.SAVE_OUTLINED,
                     bgcolor=cores.botao_desabilitado_fundo,
                     color=cores.botao_desabilitado_texto,
+                    style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO),
+                                         padding=ft.Padding(8, 0, 8, 0)),
                     disabled=True,
-                    width=180,
+                    col={"xs": 8, "sm": 5, "md": 3}, height=44,
                     on_click=salvar_edicao,
+                )
+
+                # Sino 6.10 (visual de Editar): Cancelar e Salvar numa barra fixa
+                # abaixo da área rolável (exibir_no_corpo, `rodape`) -- sempre
+                # visíveis, sem cobrir o último campo, e depois dos campos na ordem
+                # do Tab. A mensagem de erro do Salvar fica nela, junto dos botões;
+                # vazia, serve de respiro. Botões à direita; na janela estreita
+                # (xs) dividem a largura, para caberem lado a lado sem cortar.
+                rodape_edicao = ft.Container(
+                    data="pp_rodape_edicao",
+                    bgcolor=cores.fundo_pagina,
+                    border=ft.Border(top=ft.BorderSide(1, cores.divisor)),
+                    padding=ft.Padding(20, 2, 20, 14),
+                    content=ft.Column(spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[
+                        erro_edit,
+                        ft.ResponsiveRow(
+                            alignment=ft.MainAxisAlignment.END, spacing=10,
+                            controls=[botao_cancelar_edicao, botao_salvar],
+                        ),
+                    ]),
                 )
 
                 exibir_no_corpo(
                     ft.Container(
-                        padding=ft.Padding(20, 40, 20, 24),
+                        padding=ft.Padding(20, 32, 20, 20),
                         content=ft.Column(
                             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                            spacing=12,
                             controls=[
                                 cabecalho_edicao,
-                                ft.Container(height=20),
-                                campo_nome_edit,
-                                campo_valor_edit,
-                                ft.Row(controls=[
-                                    campo_data_edit,
-                                    ft.IconButton(icon=icone_com_nome(ft.Icons.CALENDAR_MONTH, "Escolher data",
-                                                                      cores.acao_primaria),
-                                                  icon_color=cores.acao_primaria, on_click=abrir_seletor_data),
-                                ]),
-                                campo_categoria_edit,
-                                campo_descricao_edit,
-                                bloco_recorrencia,
-                                ft.Container(height=16),
-                                erro_edit,
-                                ft.Row(
-                                    alignment=ft.MainAxisAlignment.END,
-                                    spacing=10,
-                                    controls=[botao_cancelar_edicao, botao_salvar],
+                                ft.Container(height=8),
+                                # Duas colunas a partir de md (como as grades dos
+                                # Detalhes); abaixo disso, uma só, na mesma ordem.
+                                ft.ResponsiveRow(
+                                    data="pp_grade_edicao", spacing=12, run_spacing=12,
+                                    vertical_alignment=ft.CrossAxisAlignment.START,
+                                    controls=[
+                                        ft.Container(col=12, content=campo_nome_edit),
+                                        ft.Container(col={"xs": 12, "md": 6}, content=campo_valor_edit),
+                                        ft.Container(col={"xs": 12, "md": 6}, content=campo_data_edit),
+                                        ft.Container(col={"xs": 12, "md": 6},
+                                                     content=ft.Row(controls=[campo_categoria_edit])),
+                                        ft.Container(col={"xs": 12, "md": 6}, content=bloco_recorrencia),
+                                        ft.Container(col=12, content=campo_descricao_edit),
+                                        ft.Container(col=12, content=resumo_pagamentos),
+                                    ],
                                 ),
                             ],
                         ),
                     ),
                     "editar",
+                    rodape=rodape_edicao,
                 )
                 page.update()
 
