@@ -2287,6 +2287,29 @@ Uma etapa específica para **avaliar** como disponibilizar o Sino a outras pesso
 
 ---
 
+## Pagamentos parciais — protótipo e integração (Sino 6.10)
+
+*Registro de 30/10/2026.* Funcionalidade que não fazia parte do planejamento (M1–M14). Regras vigentes na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md), regra 5.54 e migração v10 (9.2); decisão consolidada na P44.
+
+**1. Protótipo isolado (26 a 28/10/2026) — não é o Sino oficial.** A pedido da autora, depois de interromper a avaliação do protótipo de supercontas (F1/M13), os pagamentos parciais foram experimentados num clone separado do repositório, a partir da Sino 6.9.1 (`e373966`), sem remoto e sem publicação, com banco fictício e sandbox sem rede. O protótipo passou por etapas avaliadas pela autora: modelo com tabela própria em centavos e contas legadas sem conversão; estorno rastreável (último lançado ou todos); valor nunca abaixo do pago; quitação sempre registrada e diálogo da diferença; opção D (valor em "Este mês em diante"); reorganização entre Detalhes (gestão dos pagamentos) e Editar (dados gerais, resumo, prévia, visual em duas colunas); exclusão definitiva só de estornados e proteção das séries só pelos registros existentes; H2 e I1–I4 (competência nas mudanças coletivas de vencimento). Encerrado em 28/10/2026 **sem integração** (etiqueta `encerramento-prototipo-pp` no clone). Notas e roteiros ficaram fora do Git, no clone.
+
+**2. Decisão de integrar (28/10/2026).** A autora decidiu tornar os pagamentos parciais parte de uma versão oficial antes de retomar as supercontas: D1 branch de integração a partir de `e373966`, com o histórico do protótipo preservado numa branch e numa etiqueta próprias (`preservado/prototipo-pagamentos-parciais` e `preservado-prototipo-pagamentos-parciais`, em `bd6ccf4`) e etiqueta `sino-6.9.1` em `e373966`, sem reescrever histórico; D2 migração formal v9 → v10 com backup, ensaiada em cópias; D3 versão **Sino 6.10**; D4 datas de pagamento só pelo lápis dos Detalhes e "Alterar data de pagamento" retirada de Editar.
+
+**3. Integração oficial (29 e 30/10/2026), branch `integracao/sino-6.10`, pontos de controle locais:**
+
+* Etapa 1 — preparação Git (etiquetas e branches acima; `checkpoint/6.10-etapa1` = `e373966`).
+* Etapa 2 — schema v10 (`5c0f153`).
+* Etapa 3 — regras de pagamento, exclusão, Detalhes, Início e Gráfico e o Editar mínimo, ampliada por decisão da autora (opção A) por dependência com o bloco Status de Editar e com as recorrências (`b3e8e41`). Marcas de protótipo neutralizadas; testes renomeados.
+* Etapa 4 — H2, I1–I4 e aviso I3; a autora estendeu a I4 com as recusas "depois" e "ano" (30/10/2026) (`4f5a19c`).
+* Etapa 5 — visual de Editar (`e2f90ba`), retomada depois de uma queda de energia, com o trabalho parcial recuperado intacto. Validação manual **parcial** pela autora: A2, R1/I3 e A5.
+* Etapa 6 — remoção de código sem uso deixado pela integração (`7b074f7`); `editar_data_pagamento` mantida (D6-A) e nomes `pp_*` mantidos (D6-B).
+* Etapa 7 — diagnóstico (7A) e ensaios (7B): migração em cópias do banco e dos backups, suíte 1.593/1.593, desempenho com perfis com e sem pagamentos parciais, capturas e análise da D2. **Aprovada com ressalvas** (ERS v7.0, 13.4). O teste com leitor de tela (Orca) foi retirado do escopo pela autora e **não** foi executado.
+* Etapa 8 — esta documentação.
+
+**4. O que ficou só no protótipo.** Título "Sino — Protótipo Pagamentos Parciais", comentários e nomes de teste com "protótipo", a migração idempotente própria do protótipo (substituída pela v10 formal) e a tabela de marcação de histórico, abandonada no próprio protótipo. O prefixo `pp_` permaneceu nos nomes persistidos (`pp_pagamentos`) e nos marcadores internos da interface.
+
+**5. Pendências.** As da ERS v7.0, 13.4 ("Pagamentos parciais"): A1/A2/A3 da data de conta legada; validação manual ampla; Orca; RNF06 no pior caso; `tests/medir_desempenho.py`; classificação da mudança na Política (5.53). A publicação (merge, etiqueta `sino-6.10` e push) depende de autorização da autora.
+
 ## Resumo geral da ERS v7.0 proposta (04/10/2026)
 
 *Registro histórico de 04/10/2026 (com as migrações já ajustadas pela P31). O estado atual de cada melhoria está na "Lista de melhorias propostas", no início deste documento, e na ERS v7.0 (13.4 e 15.3); em particular, M8 (produção restrita concluída na E4; terceiros pendente) e M9 (aplicada na E1) mudaram depois deste resumo.*

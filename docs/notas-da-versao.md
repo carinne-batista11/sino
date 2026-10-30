@@ -5,6 +5,36 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.10 — pagamentos parciais (30/10/2026)
+
+**Ainda não publicada.** Implementada e validada com ressalvas; o merge na `main` e a publicação dependem de autorização da autora. Funcionalidade nova, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), regra 5.54 e migração v10 em 9.2).
+
+**Concluído**
+
+- **Pagar uma conta em partes:** nos Detalhes, "Registrar pagamento parcial", com valor e data. A conta continua Pendente (ou Atrasada) até os pagamentos somarem o valor; depois, fica paga, com a data do último pagamento lançado. Os Detalhes mostram valor, total pago, saldo devedor e o histórico de pagamentos.
+- **Marcar como paga** registra o saldo que falta com a data de hoje; com pagamentos parciais, o Sino confirma antes o valor do saldo, nos Detalhes e em Início.
+- **Desfazer sem apagar:** "Desmarcar como paga" de uma conta quitada com pagamentos pergunta se desfaz **o último pagamento** ou **todos**. O pagamento desfeito fica no histórico como estornado, com a data, e deixa de contar. Cada pagamento tem lápis (corrigir valor e data) e lixeira (desfazer); um registro estornado pode ser excluído de vez.
+- **Editar conta reorganizado:** só os dados gerais, em duas colunas em janelas maiores, com um lápis em cada campo; recorrência num menu; Cancelar e Salvar numa barra fixa. Um resumo mostra o total pago e o saldo, com a prévia do saldo ao mudar o valor, sem salvar nada. O valor nunca fica abaixo do que já foi pago; aumentar o valor de uma conta quitada pergunta se a diferença fica paga ou em aberto. A data de pagamento saiu de Editar.
+- **Recorrências protegem o que já foi pago:** em "Este mês em diante", as ocorrências seguintes com pagamentos mantêm o valor (novo valor) e o mês original (novo vencimento), com avisos no diálogo; mudanças que colocariam a ocorrência no mês de uma já paga, ou depois dela, são recusadas sem salvar nada. Alterar a frequência e encerrar a recorrência preservam as ocorrências com pagamentos.
+- **Totais:** o pago de Início e do Gráfico inclui os pagamentos parciais; o total do mês não muda; o aviso dos próximos 7 dias soma o que falta pagar.
+- **Contas pagas antes desta versão** continuam pagas, sem pagamentos individuais inventados.
+- **Testes:** 1.593 testes automáticos aprovados, sem falhas, erros nem testes ignorados, em bancos temporários e sem acesso à rede.
+
+**Banco de dados — leia antes de atualizar**
+
+- Na primeira abertura, o Sino passa o banco da **versão 9 para a 10** (nova tabela de pagamentos; nada existente é alterado), depois de criar um **backup** em `database/backups/sino_pre_migracao_v10_….db`. Se algo falhar, nada muda.
+- **A Sino 6.9.1 não abre um banco já atualizado** (mostra "Não foi possível abrir o Sino" e não grava nada). Para voltar a ela, é preciso **restaurar o backup** `sino_pre_migracao_v10_…`, que **não tem** o que foi registrado depois da atualização.
+- Migração ensaiada só em cópias isoladas: cópia do banco atual, cópias dos backups, banco fictício, execução repetida, interrupção do processo no meio e abertura pela 6.9.1. O backup mais antigo da instalação (`sino_pre_migracao_v5_20260903_194647.db`) tem o formato anterior à versão 5 (v4.1) e, como já acontecia na 6.9.1, não é aberto diretamente.
+
+**Parcial e pendente**
+
+- **Validação manual parcial:** a autora aprovou o resumo e a edição de conta com pagamento parcial, o aviso de meses mantidos numa recorrência e a recusa de valor abaixo do pago. As demais telas, temas, larguras, o teclado e o foco foram verificados por testes automáticos e capturas, **sem** validação manual.
+- **Leitor de tela (Orca) não testado.** A acessibilidade desta versão **não** está declarada validada.
+- **Data de pagamento de contas pagas antes desta versão:** sem acesso direto. Caminho atual: "Desmarcar como paga" e registrar um pagamento com o valor total e a data desejada (a conta passa a ter um pagamento registrado). Outras soluções aguardam decisão.
+- **Desempenho:** abaixo de 2 s nas medições com 1.000 contas, inclusive com pagamentos parciais; no pior caso (1.000 contas num único mês), abrir esse mês em Início continua acima de 2 s na janela real (cerca de 2,15 s), limitação já conhecida ([desempenho](desempenho-v6.md)). O script `tests/medir_desempenho.py` não funciona com esta versão e foi substituído, nas medições, por um script externo.
+- **Ordem das parcelas:** uma ocorrência movida com "Somente este mês" para depois da seguinte continua com o número de parcela original (comportamento anterior a esta versão).
+- **Termos e Política:** sem mudanças nesta versão. A Política de 13/10/2026 não menciona os pagamentos individuais e estornos; a classificação dessa mudança aguarda decisão da autora.
+
 ## Sino 6.9.1 — nomes acessíveis nos botões só de ícone (24/10/2026)
 
 **Publicada no GitHub em 24/10/2026**, num único commit na `main`. Versão de correção, sem funcionalidade nova ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), RNF14 e 5.52).

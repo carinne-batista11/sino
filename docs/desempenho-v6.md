@@ -159,3 +159,59 @@ Tempos em milissegundos; "—" = não medido nessa rodada. As duas primeiras col
 * A ida e volta ao cliente não inclui o desenho do quadro; o tempo com AT-SPI inclui o custo do próprio ouvinte. O tempo percebido fica entre os dois.
 * Não foram medidos: Ver status e Detalhes na janela real, nem o tema Escuro. Não houve cronometragem visual pela autora.
 * Por isso: **RNF03 e RNF06 atendidos na camada Python e, na janela real, no cenário distribuído; não atendidos na janela real no pior caso de 1.000 contas num único mês.**
+
+## Atualização (30/10/2026): Sino 6.10, com pagamentos parciais
+
+Medição da Etapa 7B da Sino 6.10 (ainda não publicada), sobre o código da branch `integracao/sino-6.10` no commit `7b074f7`. Os registros de 04/10 e 24/10/2026, acima, ficam preservados.
+
+### Ambiente
+
+Mesmo computador e mesmo software (Intel Core i7-6500U, 4 núcleos lógicos, 16 GB de RAM; Linux 6.8.0, X11, disco ext4; Python 3.11.0, Flet 0.86.5, SQLite 3.37.2). Navegador aberto durante parte das rodadas; carga média entre 0,7 e 1,8; nenhum cliente do Flet esquecido em execução.
+
+### Método
+
+* **Ferramenta:** `tests/medir_desempenho.py` **não funciona com a v10**: a operação "marcar/desmarcar como paga" falha, porque marcar como paga passa a registrar um pagamento e desmarcar uma quitação registrada vira estorno (ERS v7.0, 5.54). O arquivo não foi alterado; as medições usaram um script **externo** ao projeto, que reaproveita a mesma classe de medição e as guardas dos testes (banco descartável; banco real e backups nunca abertos; "hoje" = 15/09/2026).
+* **Perfil A (referência):** as mesmas 1.000 contas e a mesma semente de 04/10 e 24/10; as cerca de 30% pagas ficam pagas **sem** registro de pagamento, como um banco v9 migrado. Mesmo conteúdo das medições anteriores; a operação "marcar/desmarcar" foi trocada por "marcar como paga + desfazer (estorno)", que não é equivalente.
+* **Perfil B (pagamentos parciais):** o perfil A mais 200 contas (20%), sorteadas entre as não pagas, com 1 a 3 pagamentos parciais cada (396 registros no cenário distribuído); **dentro** dessas 200, 50 contas (5% do total) com o último pagamento estornado.
+* **Camada Python:** 1 aquecimento e 30 medições por operação, duas rodadas por perfil, e a ferramenta original da Sino 6.9.1 na mesma máquina e na mesma hora, como linha de base.
+* **Janela real:** cópia isolada com banco fictício do perfil B, cliente desktop do Flet, roteiro externo; 3 repetições por ação; tempo do Python até o fim de `page.update()` e ida e volta ao cliente, como em 24/10 (sem AT-SPI).
+
+### Camada Python (página falsa dos testes)
+
+| Operação | Perfil A (mediana / máx.) | Perfil B (mediana / máx.) | 6.9.1 (mediana / máx.) |
+|---|---:|---:|---:|
+| tela: entrar e montar a Tela Principal | 204 / 282 | 204 / 274 | 172 / 215 |
+| tela: Início (voltar) | 72 / 219 | 73 / 213 | 40 / 106 |
+| tela: próximo mês | 42 / 205 | 43 / 199 | 31 / 34 |
+| tela: Ver status + Atrasadas | 60 / 77 | 60 / 65 | 38 / 39 |
+| tela: abrir Detalhes (conta com pagamentos no B) | 11 / 812 | 12 / 779 | — |
+| tela: Detalhes → Editar | 5 / 8 | 5 / 6 | 3 / 3 |
+| tela: prévia do saldo em Editar | 0,3 / 0,6 | 0,3 / 0,4 | — |
+| tela: Gráfico mensal | 26 / 27 | 25 / 27 | 21 / 22 |
+| dados: registrar pagamento parcial | 11 / 201 | 11 / 126 | — |
+| dados: estornar pagamento | 10 / 190 | 88 / 178 | — |
+| mês único: entrar (1.000 linhas), isolado | 536 / 1.049 | 544 / 1.053 | 502 / 946 |
+| mês único: Ver status + Pendentes, isolado | 471 / 1.613 | 475 / 1.619 | 448 / 1.450 |
+
+Tempos em milissegundos; menor mediana entre as rodadas e maior máximo observado. Na coluna da 6.9.1, os valores do mês único vêm da rodada completa da ferramenta original (não isolada). Na linha "Detalhes → Editar", a 6.9.1 mediu uma ocorrência de série. Todas as operações abaixo de 2 s.
+
+* **Pico de 3,4 s descartado como artefato:** nas rodadas completas, "mês único: entrar" teve um máximo de cerca de 3,4 s (e "Ver status + Pendentes" de 2,3 s no perfil B). O diagnóstico mostrou que os picos coincidem com coletas completas do coletor de lixo do Python sobre objetos acumulados **pelo processo de medição**, que repete o login dezenas de vezes depois das outras operações; sem o coletor, nenhuma repetição passou de 0,55 s, e o padrão é o mesmo na 6.9.1. Medido num processo novo (linhas "isolado"), o máximo ficou em 1,05 s.
+* Início, Ver status e próximo mês ficaram de 10 a 30 ms mais lentos na mediana que na 6.9.1 (hipótese, não confirmada por perfil: o cálculo do pago com os pagamentos parciais), dentro do limite.
+
+### Janela real (perfil B)
+
+| Ação | Distribuído (ida e volta, 3 medidas) | Mês único (ida e volta) |
+|---|---:|---:|
+| entrar | 274 | **2.150** |
+| próximo mês | 88–108 | 25–127 |
+| mês anterior (volta ao mês cheio no mês único) | 90–94 | **2.159** |
+| abrir Detalhes (conta com pagamentos) | 24–31 | — |
+| Detalhes → Editar | 23–32 | — |
+| Gráfico mensal | 73–81 | 123–681 |
+| Gráfico anual | 68–80 | 64–65 |
+
+### Leitura
+
+* **Cenário distribuído, com e sem pagamentos parciais:** RNF06 atendido na camada Python e na janela real (todas as ações abaixo de 0,3 s na janela).
+* **Pior caso (1.000 contas num único mês):** continua **não atendido na janela real** (cerca de 2,15 s para entrar e para voltar ao mês cheio, contra 2,35–2,48 s em 24/10), a mesma limitação já registrada; tratamento pendente de decisão.
+* **Limites:** uma máquina; 3 medidas por ação na janela real; o desenho do quadro pelo Flutter e o tema Escuro não foram medidos; comparações com 04/10 e 24/10 só como referência.

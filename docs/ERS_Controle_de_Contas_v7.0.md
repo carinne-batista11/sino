@@ -42,6 +42,7 @@ Melhorar a experiência de uso e a robustez do Sino, abrir caminho para o uso po
 * versionamento e novo aceite dos Termos e da Política, com revisão jurídica antes de terceiros (M12);
 * licença que preserve a possibilidade de a autora comercializar o Sino e impeça a comercialização por terceiros sem autorização (M9);
 * avaliação da disponibilização para outras pessoas, em desktop e/ou mobile, com piloto restrito antes de uma liberação mais ampla (M14).
+* *Atualização (30/10/2026):* pagamentos parciais das contas comuns, com estorno rastreável e proteções nas recorrências (5.54, Sino 6.10), acrescentados por decisão da autora fora do planejamento original (P44).
 
 # 2. Escopo
 
@@ -52,6 +53,7 @@ Melhorar a experiência de uso e a robustez do Sino, abrir caminho para o uso po
 * **Prioridade 3 — Melhorias de UX:** M1, M2, M3, M4, M5, M6, M11 e M7, uma entrega por melhoria.
 * **Prioridade 4 — Disponibilização para outras pessoas:** M14, avaliação de desktop e/ou mobile e preparação de um **piloto restrito**. A liberação mais ampla é uma etapa separada (seção 11.3).
 * **Prioridade 5 — Funcionalidades maiores:** M10 (comprovantes), em entregas próprias.
+* *Atualização (30/10/2026):* **pagamentos parciais** (5.54) entram como versão própria, a **Sino 6.10**, fora das entregas E1–E18 e das prioridades acima, por decisão da autora (P44). Não altera o escopo exigido para a Sino 7.0 (11.2).
 
 ## 2.2 Fora do escopo completo da v7.0
 
@@ -225,6 +227,57 @@ Os 29 primeiros são o conjunto que o Python 3.11 considera espaço em branco; a
 * Comprovantes (5.50) e envio real de e-mails (5.49) são mudanças relevantes: exigem textos atualizados e novo aceite **antes** de serem habilitados.
 * O aceite continua obrigatório no cadastro (RF15).
 
+## 5.54 Pagamentos parciais [v7 novo, Sino 6.10; completa 5.6, 5.8, 5.9, 5.10, 5.16 e 5.24; exceção H2 à 5.1]
+
+Fora das melhorias M1–M14 e das entregas E1–E18: decisão da autora de 28/10/2026 de tornar oficial o que foi validado num protótipo isolado (26 a 28/10/2026) e integrado na **Sino 6.10** (P44; histórico em [ERS_v7.0_propostas.md](ERS_v7.0_propostas.md#pagamentos-parciais--protótipo-e-integração-sino-610)). Contas comuns (avulsas e ocorrências de séries); supercontas e Faturas (M13) ficam fora.
+
+**Registro e situação**
+
+* Cada pagamento é um **registro próprio** de uma única ocorrência, em centavos inteiros, com data, tipo e data de registro (migração v10, 9.2). Nunca se propaga para outras ocorrências (5.9).
+* **Total pago** = soma dos pagamentos **ativos**; **saldo devedor** = valor da conta − total pago.
+* Enquanto houver saldo, a conta continua **pendente** (Pendente ou Atrasada pelo vencimento, como antes); "pago parcialmente" é informação calculada, não um status novo.
+* Quando os pagamentos ativos somam exatamente o valor, a conta passa a **paga**, com a data do pagamento que a quitou (o **último lançado**, pela ordem de registro, nunca a maior data informada).
+* Recusado sem gravar nada: valor zero, negativo, com mais de duas casas decimais ou acima do saldo; data futura; conta já paga; saldo diferente do que a tela mostrava (evita registrar duas vezes).
+* Tipos: **parcial**, **saldo** (completa uma conta que já tinha pagamentos) e **integral** (quita de uma vez). Nos Detalhes, o rótulo exibido é calculado pelos registros ("Pagamento parcial", "Pagamento do saldo", "Pagamento integral") e o pagamento que quitou a conta é marcado com "Conta quitada"; o tipo gravado não muda.
+
+**Quitar e desfazer**
+
+* **Marcar como paga** (Detalhes ou ação rápida de Início) registra o saldo restante com a **data de hoje** (5.10): tipo integral se nada foi pago, tipo saldo se já havia parciais (nesse caso, com confirmação que informa o saldo, nos Detalhes e em Início). **Toda quitação feita na 6.10 gera um registro.**
+* **Registrar pagamento parcial** (Detalhes): valor e data (hoje por padrão; nunca futura), até o saldo.
+* **Desmarcar como paga** de uma conta quitada com pagamentos: diálogo para desfazer **o último pagamento lançado** ou **todos**. Desfazer é **estorno**: o registro fica no histórico com a data do estorno e deixa de contar; nada é apagado. A conta volta a pendente.
+* Nos Detalhes, cada pagamento ativo tem **lápis** (corrigir valor e data; a soma dos ativos não passa do valor; data não futura; status e data de quitação recalculados) e **lixeira** ("Desfazer pagamento", estorno de um só). Um registro estornado tem só a lixeira, que o **exclui definitivamente** do histórico, com confirmação.
+* **Conta legada** (paga antes da v10, sem registros): continua paga, com total pago = valor e a mensagem "Conta paga sem pagamentos individuais registrados."; nenhum registro é inventado. "Desmarcar como paga" volta a deixá-la pendente, como antes.
+
+**Editar conta**
+
+* Editar cuida só dos **dados gerais** (nome, valor, vencimento, categoria, recorrência, descrição); pagamentos são geridos nos Detalhes. O bloco Status e a ação "Alterar data de pagamento" **saíram** de Editar (D4).
+* **Resumo dos pagamentos** só de leitura, com a competência pelo **vencimento gravado** ("Resumo dos pagamentos — Outubro de 2026"): total pago e saldo devedor gravados. Ao mudar o Valor, **prévia** do "Saldo devedor previsto" (nada gravado); com valor menor que o total pago, a prévia avisa que não poderá ser salvo.
+* O **valor** continua editável, mas nunca abaixo do total pago (recusa "O valor informado é menor que o total já pago.", sem gravar nada; vale também para as ocorrências atingidas por "Este mês em diante").
+* Aumentar o valor de uma conta **quitada** com pagamentos abre "Como deseja registrar a diferença?": registrar a diferença como paga ou mantê-la em aberto; nada é gravado antes de confirmar. Numa conta parcial, o valor maior é salvo direto (o saldo aumenta).
+* Visual: campos em duas colunas a partir de janelas médias; lápis em cada campo como atalho da mesma ação (foco, calendário, lista); Recorrência como campo só de leitura com menu das ações de sempre; Cancelar e Salvar numa barra fixa, com as mensagens de erro e as recusas junto dos botões.
+
+**Recorrências** (proteção = registros de pagamento existentes, **ativos ou estornados**; um estornado excluído definitivamente deixa de proteger)
+
+* **"Este mês em diante" com novo valor (opção D):** ocorrências seguintes com pagamentos **mantêm o valor**; aviso no diálogo de escopo com a quantidade. Para mudar o valor delas, usa-se "Somente este mês".
+* **Alterar frequência** e **encerrar recorrência** preservam as ocorrências com pagamentos (completa 5.5 e 5.8); a nova frequência não cria outra cobrança nesses meses, com aviso no diálogo.
+* **"Este mês em diante" com novo vencimento — exceção H2 à 5.1** (aprovada em 28/10/2026): as ocorrências **seguintes** com pagamentos ficam no **mesmo mês e ano**, só com o novo dia (ajustado ao mês: 31 → 28/29/30); as demais seguem a nova sequência, pulando os meses ocupados. Pela 5.6, "Este mês em diante" alteraria todas as futuras; a H2 limita isso ao mês e ano delas.
+  * **I1:** a ocorrência **selecionada** pode mudar de mês mesmo com pagamentos (escolha expressa); os pagamentos continuam nela.
+  * **I2:** numa série anual, o ano de uma ocorrência paga **na grade anual vigente** não ganha outra cobrança; uma paga fora da grade (mês herdado de antes de mensal → anual) ocupa só o próprio mês.
+  * **I3:** aviso no diálogo de escopo — "Ocorrências com pagamentos registrados manterão seus meses originais (N ocorrências)." — só quando a proteção de fato mantém um mês; não aparece se só o dia muda nem quando a alteração seria recusada (D5, I4 ou término).
+  * **I4:** recusa **integral, antes de gravar**, quando a selecionada iria para o mês de uma seguinte com pagamentos ("mesmo mês"), para **depois** dele ("depois") ou, na anual, para um ano ocupado pela I2 ("ano"), com mensagem própria na barra de Editar. "Depois" e "ano" foram aprovados pela autora em 30/10/2026.
+* **D2 (inalterada, Etapa 2b da v6.0):** uma ocorrência **editada** e preservada **fora da grade** atual (outro mês numa série anual, ou além do término) mantém data e vaga; a sequência pula a competência dela. Numa série mensal, uma editada não paga está sempre na grade pela vaga e é reposicionada em "Este mês em diante" com novo vencimento.
+* **Limitação de ordenação (anterior à 6.10, mantida):** "Somente este mês" muda só o vencimento; posição e "Parcela X de Y" seguem a vaga. Uma ocorrência movida para depois da seguinte (ex.: janeiro movida para 20/02, depois de fevereiro em 10/02) continua "Parcela 1" e aparece depois da parcela 2 na lista do mês, que segue a data. Ocorrências com pagamentos não podem provocar essa inversão por "Este mês em diante" (I4 "depois").
+
+**Exclusões e totais**
+
+* Excluir uma conta, uma ocorrência, "Este mês em diante" ou a conta de usuário **apaga os pagamentos** dessas contas (ativos e estornados) na **mesma transação**: nada fica órfão; uma falha não apaga nada. O diálogo de exclusão continua o de sempre (não informa a quantidade de pagamentos).
+* **Início e Gráfico:** o **total pago** inclui os pagamentos parciais ativos e o pendente considera o saldo; o total do mês não muda (5.16, 5.24). O resumo dos próximos 7 dias soma o saldo devedor das contas.
+
+**Limitações conhecidas**
+
+* **Data de pagamento de conta legada (5.10):** a função `editar_data_pagamento` foi **preservada** (testes oficiais), mas não tem mais acesso pela interface desde a D4. Caminho indireto existente: Detalhes → "Desmarcar como paga" → "Registrar pagamento parcial" com o valor total e a data desejada (a conta deixa de ser legada, fica pendente entre os dois passos e ganha um registro "integral"). Alternativas **adiadas** para decisão da autora: **A1** documentar só o caminho indireto; **A2** lápis na data de pagamento dos Detalhes só para conta legada, usando a função existente; **A3** converter a conta legada num registro "integral" ao corrigir a data (altera dados legados, contra "nenhuma conta é convertida" da v10).
+* Leitor de tela real (Orca) **não testado** na 6.10 (RNF14).
+
 ---
 
 # 6. Requisitos Funcionais [v7]
@@ -247,6 +300,12 @@ Os 29 primeiros são o conjunto que o Python 3.11 considera espaço em branco; a
 | RF37, RF38 | Senha nova sem espaços nem invisíveis; orientação após recusa da senha atual | 5.42 |
 | RF41 | Documentos com versão exibida | 5.53 |
 | RF43 | Resumo e exclusão incluem comprovantes | 5.50 |
+| RF06, RF24 | Marcar como paga registra o pagamento do saldo (data de hoje); desmarcar uma quitação com pagamentos é estorno (último lançado ou todos); a data de pagamento de uma conta legada não tem mais acesso direto pela interface (limitação, decisão A1/A2/A3 adiada) | 5.54 |
+| RF07 | Editar sem o bloco Status; valor nunca abaixo do total pago; diálogo da diferença em conta quitada; resumo e prévia do saldo; duas colunas, lápis e barra fixa | 5.54 |
+| RF08, RF29, RF27 | Exclusões apagam os pagamentos na mesma transação; encerrar e alterar frequência preservam ocorrências com pagamentos | 5.54 |
+| RF12, RF17, RF21–RF23 | Total pago inclui parciais; próximos 7 dias pelo saldo; total do mês inalterado | 5.54 |
+| RF20 | "Este mês em diante": opção D (valor) e H2/I1–I4 (vencimento), com avisos e recusas | 5.54 |
+| RF31 | Detalhes com total pago, saldo devedor e histórico de pagamentos (lápis, desfazer, excluir estornado) | 5.54 |
 
 ## 6.2 Requisitos novos
 
@@ -258,6 +317,9 @@ Os 29 primeiros são o conjunto que o Python 3.11 considera espaço em branco; a
 | RF47 | Registrar a versão aceita dos Termos e da Política e exigir novo aceite em mudanças relevantes | 5.53 |
 | RF48 | Criar e restaurar o pacote completo da instalação por ferramenta de manutenção | 5.51 |
 | RF49 | Restringir tecnicamente os destinatários do serviço de códigos em uso restrito | 5.49 |
+| RF50 | Registrar pagamentos parciais de uma conta, com valor e data, até quitar | 5.54 |
+| RF51 | Corrigir ou desfazer (estornar) um pagamento registrado, e excluir definitivamente um registro estornado | 5.54 |
+| RF52 | Ver o resumo dos pagamentos e a prévia do saldo devedor em Editar conta | 5.54 |
 
 # 7. Requisitos Não Funcionais [v7]
 
@@ -272,10 +334,10 @@ Os 29 primeiros são o conjunto que o Python 3.11 considera espaço em branco; a
 
 # 8. Interface e UX [v7]
 
-* **Tela Principal:** 5.43, 5.44 e 5.52.
-* **Nova conta / Editar conta:** descrição de 2 a 8 linhas (5.45); calendário em português (5.47); seção de comprovantes em Editar (5.50).
-* **Detalhes:** botão "Ver comprovante" quando houver (5.50).
-* **Gráfico:** cartão "Comparativo por categoria" (5.48).
+* **Tela Principal:** 5.43, 5.44 e 5.52; total pago com os parciais e confirmação do saldo na ação rápida (5.54).
+* **Nova conta / Editar conta:** descrição de 2 a 8 linhas (5.45); calendário em português (5.47); seção de comprovantes em Editar (5.50). Editar conta (Sino 6.10, 5.54): sem o bloco Status; resumo dos pagamentos e prévia do saldo; duas colunas a partir de janelas médias; lápis por campo; Recorrência com menu; Cancelar e Salvar numa barra fixa com as mensagens.
+* **Detalhes:** botão "Ver comprovante" quando houver (5.50); "Registrar pagamento parcial", total pago, saldo devedor e histórico de pagamentos com lápis e lixeira (5.54).
+* **Gráfico:** cartão "Comparativo por categoria" (5.48); total pago com os parciais (5.54).
 * **Login, Cadastro, Ajustes:** 5.41, 5.42, 5.46; tela de novo aceite (5.53).
 
 ---
@@ -289,15 +351,25 @@ As estruturas novas entram em **migrações separadas**, uma por entrega, para p
 | Migração | Estrutura | Conteúdo (proposta técnica) | Melhoria | Entrega |
 |---|---|---|---|---|
 | **v9** | Aceites | Por usuário e documento: versão aceita e data e hora do aceite. Usuários existentes ficam como "anterior ao versionamento" quando a versão não puder ser determinada | M12 | 1 (M12 técnica) |
-| **v10** | Comprovantes | Ocorrência à qual pertence, nome interno aleatório do arquivo, tipo, tamanho, resumo de integridade e data | M10 | M10 |
-| v10 | Remoções pendentes | Nomes de arquivos a apagar depois de exclusões bem-sucedidas | M10 | M10 |
+| **v10** | Pagamentos | *Atualização (30/10/2026), implementada na Sino 6.10:* tabela `pp_pagamentos` e índice `idx_pp_pagamentos_conta` (9.2) | Pagamentos parciais (5.54, P44) | Sino 6.10 |
+| ~~**v10**~~ **v11** | Comprovantes | Ocorrência à qual pertence, nome interno aleatório do arquivo, tipo, tamanho, resumo de integridade e data | M10 | M10 |
+| ~~v10~~ v11 | Remoções pendentes | Nomes de arquivos a apagar depois de exclusões bem-sucedidas | M10 | M10 |
 | posterior | Faturas | Conforme o modelo que vier a ser aprovado (M13, candidata) | M13 | Só se aprovada |
 
 * A numeração segue a ordem real de implementação. Se a ordem das entregas mudar, a numeração acompanha, e cada migração continua cuidando só da sua estrutura.
 * **Criar as estruturas de comprovantes não habilita anexos:** a interface fica **indisponível** até que os novos textos estejam publicados e o novo aceite seja exigido (5.50, 5.53).
-* Antes da v10 ainda não existem comprovantes, então uma falha dela não afeta imagens. Migrações seguintes alteram só o banco.
+* Antes da ~~v10~~ v11 ainda não existem comprovantes, então uma falha dela não afeta imagens. Migrações seguintes alteram só o banco.
 * Os arquivos de imagem ficam fora do banco, em `database/comprovantes/` (fora do Git), com quarentena numa subpasta própria.
 * Nenhuma outra melhoria do escopo exige migração.
+* *Atualização (30/10/2026):* como prevê o primeiro item, a numeração acompanhou a ordem real: a **v10** foi usada pelos pagamentos parciais (Sino 6.10), e comprovantes e remoções pendentes passam à **v11**. As referências a "v10 (comprovantes)" em 10, 11.2, 13.2 (T6) e 15.1 (E16) passam a valer para a v11.
+
+## 9.2 Migração v10 — pagamentos parciais [v7 novo, Sino 6.10]
+
+* **Estrutura (aditiva, RNF08):** tabela `pp_pagamentos` — `id` (chave, autoincremento), `conta_id` (obrigatório, chave estrangeira para `contas.id`), `valor_centavos` (inteiro > 0), `data_pagamento` (AAAA-MM-DD), `tipo` (`parcial`, `saldo` ou `integral`), `registrado_em` e `estornado_em` (vazio enquanto ativo) — e índice `idx_pp_pagamentos_conta` por conta; `PRAGMA user_version = 10`. Nenhuma tabela ou coluna existente muda e **nenhuma conta é convertida**: uma conta já paga continua paga, sem registros (conta legada, 5.54). O nome `pp_pagamentos` (prefixo da origem no protótipo) é parte do contrato persistido e não será renomeado (D6-B).
+* **Execução:** na abertura do app (`preparar_banco`), depois das migrações que faltarem (v6 a v9), numa transação única (`BEGIN IMMEDIATE`). Antes de gravar, recusa banco de versão não suportada, anterior à v9, v9 inválido, ou tabela preexistente diferente da esperada ou com registros fora do formato. Depois, **backup** `database/backups/sino_pre_migracao_v10_AAAAMMDD_HHMMSS.db` com `integrity_check`, criação, validação (schema, contagens e dados v9 idênticos) e COMMIT. Qualquer falha desfaz tudo; o backup, se criado, fica. Execução repetida não muda nada ("já migrado").
+* Uma tabela `pp_pagamentos` preexistente (banco do protótipo) só é reaproveitada se for **exatamente** igual, com os registros intactos; qualquer diferença é recusada sem apagar nada.
+* **Volta à versão anterior:** a **Sino 6.9.1 não abre um banco v10** (recusa sem gravar, com a tela "Não foi possível abrir o Sino"). Voltar a ela exige **restaurar um backup compatível** — o `sino_pre_migracao_v10_…` criado na primeira abertura da 6.10, que **não contém** o que foi registrado depois dela.
+* **Ensaios (Etapa 7B, 30/10/2026, só em cópias isoladas):** cópia do banco oficial, cópias dos cinco backups, banco fictício v9 criado pela 6.9.1, execução repetida, interrupção real (SIGKILL) em dois pontos da transação e abertura de banco v10 pela 6.9.1: integridade ok, nenhuma violação de chave estrangeira, dados preservados, rollback e recusa conforme o esperado. O backup `sino_pre_migracao_v5_20260903_194647.db` tem schema **v4.1** (foi feito antes da migração v5): `preparar_banco` o recusa sem alterar nada — igual na 6.9.1 — e ele só chega à v10 com `migrar_schema_v5` explícita antes.
 
 ---
 
@@ -345,8 +417,21 @@ Os casos CT01–CT118 continuam válidos como regressão, com as alterações in
 | CT152 | Ajuste menor da Política | Aviso, sem bloquear | 5.53 |
 | CT153 | Banco v8 com usuários existentes passa pela v9 | Backup criado; tabela de aceites criada; aceites antigos marcados; nenhum dado perdido | 9.1 |
 | CT154 | Falha simulada no meio da v9 | Banco permanece v8; tela de erro | 9.1 |
-| CT155 | Banco v9 passa pela v10 | Backup criado; estruturas de comprovantes e de remoções pendentes criadas; nenhum dado perdido; comprovantes ainda indisponíveis | 9.1 |
-| CT156 | Falha simulada no meio da v10 | Banco permanece v9; tela de erro | 9.1 |
+| CT155 | Banco ~~v9~~ v10 passa pela ~~v10~~ v11 (9.1, atualização de 30/10/2026) | Backup criado; estruturas de comprovantes e de remoções pendentes criadas; nenhum dado perdido; comprovantes ainda indisponíveis | 9.1 |
+| CT156 | Falha simulada no meio da ~~v10~~ v11 (comprovantes) | Banco permanece ~~v9~~ na versão anterior; tela de erro | 9.1 |
+| CT159 | Banco v9 com contas pagas e pendentes passa pela v10 | Backup criado; `pp_pagamentos` vazia; contas, séries e pagas idênticas, sem registros inventados | 9.2 |
+| CT160 | v10 repetida; falha simulada ou processo interrompido no meio da v10 | Repetida: nada muda; falha/interrupção: banco v9 intacto, próxima abertura migra | 9.2 |
+| CT161 | Abrir banco v10 com a Sino 6.9.1 | Recusado sem gravar; tela de erro | 9.2 |
+| CT162 | Pagamentos parciais até quitar | Pendente com total pago e saldo; quita com a data do último lançado | 5.54 |
+| CT163 | Pagamento zero, acima do saldo, com data futura ou em conta paga | Recusado; nada gravado | 5.54 |
+| CT164 | Desmarcar quitada com pagamentos: último ou todos | Estorno rastreável; nada apagado; conta pendente | 5.54 |
+| CT165 | Corrigir, desfazer e excluir estornado nos Detalhes | Soma nunca acima do valor; estornado só com exclusão definitiva | 5.54 |
+| CT166 | Valor abaixo do total pago em Editar | Recusa "O valor informado é menor que o total já pago."; nada gravado | 5.54 |
+| CT167 | Aumentar o valor de conta quitada com pagamentos | Diálogo da diferença; nada gravado antes de confirmar | 5.54 |
+| CT168 | "Este mês em diante" com novo valor e ocorrência seguinte com pagamentos | Ela mantém o valor; aviso com a quantidade | 5.54 |
+| CT169 | "Este mês em diante" com novo vencimento (H2, I1–I4) | Seguintes com pagamentos ficam no mês; aviso I3 só quando aplicável; recusas I4 na barra, sem gravar | 5.54 |
+| CT170 | Conta legada (paga antes da v10) | Paga, total pago = valor, sem registros; "Desmarcar" volta a pendente | 5.54 |
+| CT171 | Excluir conta, ocorrência ou série com pagamentos | Pagamentos apagados na mesma transação; nada órfão | 5.54 |
 
 ---
 
@@ -380,7 +465,7 @@ O escopo completo está atendido quando:
   * as melhorias de UX estão publicadas (E5–E12);
   * a avaliação de disponibilização está registrada, com as decisões da M14 e o plano do piloto (E13);
   * os comprovantes estão habilitados depois do novo aceite (E16–E18);
-* as migrações v9 (aceites) e v10 (comprovantes) rodaram sem perda de dados;
+* as migrações v9 (aceites) e ~~v10~~ v11 (comprovantes) rodaram sem perda de dados (9.1, atualização de 30/10/2026; a v10 dos pagamentos parciais é da Sino 6.10);
 * a escolha criptográfica do pacote de backup foi revisada (T8);
 * a legibilidade (RNF09) e o acesso pelo teclado (RNF14) dos componentes novos foram verificados nos dois temas;
 * os casos CT119–CT158 aplicáveis foram aprovados, com a regressão CT01–CT118 passando.
@@ -424,6 +509,8 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 | 5.37, P9 | Alterados: 5.53 |
 | RNF07 | Completado: 5.51 |
 | RNF09 | Ampliado para os componentes novos |
+| 5.1 | Exceção H2 (Sino 6.10): em "Este mês em diante" com novo vencimento, ocorrências seguintes com pagamentos mantêm mês e ano (5.54) |
+| 5.5, 5.6, 5.8, 5.9, 5.10, 5.16, 5.24 | Completados pelos pagamentos parciais (5.54); 5.10 sem acesso direto à data de pagamento de conta legada (limitação) |
 | Demais itens | Inalterados |
 
 ---
@@ -451,6 +538,7 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 | P27 | Linhas empilhadas em janela estreita; nomes inteiros | 5.52 |
 | P28 | Versões e aceite; critério de relevância; revisão jurídica antes de terceiros; histórico no repositório | 5.53 |
 | P29 | M9 adiada; MIT mantida até pedido explícito da autora. **Reaberta em 06/10/2026** pelo pedido explícito previsto (P32) | 2.2 |
+| P44 | (28 a 30/10/2026) **Pagamentos parciais oficiais na Sino 6.10**, fora das entregas E1–E18, depois de protótipo isolado (26–28/10/2026): integração por branch própria com o histórico do protótipo preservado e sem reescrita; migração formal v10 com backup (D2); versão **Sino 6.10** (D3); datas de pagamento só pelo lápis dos Detalhes e "Alterar data de pagamento" retirada de Editar (D4); Editar só com dados gerais, resumo e prévia; valor nunca abaixo do pago e diálogo da diferença; estorno rastreável (último lançado ou todos); exclusão definitiva só de registros estornados; proteção das séries pelos registros existentes, ativos ou estornados; opção D (valor); **H2 como exceção à 5.1**, I1–I3 e I4 com as recusas "mesmo mês", "depois" e "ano" ("depois" e "ano" aprovadas em 30/10/2026); `editar_data_pagamento` mantida (D6-A) e nomes `pp_*` mantidos (D6-B). Validação manual **parcial** (A2, R1/I3, A5) | 5.54, 9.2 |
 | P43 | (13/10/2026) **Caso 8 (CPU) no T2:** o critério original ("tempo de CPU por requisição abaixo de 10 ms nas métricas") é preservado e registrado como **não atendido** (P99 de tempo de CPU de 17,84 ms numa amostra de 13 invocações; mediana de 8,43 ms; 0 erros nas métricas agregadas; erros 1102 não auditados individualmente, com os Logs desligados). Segundo a documentação oficial da Cloudflare (13/10/2026), o limite nominal do Workers Free é 10 ms por requisição, com tolerância a excessos infrequentes, e os percentis podem passar do limite sem erro por amostragem e *rollover*. Critério operacional revisado para continuar os testes restritos: nenhum erro de CPU nas métricas agregadas, mediana abaixo de 10 ms e acompanhamento durante o T2 — atendido na amostra. Capacidade e desempenho para produção não validados; nenhuma mudança de plano nem otimização decidida. *Atualização (14/10/2026):* plano mantido (Workers Free, decisões 2 e 4 da produção restrita); otimização **O1** (assinatura Ed25519 pela WebCrypto nativa, `981d1e8`) publicada no GitHub, sem implantação na Cloudflare, com medições só locais; a P43 continua **pendente de medição real na Cloudflare** e o critério original, **não atendido**. *Atualização (15/10/2026):* medição na **produção restrita** (métricas agregadas, 11 invocações): CPU P50 5,54 ms; P90, P99 e P99,9 **14,4 ms**; 0 erros totais, 0 erros de CPU e 0 exceções não tratadas. O critério original continua **NÃO ATENDIDO**. **Decisão da autora: aceitação formal do risco, exclusivamente para a produção restrita**, com Workers Free mantido e sem otimização imediata (causa provável, não comprovada: início a frio; detalhes nas propostas). Reavaliar se surgirem erros, se a mediana passar de 10 ms e antes da liberação a terceiros | 5.49 |
 | P42 | (13/10/2026) **T2 — preparação técnica do primeiro envio real:** Worker temporário `sino-servico-codigos-t2` (máximo de 7 dias, excluído ao encerrar) com token exclusivo (`TOKEN_ACESSO`, barreira adicional à lista de destinatários; não incorporado ao app, só no ambiente da cópia isolada); remetente `Sino <nao-responda@envios.appsino.com.br>` e Reply-To `sino.lembrete.contas@gmail.com`, obrigatórios e sem valor padrão; rodapé "Esta é uma mensagem automática do Sino. Precisa de ajuda? Entre em contato: sino.lembrete.contas@gmail.com"; Workers Logs e Traces desligados, com p99 de CPU e erros 1102 consultados sem ligá-los (inconclusivo se não disponível); campo `reply_to` conforme a documentação da Resend | 5.49 |
 | P41 | (13/10/2026) **Versão de 13/10/2026 dos Termos e da Política**, relevante nos dois (muda compartilhamento com provedores, retenção, localização e transferência internacional; identifica quem opera o serviço): texto consolidado com quatro ajustes e dois refinamentos aprovados pela autora (12/10/2026); descreve o serviço real em fase restrita sem afirmar que o envio real está ativo; usuários existentes aceitam a nova versão no próximo login; versões de 04/10 e 06/10 preservadas em `docs/legal/`. Regras de operação (fora dos textos): não usar links públicos de e-mails nem recursos de IA da Resend com mensagens do Sino. Revisão jurídica pendente (papéis dos agentes de tratamento, pedidos dos titulares, transferência internacional) | 5.53 |
@@ -494,6 +582,7 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 * **M14 (disponibilização):** todas as decisões da avaliação (seção 15.1, E13). *Atualização (24/10/2026):* E13 **suspensa temporariamente** por decisão da autora; aprovadas D1 (APK Android pessoal como experimento separado do piloto), D2 (consultas de leitura às fontes oficiais) e D3 (ambiente local isolado no Ubuntu, só para planejamento); D5 e as demais decisões técnicas e as decisões do piloto continuam pendentes. Diagnósticos, riscos e roteiro de retomada em [E13_M14_continuidade.md](E13_M14_continuidade.md).
 * **RNF03 e RNF06 (24/10/2026):** medidos de novo na Sino 6.9, agora também na janela real, com bancos fictícios de 1.000 contas ([desempenho-v6.md](desempenho-v6.md), atualização de 24/10/2026). Atendidos na camada Python e, na janela real, no cenário distribuído (todas as ações abaixo de 0,6 s). **Não atendidos na janela real no pior caso** de 1.000 contas num único mês: entrar e voltar ao mês cheio levam de 2,1 a 2,5 s antes do desenho da tela. As soluções possíveis (paginação ou "Mostrar mais", que muda o RF05; lista com montagem só das linhas visíveis; linhas mais simples) dependem de decisão da autora; nada foi alterado.
 * **M10:** revisão da escolha criptográfica (T8); trava de arquivos em Linux e Windows (T9).
+* **Pagamentos parciais (Sino 6.10, 30/10/2026):** (a) data de pagamento de conta legada sem acesso direto pela interface — A1/A2/A3 adiadas (5.54); (b) validação manual **parcial**: aprovados pela autora só A2 (resumo e edição de conta com pagamento parcial), R1 (aviso I3) e A5 (recusa de valor abaixo do pago); as demais telas, temas, larguras, teclado e foco ficaram em testes automáticos e capturas; (c) **leitor de tela (Orca) não executado** (retirado do escopo pela autora; acessibilidade da 6.10 **não** declarada validada); (d) RNF06 no pior caso de 1.000 contas num único mês continua não atendido na janela real (cerca de 2,15 s; [desempenho-v6.md](desempenho-v6.md), atualização de 30/10/2026); (e) `tests/medir_desempenho.py` incompatível com a v10 ("marcar/desmarcar como paga" falha, porque desmarcar uma quitação registrada passou a ser estorno) — ferramenta fora da suíte, não alterada; (f) limitação de ordenação das ocorrências movidas com "Somente este mês" (5.54, anterior à 6.10); (g) a Política de Privacidade (13/10/2026) não menciona os registros de pagamentos individuais e estornos: classificação pela 5.53 **a decidir pela autora** antes da publicação; (h) `docs/banco-de-dados/Modelagem_Banco_de_Dados_v2.md` é histórico (anterior à v5) e não descreve as estruturas v5 a v10; o schema vigente está em 9.1 e 9.2.
 * **M13 (Faturas):** conflito C1–C4 e decisões G1–G7 abertos; inclusão no escopo a aprovar.
 * ~~**L1:** limpeza das contas antigas de teste.~~ Resolvida em 06/10/2026 pela reinicialização do banco da instalação principal (backup de recuperação e ref6).
 
@@ -547,6 +636,7 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 * **Ordem da prioridade 3:** sugerida pela complexidade e pelas dependências, das mais simples para as mais complexas. A autora pode reordenar.
 * **Antecipação:** se a avaliação da E13 concluir que o piloto precisa do pacote de backup completo, a E17 pode ser antecipada (depois da E16).
 * **Liberação mais ampla:** só com as condições de 11.3, depois da E15.
+* *Atualização (30/10/2026):* os **pagamentos parciais** (5.54) não são uma entrega desta tabela: viram a **Sino 6.10** por decisão da autora (P44), com migração v10 (9.2). A E16 passa a usar a v11 (9.1).
 
 ## 15.2 Versões
 
@@ -563,6 +653,7 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
   * **Sino 6.8** — E9 (M1, espaços e invisíveis no e-mail e nas senhas) e E10 (M11, linhas de conta em janelas estreitas), implementadas, validadas e **publicada no GitHub em 16/10/2026**, no commit `cc2395c24d9435e8ca1ea511ffab73abf5a0f13a`, numa publicação conjunta (validação manual 15/15; 1188 testes automatizados aprovados). *Registro anterior, preservado:* ~~(aguardando publicação)~~ implementadas e validadas em 16/10/2026 para publicação conjunta (validação manual 15/15; 1188 testes automatizados aprovados). *Registro anterior, preservado:* (em preparação) implementadas em 16/10/2026 para publicação conjunta. Na data deste registro, ~~a validação manual,~~ o commit e a publicação no GitHub estavam pendentes (15.3). *Atualização (16/10/2026):* validação manual concluída, 15/15 testes aprovados (15.3); commit e publicação no GitHub continuam pendentes.
   * **Sino 6.9** — correção da E11 (M3) e E12 (M7), implementadas, validadas e **publicada no GitHub em 23/10/2026**, nos commits `1141d68b84b23e09a5a1dfd98217fe4120f3abd7` (E11) e `6e3241ce87c637fa911797989616fdf972ffc9b6` (E12), em commits separados (suíte completa 1264/1264 depois da A2; validação manual F9 concluída). *Registro anterior, preservado:* ~~**em preparação, não publicada**~~: correção da E11 (M3, seletor de mês e ano; decisão D4 da autora) e E12 (M7, gráfico de colunas), em commits separados. Na data deste registro (23/10/2026), a correção da E11 estava implementada e testada, sem commit (15.3); a implementação da E12 não tinha sido iniciada. Commit e publicação no GitHub pendentes. *Atualização (23/10/2026):* correção da E11 registrada em commit local (sem publicação); E12 implementada (alternativa A2) e validada manualmente (F9), **sem commit**; documentação (F10) atualizada nesta revisão; revisão final, commit da E12 e publicação (F11) pendentes. Sino 6.9 **não publicada**.
   * **Sino 6.9.1** — versão de **correção**, sem funcionalidade nova (RNF14, parcial): nomes acessíveis nos botões só de ícone (setas de mês, de ano e do Gráfico; grupos A a E, com a alternativa E2 nas ações das linhas de Início), e medição de RNF03/RNF06 na janela real. **Publicada no GitHub em 24/10/2026**, num único commit na `main` (identificador no histórico do Git), com **1.302 testes** automatizados aprovados, sem falhas nem erros. Sem etiqueta no Git (proposta técnica abaixo, não aplicada). Continuam registradas a limitação de RNF06 no pior caso (13.4) e as pendências de RNF14.
+  * **Sino 6.10** — **pagamentos parciais** (5.54, P44), fora das entregas E1–E18, com a migração **v10** (9.2). Implementada na branch `integracao/sino-6.10` em etapas com pontos de controle locais (`checkpoint/6.10-etapa1` a `etapa6`); suíte completa **1.593/1.593**; ensaios de migração e de desempenho aprovados com as ressalvas de 13.4; validação manual **parcial** (A2, R1/I3, A5). **Não publicada** na data deste registro (30/10/2026): o merge na `main`, a etiqueta `sino-6.10` e a publicação dependem de autorização da autora.
 * Cada entrega com código publicada recebe a próxima versão **menor**:
   * a primeira entrega com código publicada recebe a Sino 6.1; as seguintes recebem 6.2, 6.3, e assim por diante, **na ordem em que forem publicadas**, mesmo que a ordem da tabela mude;
   * uma correção sem funcionalidade nova recebe uma versão de **correção** (por exemplo, 6.3.1).
@@ -588,6 +679,8 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 | E13 | **Suspensa temporariamente** (24/10/2026, por decisão da autora; não é cancelamento nem conclusão técnica): diagnósticos de leitura da M14 com foco num APK Android pessoal da autora, como experimento separado do piloto com terceiros (D1); consultas às fontes oficiais (D2); ambiente de compilação local isolado no Ubuntu aprovado só para planejamento (D3); D5 (`cryptography` 48.0.0 só no APK) e as demais decisões técnicas **pendentes**. Nenhum APK gerado, nenhuma implementação, nenhuma dependência alterada, nenhum gasto. Retomada condicionada a nova autorização. Registro completo em [E13_M14_continuidade.md](E13_M14_continuidade.md). *Registro anterior, preservado:* ~~Pendente~~ (na linha "E13 a E18, F1") | — |
 | E14 a E18, F1 | **Pendente** | — |
 
+**Fora das entregas (30/10/2026): Sino 6.10, pagamentos parciais** (5.54, 9.2, P44) — **implementada e validada com ressalvas, publicação pendente**: suíte 1.593/1.593; migração v9 → v10 ensaiada em cópias isoladas (banco oficial, cinco backups, banco fictício, execução repetida, interrupção real e abertura pela 6.9.1); RNF06 atendido na camada Python e, na janela real, no cenário distribuído, com a ressalva já conhecida do pior caso; validação manual parcial (A2, R1/I3, A5); Orca não executado. Pendências em 13.4.
+
 **Pendência registrada fora das entregas (23/10/2026):** as setas de mês anterior e próximo de Início **não têm nome acessível**. A falha é anterior à E11 e **não** faz parte da correção da Sino 6.9; o tratamento depende de decisão da autora (RNF14). *Atualização (24/10/2026):* tratada na rodada de melhorias pequenas autorizada pela autora (nomes "Mês anterior" e "Próximo mês", verificados pelo AT-SPI; ver RNF14), em alteração local **ainda não publicada**. Leitor de tela real não testado. *Atualização (24/10/2026): publicada na Sino 6.9.1 (15.2).*
 
 Legenda:
@@ -604,6 +697,7 @@ Legenda:
 | Versão | Data | Descrição |
 |---|---|---|
 | 6.0 | 23/09/2026 – 04/10/2026 | Ver a [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) (preservada sem alterações). |
+| 7.0 (revisão) | 30/10/2026 (Sino 6.10, documentação; não publicada) | **Pagamentos parciais** documentados para a **Sino 6.10** (P44): regra 5.54 (registro, quitação, estorno, correção e exclusão de registros, contas legadas, Editar, recorrências com opção D, **exceção H2 à 5.1** e I1–I4, D2 e a limitação de ordenação, exclusões e totais); migração **v10** (9.2) e comprovantes passando à v11 (9.1); RF06–RF08, RF12, RF17, RF20–RF24, RF27, RF29 e RF31 alterados; RF50–RF52; CT159–CT171; 8, 11.2, 12, 13.4, 15.1–15.3. Ressalvas: data de conta legada sem acesso direto (A1/A2/A3 adiadas), validação manual parcial, Orca não executado, RNF06 no pior caso, `medir_desempenho.py` incompatível, backup pré-v5 com schema v4.1, Política sem menção aos pagamentos individuais (classificação pendente). Suíte 1.593/1.593. |
 | 7.0 (revisão) | 24/10/2026 (publicação da Sino 6.9.1) | **Sino 6.9.1 publicada** no GitHub em 24/10/2026, num único commit na `main` (identificador no histórico do Git), com as alterações das revisões de 24/10/2026 abaixo (setas de mês e de ano, grupos A a E de RNF14, medição de RNF03/RNF06 na janela real e ajustes finais). Suíte completa: **1.302 testes executados e aprovados**, sem falhas nem erros. Atualizados 15.2 (Sino 6.9.1), RNF14, 5.52 e a pendência das setas de mês (indicação da publicação, com os registros anteriores preservados), as [notas da versão](notas-da-versao.md) e o README. Nenhuma etiqueta criada no Git. RNF14 continua **parcialmente atendido**; RNF06 continua **não atendido no pior caso** (13.4). Sem migração, sem mudança de regras; Sino não liberado ao público. |
 | 7.0 (revisão) | 24/10/2026 (ajustes finais da candidata, não publicados) | Ajustes de manutenção autorizados pela autora depois da auditoria final da candidata **Sino 6.9.1** (não publicada). **Testes:** na validação anterior, depois dos grupos A–E, a suíte completa (`.venv/bin/python -m unittest discover tests`) teve **1.301 testes executados e 1.301 aprovados, sem falhas nem erros**; nesta rodada, com um teste novo para o limite do auxiliar `fechar_dialogos()` dos testes do grupo A (no máximo 3 diálogos, com falha explícita se algum continuar aberto), a nova execução teve **1.302 testes executados e 1.302 aprovados, sem falhas nem erros**. Também: comentário de 5.52 em `backend/main.py` só reformatado, sem mudança de código; indicação, em RNF14 e no histórico, de que os registros antigos de "não tratado" sobre as ações das linhas de Início foram superados pelo grupo A, com os registros preservados; resumo da candidata no README. RNF14 continua parcialmente atendido, com as pendências registradas; limitação de RNF03/RNF06 no pior caso mantida (13.4). Sem mudança de requisitos, regras ou interface; alterações locais, sem commit nem publicação. |
 | 7.0 (revisão) | 24/10/2026 (grupo A de acessibilidade, não publicado) | Correção autorizada pela autora para a candidata **Sino 6.9.1** (não publicada): **RNF14**, com nome acessível nas ações das linhas de contas de Início (editar e marcar como paga ou pendente), com o nome da conta, o vencimento da ocorrência e, só entre contas de mesmo nome e mesmo vencimento, a posição na lista ("1 de 2"); alternativa E2, sem a caixa de 40 px, com 12 controles por linha e botões de 40 × 40 pelo próprio `IconButton`; limite de 370 px de 5.52 mantido; aparência idêntica antes e depois nos temas Claro e Escuro. Atualizados RNF14 e 5.52. RNF14 continua parcialmente atendido, com as demais pendências; limitação de RNF03/RNF06 no pior caso mantida (13.4). Sem migração, sem mudança de regras; alterações locais, sem commit nem publicação. |
