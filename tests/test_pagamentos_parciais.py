@@ -939,10 +939,11 @@ class TestEtapa42AlterarDataDePagamento(TestePagamentos):
         self.assertEqual(self.linhas(legada), [])
 
 
-class TestReversaoDaEdicao(TestePagamentos):
-    """Etapa 4.2, estorno pedido em Editar conta: conferido pelos próprios pagamentos
-    (id, valor, data), não pelo status -- o mesmo Salvar pode ter reaberto a conta ao
-    aumentar o valor. Detalhes continua exigindo a conta quitada."""
+class TestReversaoPelosIds(TestePagamentos):
+    """Estorno de "Desmarcar como paga" (Detalhes e ação rápida): conferido pelos
+    ids dos pagamentos ativos que a confirmação mostrava e pela conta quitada.
+    (A conferência por id, valor e data do antigo estorno pelo Salvar de Editar
+    saiu com o bloco Status de Editar -- D4; limpeza da etapa 6.)"""
 
     def quitada(self):
         conta = self.conta_unica(400.0)
@@ -950,78 +951,31 @@ class TestReversaoDaEdicao(TestePagamentos):
         self.pagar(conta, 200_00, "2026-09-02")   # lançado depois, com data anterior
         return conta
 
-    def esperados(self, conta):
-        return pagamentos.pagamentos_da_escolha(pagamentos.obter_situacao(conta))
+    def ids(self, conta):
+        return [p["id"] for p in pagamentos.obter_situacao(conta)["ativos"]]
 
     def ativos(self, conta):
         return self.consultar("SELECT id FROM pp_pagamentos WHERE conta_id = ? AND estornado_em IS NULL "
                               "ORDER BY id", (conta,))
 
-    def test_escolha_guarda_id_valor_e_data_na_ordem_da_situacao(self):
-        conta = self.quitada()
-        self.assertEqual(self.esperados(conta), [(2, 200_00, "2026-09-02"), (1, 200_00, "2026-09-10")])
-
-    def test_conta_reaberta_pelo_valor_estorna_os_mesmos_pagamentos(self):
-        conta = self.quitada()
-        esperados = self.esperados(conta)
-        db.editar_conta_ocorrencia(conta, valor=500.0)                     # o Salvar grava o valor antes
-        self.assertEqual(self.status(conta), ("pendente", None))
-        situacao = pagamentos.desfazer_pagamentos(conta, "todos", [p[0] for p in esperados],
-                                                  pagamentos_esperados=esperados)
-        self.assertEqual((situacao["pago_centavos"], situacao["saldo_centavos"]), (0, 500_00))
-        self.assertEqual(self.ativos(conta), [])
-        self.assertEqual(len(situacao["pagamentos"]), 2)                   # nada apagado
-
     def test_ultimo_e_o_ultimo_lancado(self):
         conta = self.quitada()
-        esperados = self.esperados(conta)
-        db.editar_conta_ocorrencia(conta, valor=500.0)
-        situacao = pagamentos.desfazer_pagamentos(conta, "ultimo", [p[0] for p in esperados],
-                                                  pagamentos_esperados=esperados)
+        situacao = pagamentos.desfazer_pagamentos(conta, "ultimo", self.ids(conta))
         self.assertEqual(self.ativos(conta), [(1,)])                       # id 2 (data menor) estornado
         self.assertEqual((situacao["pago_centavos"], situacao["saldo_centavos"], situacao["status"]),
-                         (200_00, 300_00, "pendente"))
+                         (200_00, 200_00, "pendente"))
+        self.assertEqual(len(situacao["pagamentos"]), 2)                   # nada apagado
 
-    def test_pagamento_alterado_por_fora_e_recusado_sem_gravar(self):
+    def test_pagamento_a_menos_e_recusado(self):
         conta = self.quitada()
-        esperados = self.esperados(conta)
-        pagamentos.editar_pagamento(1, 200_00, "2026-09-01", (200_00, "2026-09-10"))   # mesmo id, outra data
-        for modo in ("ultimo", "todos"):
-            with self.assertRaises(pagamentos.ReversaoDesatualizadaError):
-                pagamentos.desfazer_pagamentos(conta, modo, [p[0] for p in esperados],
-                                               pagamentos_esperados=esperados)
         with self.assertRaises(pagamentos.ReversaoDesatualizadaError):
-            pagamentos.conferir_reversao_da_edicao(conta, esperados)
+            pagamentos.desfazer_pagamentos(conta, "todos", self.ids(conta)[:1])
         self.assertEqual(len(self.ativos(conta)), 2)
         self.assertEqual(self.status(conta)[0], "pago")
 
-    def test_pagamento_a_mais_ou_a_menos_e_recusado(self):
-        conta = self.quitada()
-        esperados = self.esperados(conta)
-        db.editar_conta_ocorrencia(conta, valor=500.0)
-        self.pagar(conta, 50_00, "2026-09-12")                             # um a mais
-        with self.assertRaises(pagamentos.ReversaoDesatualizadaError):
-            pagamentos.desfazer_pagamentos(conta, "todos", [p[0] for p in esperados],
-                                           pagamentos_esperados=esperados)
-        self.assertEqual(len(self.ativos(conta)), 3)
-        with self.assertRaises(pagamentos.ReversaoDesatualizadaError):    # um a menos
-            pagamentos.desfazer_pagamentos(conta, "todos", [p[0] for p in esperados[:1]],
-                                           pagamentos_esperados=esperados[:1])
-
-    def test_conferencia_previa_exige_conta_quitada_e_nao_grava(self):
-        conta = self.quitada()
-        esperados = self.esperados(conta)
-        pagamentos.conferir_reversao_da_edicao(conta, esperados)          # vale: nada a dizer
-        self.assertEqual(len(self.ativos(conta)), 2)
-        db.editar_conta_ocorrencia(conta, valor=500.0)
-        with self.assertRaises(pagamentos.ReversaoDesatualizadaError):    # antes de gravar, só quitada
-            pagamentos.conferir_reversao_da_edicao(conta, esperados)
-        with self.assertRaises(pagamentos.ReversaoDesatualizadaError):
-            pagamentos.conferir_reversao_da_edicao(conta, [])
-
     def test_detalhes_continua_exigindo_conta_quitada(self):
         conta = self.quitada()
-        ids = [p[0] for p in self.esperados(conta)]
+        ids = self.ids(conta)
         db.editar_conta_ocorrencia(conta, valor=500.0)
         for modo in ("ultimo", "todos"):
             with self.assertRaises(pagamentos.ReversaoDesatualizadaError):
@@ -1035,9 +989,8 @@ class TestReversaoDaEdicao(TestePagamentos):
         pagamentos.estornar_pagamento(antigo["id"], (100_00, "2026-09-05"))
         estornado_em = self.consultar("SELECT estornado_em FROM pp_pagamentos WHERE id = ?", (antigo["id"],))
         self.pagar(conta, 250_00, "2026-09-10")
-        esperados = self.esperados(conta)
-        self.assertEqual([p[0] for p in esperados], [1, 3])
-        pagamentos.desfazer_pagamentos(conta, "todos", [1, 3], pagamentos_esperados=esperados)
+        self.assertEqual(self.ids(conta), [1, 3])
+        pagamentos.desfazer_pagamentos(conta, "todos", [1, 3])
         self.assertEqual(self.ativos(conta), [])
         self.assertEqual(self.consultar("SELECT estornado_em FROM pp_pagamentos WHERE id = ?", (antigo["id"],)),
                          estornado_em)

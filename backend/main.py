@@ -5086,11 +5086,12 @@ def main(page: ft.Page):
                 # Ação rápida em "Suas contas": reutiliza database.marcar_conta_como_paga
                 # (mesma função e mesma validação já usada no detalhe -- RF06/5.10), sem
                 # pedir data -- a data efetiva é sempre hoje aqui, exatamente como o botão
-                # "Marcar como paga" do detalhe já faz. Escolher outra data continua sendo
-                # uma ação separada, disponível em Editar quando a conta já está paga.
+                # "Marcar como paga" do detalhe já faz. Corrigir a data depois é pelo lápis
+                # de cada pagamento, nos Detalhes (Sino 6.10, D4: Editar não altera mais
+                # a data de pagamento).
                 if conta["status"] == "pago":
                     # Toggle: reverter pelo quick-pay reaproveita
-                    # database.marcar_conta_como_pendente (mesma função de Editar) --
+                    # database.marcar_conta_como_pendente (mesma função dos Detalhes) --
                     # nenhuma regra nova. atualizar_dados() recarrega a lista pela
                     # mesma listagem de sempre, então Pendente/Atrasado é recalculado
                     # pela lógica já existente (data de vencimento vs. hoje), não por

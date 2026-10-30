@@ -323,8 +323,8 @@ class TestVariosCamposNoMesmoEscopo(BaseDescricao):
         id_fev = self.id_por_data(serie_id, "2027-02-10")
         id_mar = self.id_por_data(serie_id, "2027-03-10")
         id_mai = self.id_por_data(serie_id, "2027-05-10")
-        # Pagamentos parciais: quitações anteriores ao protótipo
-        # (sem pagamento registrado), para conferir a regra 5.9 de sempre; uma quitação com
+        # Pagamentos parciais: quitações legadas (sem pagamento
+        # registrado), para conferir a regra 5.9 de sempre; uma quitação com
         # pagamento registrado manteria o valor em "Este mês em diante" (opção D, ver
         # test_pagamentos_parciais.TestEtapa41OpcaoD).
         for conta_id, data in ((id_mar, "2027-03-09"), (id_mai, "2027-04-10")):

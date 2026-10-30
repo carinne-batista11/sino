@@ -155,8 +155,8 @@ class TestCalendariosNaInterface(TesteComBancoTemporario):
     def test_data_de_pagamento_em_editar_conta(self):  # CT135
         # Pagamentos parciais (D4): Editar conta não tem mais o bloco
         # Status nem o seu calendário; a data de um pagamento é corrigida pelo
-        # lápis nos Detalhes, que mantém a recusa de data futura (testes do
-        # protótipo). Só o calendário do vencimento continua em Editar.
+        # lápis nos Detalhes, que mantém a recusa de data futura (testes de
+        # pagamentos parciais). Só o calendário do vencimento continua em Editar.
         conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-05")
         db.marcar_conta_como_paga(conta_id, "2026-09-10")
         self.entrar()

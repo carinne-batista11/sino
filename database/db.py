@@ -136,10 +136,6 @@ def _sincronizar_quitacao(cursor, condicao, parametros):
     )
 
 
-MESES_EXTENSO = ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro",
-                 "outubro", "novembro", "dezembro")
-
-
 def ocorrencias_protegidas_no_valor(conta_id):
     """Etapa 4.1 (opção D): ocorrências SEGUINTES à selecionada (posição lógica)
     com histórico de pagamentos -- mantêm o valor em "Este mês em diante".

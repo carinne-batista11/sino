@@ -206,36 +206,13 @@ def previa_da_reversao(situacao, modo):
     return revertido, continua, situacao["valor_centavos"] - continua
 
 
-def pagamentos_da_escolha(situacao):
-    """Etapa 4.2 (Editar conta): o que a escolha de "Marcar como pendente" viu --
-    (id, valor em centavos, data) de cada pagamento ativo, na ordem da situação."""
-    return [(p["id"], p["valor_centavos"], p["data_pagamento"]) for p in situacao["ativos"]]
-
-
 def _ativos_da_conta(cursor, conta_id):
     return [tuple(linha) for linha in cursor.execute(
         f"SELECT id, valor_centavos, data_pagamento FROM {db.TABELA_PAGAMENTOS} "
         "WHERE conta_id = ? AND estornado_em IS NULL ORDER BY data_pagamento, id", (conta_id,))]
 
 
-def conferir_reversao_da_edicao(conta_id, pagamentos_esperados):
-    """Etapa 4.2 (Editar conta), antes de qualquer gravação do Salvar: a conta
-    continua quitada e com exatamente os pagamentos ativos (id, valor e data) que
-    a escolha mostrava? Senão, ReversaoDesatualizadaError. Só leitura."""
-    conexao = db.conectar()
-    try:
-        cursor = conexao.cursor()
-        linha = cursor.execute("SELECT status FROM contas WHERE id = ?", (conta_id,)).fetchone()
-        if linha is None:
-            raise ContaNaoEncontradaError()
-        if (linha[0] != "pago" or not pagamentos_esperados
-                or _ativos_da_conta(cursor, conta_id) != [tuple(p) for p in pagamentos_esperados]):
-            raise ReversaoDesatualizadaError()
-    finally:
-        conexao.close()
-
-
-def desfazer_pagamentos(conta_id, modo, ids_esperados, pagamentos_esperados=None):
+def desfazer_pagamentos(conta_id, modo, ids_esperados):
     """Estorna pagamentos de UMA ocorrência quitada com pagamentos registrados:
     'ultimo' = o último pagamento ATIVO LANÇADO (ordem de registro, maior id;
     nunca a maior data informada); 'todos' = todos os ativos. Nada é apagado: cada estornado recebe
@@ -243,12 +220,7 @@ def desfazer_pagamentos(conta_id, modo, ids_esperados, pagamentos_esperados=None
     'pendente' sem data de pagamento (Pendente/Atrasada pelo vencimento).
     `ids_esperados` = ids dos pagamentos ativos que a confirmação mostrava, em
     ordem; se mudaram (reversão repetida, outra tela), nada é gravado
-    (ReversaoDesatualizadaError). Devolve a situação atualizada.
-
-    `pagamentos_esperados` (só o Salvar de Editar conta, etapa 4.2): (id, valor,
-    data) de cada ativo que a escolha mostrava. Com ele, a conferência é pelos
-    próprios pagamentos -- todos iguais, nenhum a mais ou a menos -- e não pelo
-    status, que o mesmo Salvar pode ter acabado de mudar ao aumentar o valor."""
+    (ReversaoDesatualizadaError). Devolve a situação atualizada."""
     if modo not in ("ultimo", "todos"):
         raise ValueError(f"modo inválido: {modo!r}")
     conexao = db.conectar()
@@ -259,13 +231,8 @@ def desfazer_pagamentos(conta_id, modo, ids_esperados, pagamentos_esperados=None
         linha = cursor.execute("SELECT status FROM contas WHERE id = ?", (conta_id,)).fetchone()
         if linha is None:
             raise ContaNaoEncontradaError()
-        detalhados = _ativos_da_conta(cursor, conta_id)
-        ativos = [p[0] for p in detalhados]
-        if pagamentos_esperados is None:
-            if linha[0] != "pago" or not ativos or ativos != list(ids_esperados):
-                raise ReversaoDesatualizadaError()
-        elif (not ativos or ativos != list(ids_esperados)
-              or detalhados != [tuple(p) for p in pagamentos_esperados]):
+        ativos = [p[0] for p in _ativos_da_conta(cursor, conta_id)]
+        if linha[0] != "pago" or not ativos or ativos != list(ids_esperados):
             raise ReversaoDesatualizadaError()
         alvo = [max(ativos)] if modo == "ultimo" else ativos  # último lançado (maior id)
         hoje = db.date.today().isoformat()
@@ -334,15 +301,6 @@ def registrar_pagamento_parcial(conta_id, valor_centavos, data_pagamento=None, s
     finally:
         conexao.close()
     return obter_situacao(conta_id)
-
-
-def tem_pagamentos(conta_id):
-    conexao = db.conectar()
-    try:
-        return bool(db._contas_com_pagamentos(conexao.cursor(), "id = ?", (conta_id,)))
-    finally:
-        conexao.close()
-
 
 
 def _pagamento_ativo(cursor, pagamento_id, esperado):
