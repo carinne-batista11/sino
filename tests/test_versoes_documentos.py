@@ -27,6 +27,11 @@ import main  # noqa: E402
 INICIAL = "2026-10-04"
 ANTERIOR = "2026-10-06"  # versão relevante aprovada pela autora (P38)
 ATUAL = "2026-10-13"  # versão relevante aprovada pela autora (P41), preparação do T2 da E4
+POLITICA_ATUAL = "2026-10-30"  # só a Política: relevante, pagamentos parciais (Sino 6.10)
+ATUAIS = {"termos": ATUAL, "politica": POLITICA_ATUAL}  # versões vigentes de cada documento
+RESUMO_30_10 = ("Atualizamos a Política de Privacidade para explicar como o Sino registra e armazena pagamentos "
+                "individuais, incluindo pagamentos parciais, correções e estornos, e como esses dados são "
+                "tratados em exclusões e backups.")
 
 
 def historico(*extras_termos, extras_politica=(), base=None):
@@ -48,25 +53,31 @@ def sem_registros():
 
 def aceitou_as_atuais():
     """Registros de quem aceitou as versões vigentes (ex.: cadastro atual)."""
-    return {chave: {"aceite": [ATUAL], "ciencia": []} for chave in documentos.HISTORICO_VERSOES}
+    return {chave: {"aceite": [ATUAIS[chave]], "ciencia": []} for chave in documentos.HISTORICO_VERSOES}
 
 
 # ----------------------------------------------------------------------
 #  Histórico e textos (docs/legal)
 # ----------------------------------------------------------------------
 class TestHistoricoDeVersoes(unittest.TestCase):
-    def test_versoes_registradas(self):  # P37, P38, P41
-        for chave in ("termos", "politica"):
-            with self.subTest(chave):
-                versoes = documentos.HISTORICO_VERSOES[chave]
-                self.assertEqual([(v["versao"], v["classificacao"]) for v in versoes],
-                                 [(INICIAL, "inicial"), (ANTERIOR, "relevante"), (ATUAL, "relevante")])
-                self.assertIn("Última atualização: 13/10/2026", documentos.DOCUMENTOS[chave][1])
-                self.assertIn("(P41)", versoes[-1]["motivo"])
+    def test_versoes_registradas(self):  # P37, P38, P41; Política de 30/10 (Sino 6.10)
+        comuns = [(INICIAL, "inicial"), (ANTERIOR, "relevante"), (ATUAL, "relevante")]
+        termos, politica = documentos.HISTORICO_VERSOES["termos"], documentos.HISTORICO_VERSOES["politica"]
+        self.assertEqual([(v["versao"], v["classificacao"]) for v in termos], comuns)
+        self.assertEqual([(v["versao"], v["classificacao"]) for v in politica],
+                         comuns + [(POLITICA_ATUAL, "relevante")])
+        self.assertIn("(P41)", termos[-1]["motivo"])
+        self.assertIn("(P41)", politica[2]["motivo"])
+        self.assertEqual(politica[-1]["resumo"], RESUMO_30_10)
+        self.assertIn("Última atualização: 13/10/2026", documentos.TERMOS_DE_USO)
+        self.assertIn("Última atualização: 30/10/2026", documentos.POLITICA_DE_PRIVACIDADE)
 
     def test_textos_anteriores_preservados_no_historico(self):
         for chave in ("termos", "politica"):
-            for versao_antiga, data in ((INICIAL, "04/10/2026"), (ANTERIOR, "06/10/2026")):
+            antigas = ((INICIAL, "04/10/2026"), (ANTERIOR, "06/10/2026"))
+            if chave == "politica":
+                antigas += ((ATUAL, "13/10/2026"),)
+            for versao_antiga, data in antigas:
                 with self.subTest(chave=chave, versao=versao_antiga):
                     antigo = documentos.caminho_historico(chave, versao_antiga).read_text(encoding="utf-8")
                     self.assertIn(f"Última atualização: {data}", antigo)
@@ -109,12 +120,14 @@ class TestHistoricoDeVersoes(unittest.TestCase):
         existentes = {p.name for p in documentos.PASTA_HISTORICO.glob("*.md") if p.name != "README.md"}
         self.assertEqual(existentes, esperados)
         self.assertEqual(sorted(esperados), ["politica-de-privacidade_2026-10-04.md", "politica-de-privacidade_2026-10-06.md",
-                                             "politica-de-privacidade_2026-10-13.md", "termos-de-uso_2026-10-04.md",
+                                             "politica-de-privacidade_2026-10-13.md", "politica-de-privacidade_2026-10-30.md",
+                                             "termos-de-uso_2026-10-04.md",
                                              "termos-de-uso_2026-10-06.md", "termos-de-uso_2026-10-13.md"])
 
     def test_rotulo_e_versoes_atuais(self):
         self.assertEqual(documentos.rotulo_versao(INICIAL), "Versão de 04/10/2026")
-        self.assertEqual(documentos.versoes_atuais(), {"termos": ATUAL, "politica": ATUAL})
+        self.assertEqual(documentos.versoes_atuais(), ATUAIS)
+        self.assertEqual(documentos.rotulo_versao(POLITICA_ATUAL), "Versão de 30/10/2026")
 
 
 # ----------------------------------------------------------------------
@@ -131,20 +144,31 @@ class TestPendencias(unittest.TestCase):
     def test_versao_vigente_pede_aceite_a_quem_aceitou_antes_do_versionamento(self):  # P38, P41
         resultado = documentos.pendencias(sem_registros())
         self.assertEqual([(i["documento"], i["versao"]) for i in resultado["aceite"]],
-                         [("termos", ATUAL), ("politica", ATUAL)])
+                         [("termos", ATUAL), ("politica", POLITICA_ATUAL)])
         self.assertEqual(resultado["aviso"], [])
-        for item in resultado["aceite"]:
-            self.assertEqual([m["versao"] for m in item["mudancas"]], [ANTERIOR, ATUAL])
+        termos, politica = resultado["aceite"]
+        self.assertEqual([m["versao"] for m in termos["mudancas"]], [ANTERIOR, ATUAL])
+        self.assertEqual([m["versao"] for m in politica["mudancas"]], [ANTERIOR, ATUAL, POLITICA_ATUAL])
 
     def test_versao_de_13_10_pede_aceite_a_quem_aceitou_a_de_06_10(self):  # P41
         registros = {chave: {"aceite": [ANTERIOR], "ciencia": []} for chave in documentos.HISTORICO_VERSOES}
         resultado = documentos.pendencias(registros)
         self.assertEqual([(i["documento"], i["versao"]) for i in resultado["aceite"]],
-                         [("termos", ATUAL), ("politica", ATUAL)])
+                         [("termos", ATUAL), ("politica", POLITICA_ATUAL)])
         self.assertEqual(resultado["aviso"], [])
+        termos, politica = resultado["aceite"]
+        self.assertEqual([m["versao"] for m in termos["mudancas"]], [ATUAL])
+        self.assertEqual([m["versao"] for m in politica["mudancas"]], [ATUAL, POLITICA_ATUAL])
         for item in resultado["aceite"]:
-            self.assertEqual([m["versao"] for m in item["mudancas"]], [ATUAL])
-            self.assertTrue(item["mudancas"][0]["resumo"])
+            self.assertTrue(all(m["resumo"] for m in item["mudancas"]))
+
+    def test_politica_de_30_10_pede_aceite_a_quem_aceitou_as_de_13_10(self):  # Sino 6.10
+        registros = {chave: {"aceite": [ATUAL], "ciencia": []} for chave in documentos.HISTORICO_VERSOES}
+        resultado = documentos.pendencias(registros)
+        self.assertEqual([(i["documento"], i["versao"]) for i in resultado["aceite"]], [("politica", POLITICA_ATUAL)])
+        self.assertEqual(resultado["aviso"], [])
+        self.assertEqual([(m["versao"], m["resumo"]) for m in resultado["aceite"][0]["mudancas"]],
+                         [(POLITICA_ATUAL, RESUMO_30_10)])
 
     def test_quem_aceitou_as_versoes_atuais_nao_tem_pendencia(self):
         self.assertEqual(documentos.pendencias(aceitou_as_atuais()), {"aceite": [], "aviso": []})
@@ -250,7 +274,7 @@ class TestRegistroNoBanco(TesteComBancoTemporario):
                                        documentos.versoes_atuais())
         registros = db.registros_de_documentos(usuario)
         self.assertEqual(registros["termos"]["aceite"], [ATUAL])
-        self.assertEqual(registros["politica"]["aceite"], [ATUAL])
+        self.assertEqual(registros["politica"]["aceite"], [POLITICA_ATUAL])
 
     def test_cadastro_com_versao_invalida_nao_cria_usuario(self):
         from test_autorizacoes_locais import Relogio, autorizacao
@@ -465,7 +489,7 @@ class TestInterfaceDeVersoes(TesteDeSessao):
         self.assertIn("Os documentos do Sino mudaram", textos)
         self.assertIn("Termos de Uso — Versão de 01/12/2026", textos)
         self.assertIn("• Versão de 01/12/2026: Envio real de códigos por e-mail.", textos)
-        self.assertNotIn("Política de Privacidade — Versão de 13/10/2026", textos)
+        self.assertNotIn("Política de Privacidade — Versão de 30/10/2026", textos)
         # A tela é exibida no tema Claro, mesmo para quem usa o Escuro.
         self.assertEqual(sessao.cores.tema, "claro")
 
@@ -474,7 +498,7 @@ class TestInterfaceDeVersoes(TesteDeSessao):
             aceitar.on_click(Evento(pagina, aceitar))
         self.assertEqual(sessao.usuario["id"], self.bia)
         self.assertEqual(db.registros_de_documentos(self.bia)["termos"]["aceite"], [ATUAL, "2026-12-01"])
-        self.assertEqual(db.registros_de_documentos(self.bia)["politica"]["aceite"], [ATUAL])
+        self.assertEqual(db.registros_de_documentos(self.bia)["politica"]["aceite"], [POLITICA_ATUAL])
 
     def test_sair_da_tela_de_novo_aceite_volta_ao_login_sem_registrar(self):  # CT151
         hist = historico(versao("2026-12-01", "relevante"))
@@ -535,8 +559,8 @@ class TestInterfaceDeVersoes(TesteDeSessao):
         self.assertIsNone(sessao.usuario["id"])
         textos = self.textos(pagina)
         self.assertIn("Termos de Uso — Versão de 13/10/2026", textos)
-        self.assertIn("Política de Privacidade — Versão de 13/10/2026", textos)
-        # As duas mudanças relevantes desde o aceite original aparecem no resumo.
+        self.assertIn("Política de Privacidade — Versão de 30/10/2026", textos)
+        # As mudanças relevantes desde o aceite original aparecem no resumo.
         for chave in ("termos", "politica"):
             for v in documentos.HISTORICO_VERSOES[chave][1:]:
                 self.assertIn(f"• {documentos.rotulo_versao(v['versao'])}: {v['resumo']}", textos)
@@ -545,15 +569,16 @@ class TestInterfaceDeVersoes(TesteDeSessao):
         self.assertEqual(sessao.usuario["id"], carla)
         self.assertEqual(db.registros_de_documentos(carla),
                          {"termos": {"aceite": [ATUAL], "ciencia": []},
-                          "politica": {"aceite": [ATUAL], "ciencia": []}})
+                          "politica": {"aceite": [POLITICA_ATUAL], "ciencia": []}})
         # O aceite original continua só com a data: nenhuma versão de 04/10 foi atribuída.
         self.assertEqual(self.consultar("SELECT termos_aceitos_em FROM usuarios WHERE id = ?", (carla,))[0][0],
                          data_original)
         self.assertEqual(self.consultar("SELECT COUNT(*) FROM aceites_documentos WHERE usuario_id = ? AND versao = ?",
                                         (carla, INICIAL))[0][0], 0)
 
-    def test_conta_que_aceitou_06_10_precisa_aceitar_13_10(self):  # P41
-        """Conta existente (aceite de 06/10): bloqueada até aceitar; "Sair" não grava; "Aceitar" grava e entra."""
+    def test_conta_que_aceitou_06_10_precisa_aceitar_13_10(self):  # P41; Política de 30/10
+        """Conta existente (aceite de 06/10): bloqueada até aceitar as vigentes (Termos de 13/10, Política
+        de 30/10); "Sair" não grava; "Aceitar" grava e entra."""
         dani = self.criar_usuario(email="dani@sino.com", senha="senha3456", aceitar_versoes_atuais=False)
         db.registrar_documentos(dani, aceites={"termos": ANTERIOR, "politica": ANTERIOR})
         antes = {chave: {"aceite": [ANTERIOR], "ciencia": []} for chave in documentos.HISTORICO_VERSOES}
@@ -563,9 +588,10 @@ class TestInterfaceDeVersoes(TesteDeSessao):
         textos = self.textos(pagina)
         self.assertIn("Os documentos do Sino mudaram", textos)
         self.assertIn("Termos de Uso — Versão de 13/10/2026", textos)
-        self.assertIn("Política de Privacidade — Versão de 13/10/2026", textos)
+        self.assertIn("Política de Privacidade — Versão de 30/10/2026", textos)
         for chave in ("termos", "politica"):
-            self.assertIn(f"• Versão de 13/10/2026: {documentos.versao_atual(chave)['resumo']}", textos)
+            self.assertIn(f"• Versão de 13/10/2026: {documentos.HISTORICO_VERSOES[chave][2]['resumo']}", textos)
+        self.assertIn(f"• Versão de 30/10/2026: {RESUMO_30_10}", textos)
         self.assertNotIn(f"• Versão de 06/10/2026: {documentos.HISTORICO_VERSOES['termos'][1]['resumo']}", textos)
 
         sair = self.botao(pagina, "sair_novo_aceite")
@@ -581,12 +607,40 @@ class TestInterfaceDeVersoes(TesteDeSessao):
         self.assertEqual(sessao.usuario["id"], dani)
         self.assertEqual(db.registros_de_documentos(dani),
                          {"termos": {"aceite": [ANTERIOR, ATUAL], "ciencia": []},
-                          "politica": {"aceite": [ANTERIOR, ATUAL], "ciencia": []}})
+                          "politica": {"aceite": [ANTERIOR, POLITICA_ATUAL], "ciencia": []}})
         # No login seguinte, entra direto.
         pagina, sessao = self.abrir_app()
         self.entrar(pagina, "dani@sino.com", "senha3456")
         self.assertEqual(sessao.usuario["id"], dani)
         self.assertNotIn("Os documentos do Sino mudaram", self.textos(pagina))
+
+    def test_conta_que_aceitou_13_10_aceita_so_a_politica_de_30_10(self):  # Sino 6.10
+        """Mecanismo existente: só a Política tem versão nova; "Sair" não grava; "Aceitar" grava a de 30/10."""
+        eva = self.criar_usuario(email="eva@sino.com", senha="senha7890", aceitar_versoes_atuais=False)
+        db.registrar_documentos(eva, aceites={"termos": ATUAL, "politica": ATUAL})
+        antes = db.registros_de_documentos(eva)
+        pagina, sessao = self.abrir_app()
+        self.entrar(pagina, "eva@sino.com", "senha7890")
+        self.assertIsNone(sessao.usuario["id"])
+        textos = self.textos(pagina)
+        self.assertIn("Os documentos do Sino mudaram", textos)
+        self.assertIn("Política de Privacidade — Versão de 30/10/2026", textos)
+        self.assertIn(f"• Versão de 30/10/2026: {RESUMO_30_10}", textos)
+        self.assertNotIn("Termos de Uso — Versão de 13/10/2026", textos)
+        self.assertNotIn(f"• Versão de 13/10/2026: {documentos.HISTORICO_VERSOES['politica'][2]['resumo']}", textos)
+
+        sair = self.botao(pagina, "sair_novo_aceite")
+        sair.on_click(Evento(pagina, sair))
+        self.assertIsNone(sessao.usuario["id"])
+        self.assertEqual(db.registros_de_documentos(eva), antes)
+
+        self.entrar(pagina, "eva@sino.com", "senha7890")
+        aceitar = self.botao(pagina, "aceitar_documentos")
+        aceitar.on_click(Evento(pagina, aceitar))
+        self.assertEqual(sessao.usuario["id"], eva)
+        self.assertEqual(db.registros_de_documentos(eva),
+                         {"termos": {"aceite": [ATUAL], "ciencia": []},
+                          "politica": {"aceite": [ATUAL, POLITICA_ATUAL], "ciencia": []}})
 
     def test_documento_mostra_a_versao_vigente(self):
         pagina, _ = self.abrir_app()
@@ -597,7 +651,9 @@ class TestInterfaceDeVersoes(TesteDeSessao):
                 ler = next(b for b in self.controles(pagina, ft.TextButton) if b.content == f"Ler {rotulo}")
                 ler.on_click(Evento(pagina, ler))
                 rotulo_versao = next(c for c in self.controles(pagina) if getattr(c, "data", None) == f"versao_{chave}")
-                self.assertEqual(rotulo_versao.value, "Versão de 13/10/2026")
+                self.assertEqual(rotulo_versao.value, documentos.rotulo_versao(ATUAIS[chave]))
+                self.assertEqual(rotulo_versao.value,
+                                 {"termos": "Versão de 13/10/2026", "politica": "Versão de 30/10/2026"}[chave])
                 voltar = next(b for b in self.controles(pagina, ft.TextButton) if b.content == "Voltar")
                 voltar.on_click(Evento(pagina, voltar))
 
@@ -611,8 +667,9 @@ class TestCadastroRegistraVersoes(BaseCadastro):
         usuario_id = self.usuario()[0]
         registros = db.registros_de_documentos(usuario_id)
         self.assertEqual(registros["termos"]["aceite"], [ATUAL])
-        self.assertEqual(registros["politica"]["aceite"], [ATUAL])
-        self.assertEqual(ATUAL, "2026-10-13")  # novos cadastros gravam a versão de 13/10 (P41)
+        self.assertEqual(registros["politica"]["aceite"], [POLITICA_ATUAL])
+        # novos cadastros gravam as versões vigentes: Termos de 13/10 (P41) e Política de 30/10 (Sino 6.10)
+        self.assertEqual((ATUAL, POLITICA_ATUAL), ("2026-10-13", "2026-10-30"))
         # Quem acabou de aceitar as versões vigentes entra sem novo aceite nem aviso.
         pagina, sessao = self.abrir_app()
         self.entrar(pagina, "carla@sino.com", "senhaforte1")

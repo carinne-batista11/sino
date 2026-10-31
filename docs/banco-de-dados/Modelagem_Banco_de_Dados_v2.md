@@ -1,5 +1,7 @@
 # Modelagem de Banco de Dados
 
+> **Documento histórico (nota de 30/10/2026).** Esta modelagem registra uma fase anterior do projeto e não descreve integralmente o schema atual; o conteúdo abaixo foi mantido como estava. A referência vigente é a [ERS v7.0](../ERS_Controle_de_Contas_v7.0.md), em especial as seções 9.1 (migrações) e 9.2 (migração v10). A integração dos pagamentos parciais (Sino 6.10) usa o schema SQLite v10.
+
 **Projeto: Sino — App de Controle de Contas**
 
 *Versão 2.0 — revisada após avaliação técnica (restrições, índices, série de recorrência)*

@@ -15,6 +15,7 @@ O aplicativo mostra só a versão vigente, com a indicação "Versão de dd/mm/a
 | Política de Privacidade | 06/10/2026 | Relevante | Itens 2, 3, 8, 10 e 11: registros de aceite e de ciência, finalidade, exclusão, permanência em backups e versões. Mesma classificação |
 | Termos de Uso | 13/10/2026 | Relevante | Itens 1, 2, 4 e 9: serviço real de códigos em fase restrita de testes (quem pode receber códigos, remetente, versão aceita, contato). Preparação do T2 da E4; envio real ainda não ativo. Classificação da autora: muda o compartilhamento com provedores, a retenção, a localização e a transferência internacional e identifica quem opera o serviço (P41) |
 | Política de Privacidade | 13/10/2026 | Relevante | Itens 1, 2, 7, 8, 10 e 12: quem opera o serviço, Cloudflare, Resend, prazos, transferência internacional, IP e localização, contato. Mesma classificação |
+| Política de Privacidade | 30/10/2026 | Relevante | Itens 2, 3, 6, 8 e 10: registros de pagamento da Sino 6.10 (pagamentos parciais, correções e estornos), exclusão e backups. Classificação da autora: descreve dados tratados de forma nova (P45). Termos de Uso inalterados |
 
 **Como registrar uma versão nova:**
 

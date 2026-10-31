@@ -18,7 +18,8 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 - **Recorrências protegem o que já foi pago:** em "Este mês em diante", as ocorrências seguintes com pagamentos mantêm o valor (novo valor) e o mês original (novo vencimento), com avisos no diálogo; mudanças que colocariam a ocorrência no mês de uma já paga, ou depois dela, são recusadas sem salvar nada. Alterar a frequência e encerrar a recorrência preservam as ocorrências com pagamentos.
 - **Totais:** o pago de Início e do Gráfico inclui os pagamentos parciais; o total do mês não muda; o aviso dos próximos 7 dias soma o que falta pagar.
 - **Contas pagas antes desta versão** continuam pagas, sem pagamentos individuais inventados.
-- **Testes:** 1.593 testes automáticos aprovados, sem falhas, erros nem testes ignorados, em bancos temporários e sem acesso à rede.
+- **Política de Privacidade — versão de 30/10/2026 (mudança relevante):** os itens 2, 3, 6, 8 e 10 passam a descrever os registros de pagamento (valor, data, tipo, data e hora do registro), as correções, os estornos, a exclusão desses registros e a permanência em backups. Classificação da autora: descreve dados tratados de forma nova (regra 5.53). Quem já usa o Sino aceita a nova versão no próximo login. Os Termos de Uso não mudaram.
+- **Testes:** 1.595 testes automáticos aprovados, sem falhas, erros nem testes ignorados, em bancos temporários e sem acesso à rede.
 
 **Banco de dados — leia antes de atualizar**
 
@@ -30,10 +31,10 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
 - **Validação manual parcial:** a autora aprovou o resumo e a edição de conta com pagamento parcial, o aviso de meses mantidos numa recorrência e a recusa de valor abaixo do pago. As demais telas, temas, larguras, o teclado e o foco foram verificados por testes automáticos e capturas, **sem** validação manual.
 - **Leitor de tela (Orca) não testado.** A acessibilidade desta versão **não** está declarada validada.
-- **Data de pagamento de contas pagas antes desta versão:** sem acesso direto. Caminho atual: "Desmarcar como paga" e registrar um pagamento com o valor total e a data desejada (a conta passa a ter um pagamento registrado). Outras soluções aguardam decisão.
+- **Data de pagamento de contas pagas antes desta versão:** sem acesso direto. Existe um caminho indireto, que não é uma solução escolhida: "Desmarcar como paga" e registrar um pagamento com o valor total e a data desejada (a conta passa a ter um pagamento registrado). As alternativas continuam adiadas por decisão da autora, nenhuma aprovada para implementação.
 - **Desempenho:** abaixo de 2 s nas medições com 1.000 contas, inclusive com pagamentos parciais; no pior caso (1.000 contas num único mês), abrir esse mês em Início continua acima de 2 s na janela real (cerca de 2,15 s), limitação já conhecida ([desempenho](desempenho-v6.md)). O script `tests/medir_desempenho.py` não funciona com esta versão e foi substituído, nas medições, por um script externo.
 - **Ordem das parcelas:** uma ocorrência movida com "Somente este mês" para depois da seguinte continua com o número de parcela original (comportamento anterior a esta versão).
-- **Termos e Política:** sem mudanças nesta versão. A Política de 13/10/2026 não menciona os pagamentos individuais e estornos; a classificação dessa mudança aguarda decisão da autora.
+- **Revisão jurídica** dos Termos e da Política, inclusive da versão de 30/10/2026, continua pendente.
 
 ## Sino 6.9.1 — nomes acessíveis nos botões só de ícone (24/10/2026)
 

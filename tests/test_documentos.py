@@ -40,7 +40,8 @@ class TestConteudoAprovado(unittest.TestCase):
         for chave, (_, texto) in documentos.DOCUMENTOS.items():
             with self.subTest(chave):
                 self.assertIn(AUTORIA, texto)
-                self.assertIn("Última atualização: 13/10/2026", texto)
+                data = {"termos": "13/10/2026", "politica": "30/10/2026"}[chave]
+                self.assertIn(f"Última atualização: {data}", texto)
                 self.assertIn(CONTATO_INICIO, texto)
                 self.assertIn(CONTATO_FIM, texto)
                 self.assertNotIn("PENDENTE", texto)

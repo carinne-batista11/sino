@@ -2308,7 +2308,7 @@ Uma etapa específica para **avaliar** como disponibilizar o Sino a outras pesso
 
 **4. O que ficou só no protótipo.** Título "Sino — Protótipo Pagamentos Parciais", comentários e nomes de teste com "protótipo", a migração idempotente própria do protótipo (substituída pela v10 formal) e a tabela de marcação de histórico, abandonada no próprio protótipo. O prefixo `pp_` permaneceu nos nomes persistidos (`pp_pagamentos`) e nos marcadores internos da interface.
 
-**5. Pendências.** As da ERS v7.0, 13.4 ("Pagamentos parciais"): A1/A2/A3 da data de conta legada; validação manual ampla; Orca; RNF06 no pior caso; `tests/medir_desempenho.py`; classificação da mudança na Política (5.53). A publicação (merge, etiqueta `sino-6.10` e push) depende de autorização da autora.
+**5. Pendências.** As da ERS v7.0, 13.4 ("Pagamentos parciais"): A1/A2/A3 da data de conta legada (mantidas adiadas, D8-C); validação manual ampla; Orca; RNF06 no pior caso; `tests/medir_desempenho.py`; revisão jurídica da nova versão da Política (30/10/2026, relevante, P45; integrada no complemento da Etapa 8). A publicação (merge, etiqueta `sino-6.10` e push) depende de autorização da autora.
 
 ## Resumo geral da ERS v7.0 proposta (04/10/2026)
 

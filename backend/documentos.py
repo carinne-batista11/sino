@@ -17,7 +17,12 @@ Versão de 13/10/2026 (ERS v7.0, P41; preparação do T2 da E4): Termos itens
 serviço real de códigos em fase restrita de testes (quem o opera,
 Cloudflare, Resend, retenção, transferência internacional e contato); o
 envio real ainda não está ativo; texto aprovado pela autora; mudança
-relevante (novo aceite). Revisão jurídica continua PENDENTE.
+relevante (novo aceite).
+Versão de 30/10/2026 da Política (Sino 6.10, pagamentos parciais): itens 2,
+3, 6, 8 e 10 passam a descrever os registros de pagamento (parciais,
+correções e estornos), a exclusão e os backups; Termos inalterados; texto,
+resumo e classificação aprovados pela autora; mudança relevante (novo
+aceite). Revisão jurídica continua PENDENTE.
 É a mesma fonte exibida no cadastro (antes do aceite) e em Ajustes > Sobre e
 privacidade. Qualquer mudança de conteúdo deve ser revisada
 antes e mencionada nas notas da versão (docs/notas-da-versao.md). O endereço
@@ -115,7 +120,7 @@ Dúvidas, sugestões, relatos de problemas e pedidos sobre dados pessoais podem 
 POLITICA_DE_PRIVACIDADE = """\
 # Política de Privacidade do Sino
 
-Última atualização: 13/10/2026
+Última atualização: 30/10/2026
 
 O Sino é um projeto pessoal de portfólio desenvolvido por Carinne Batista. Esta política descreve como a **versão desktop atual** do Sino trata as informações registradas nele. As afirmações sobre o que o Sino guarda, usa e envia se referem ao próprio aplicativo; o serviço de códigos, os provedores que ele usa e as bibliotecas de terceiros são tratados no item 7.
 
@@ -135,11 +140,13 @@ A única função que conversa com um serviço fora do aplicativo é a **confirm
 
 *Informações financeiras que você registra:* nome, valor, data de vencimento, situação (paga ou pendente), data de pagamento, categoria, descrição (opcional) e recorrência de cada conta; nome, emoji e cor de cada categoria.
 
+*Registros de pagamento:* a partir da versão 6.10, cada pagamento registrado em uma conta fica guardado como um registro próprio, ligado a essa conta, com o valor, a data do pagamento, o tipo (pagamento parcial, pagamento do saldo que faltava ou pagamento integral) e a data e a hora em que foi registrado. Quando um pagamento é desfeito, o registro não é apagado: ele recebe a data em que foi desfeito (**estorno**), continua aparecendo no histórico de pagamentos da conta e deixa de contar no total pago. Corrigir o valor ou a data de um pagamento altera o próprio registro, sem guardar os valores anteriores. A situação da conta (paga ou pendente) e a data de pagamento continuam guardadas na conta e passam a acompanhar os pagamentos registrados. Contas marcadas como pagas antes da versão 6.10 continuam com a situação e a data de pagamento de antes, sem que a atualização crie registros de pagamento para elas.
+
 Além dessas, o Sino não coleta outras informações: não pede a localização do dispositivo nem coleta contatos, dados bancários ou dados do seu computador. A exceção é a confirmação por código: ao usá-la, o serviço de códigos recebe dados técnicos do pedido, como o endereço IP de onde ele parte e identificadores gerados na hora. O endereço IP pode permitir inferir uma localização geográfica aproximada, como a cidade ou a região. O serviço usa o endereço IP apenas para limitar abusos: guarda um resumo calculado a partir dele, não guarda o IP completo em texto no armazenamento do serviço de códigos e não o usa para determinar a localização geográfica. O que é enviado, o que o serviço guarda e por quanto tempo estão descritos no item 7.
 
 ## 3. Para que essas informações são usadas
 
-Somente para o funcionamento do aplicativo: permitir que você entre na sua conta, confirmar o e-mail por código (cadastro, alteração de e-mail e recuperação de senha), mostrar e organizar suas contas, calcular totais, indicar vencimentos e atrasos, exibir gráficos e aplicar o tema escolhido. O Sino não usa suas informações para publicidade. Os registros de aceite e de ciência dos documentos servem para saber quais versões dos Termos de Uso e desta Política cada usuário aceitou ou viu, e assim decidir quando pedir um novo aceite ou mostrar um aviso.
+Somente para o funcionamento do aplicativo: permitir que você entre na sua conta, confirmar o e-mail por código (cadastro, alteração de e-mail e recuperação de senha), mostrar e organizar suas contas, mostrar o histórico de pagamentos de cada conta, calcular totais, o total pago e o saldo que falta pagar, indicar vencimentos e atrasos, exibir gráficos e aplicar o tema escolhido. O Sino não usa suas informações para publicidade. Os registros de aceite e de ciência dos documentos servem para saber quais versões dos Termos de Uso e desta Política cada usuário aceitou ou viu, e assim decidir quando pedir um novo aceite ou mostrar um aviso.
 
 ## 4. Onde as informações ficam
 
@@ -159,7 +166,7 @@ Nenhum sistema é totalmente seguro, e o Sino não promete proteção absoluta.
 
 Quando uma nova versão do Sino precisa atualizar a estrutura do banco de dados, o aplicativo cria **automaticamente** uma cópia completa do arquivo antes da atualização, na pasta `database/backups/`. Cada cópia contém as informações de **todos os usuários** daquela instalação no momento em que foi feita.
 
-As cópias são **arquivos separados** do banco principal e **não são apagadas pelo aplicativo**. Por isso, uma informação que você alterou ou excluiu no Sino pode continuar existindo em uma cópia anterior.
+As cópias são **arquivos separados** do banco principal e **não são apagadas pelo aplicativo**. Por isso, uma informação que você alterou ou excluiu no Sino pode continuar existindo em uma cópia anterior. Isso vale também para os registros de pagamento: um pagamento corrigido, estornado ou excluído pode continuar, como estava, em uma cópia feita antes dessa mudança. A cópia criada ao atualizar o banco para a versão 6.10 é anterior aos registros de pagamento e não os contém.
 
 ## 7. Serviço de códigos, bibliotecas de terceiros e comunicações externas
 
@@ -201,9 +208,11 @@ O aviso sonoro de "limite atingido" usa programas de som do próprio computador.
 
 No aplicativo, você pode ver, editar e excluir suas contas financeiras e categorias, alterar seu nome e sua senha e escolher o tema.
 
+*Pagamentos registrados.* Nos Detalhes de uma conta, você pode registrar pagamentos, corrigir o valor e a data de um pagamento e desfazê-lo (estorno). Um registro estornado pode ser excluído definitivamente. Excluir uma conta financeira, ou as ocorrências de uma recorrência, apaga também todos os registros de pagamento dessas contas, inclusive os estornados.
+
 Com o serviço de códigos disponível (item 7), você também pode alterar o e-mail e recuperar uma senha esquecida.
 
-*Excluir a conta de usuário.* Em Ajustes > Excluir conta, depois de informar a senha atual e confirmar, você pode excluir sua conta de usuário. A exclusão apaga do banco de dados atual (`database/sino.db`), em uma única operação, os dados da sua conta de usuário (nome, e-mail e sua confirmação, senha protegida, data do aceite, registros de aceite e de ciência dos documentos e tema), suas contas financeiras, séries recorrentes e categorias. Se algo falhar no meio, nada é apagado. Os dados dos outros usuários da mesma instalação não são alterados.
+*Excluir a conta de usuário.* Em Ajustes > Excluir conta, depois de informar a senha atual e confirmar, você pode excluir sua conta de usuário. A exclusão apaga do banco de dados atual (`database/sino.db`), em uma única operação, os dados da sua conta de usuário (nome, e-mail e sua confirmação, senha protegida, data do aceite, registros de aceite e de ciência dos documentos e tema), suas contas financeiras, os registros de pagamento delas (inclusive os estornados), séries recorrentes e categorias. Se algo falhar no meio, nada é apagado. Os dados dos outros usuários da mesma instalação não são alterados.
 
 A exclusão da conta de usuário **não alcança**:
 
@@ -222,7 +231,7 @@ A exclusão da conta de usuário **não alcança**:
 
 ## 10. Por quanto tempo as informações ficam guardadas
 
-As informações permanecem no banco de dados enquanto o arquivo `database/sino.db` for mantido, até serem excluídas no aplicativo (item 8). Os registros de aceite e de ciência dos documentos ficam guardados enquanto a sua conta de usuário existir e são apagados na exclusão da conta. Eles podem continuar existindo nas cópias de segurança já feitas antes da exclusão (item 6), que o aplicativo não apaga. As cópias de segurança permanecem enquanto os seus próprios arquivos em `database/backups/` forem mantidos. Excluir itens ou a conta de usuário no aplicativo não apaga essas cópias. Os prazos do serviço de códigos e dos provedores estão no item 7.
+As informações permanecem no banco de dados enquanto o arquivo `database/sino.db` for mantido, até serem excluídas no aplicativo (item 8). Os registros de pagamento, inclusive os estornados, ficam guardados enquanto a conta financeira a que pertencem existir, até serem excluídos no aplicativo (item 8). Os registros de aceite e de ciência dos documentos ficam guardados enquanto a sua conta de usuário existir e são apagados na exclusão da conta. Eles podem continuar existindo nas cópias de segurança já feitas antes da exclusão (item 6), que o aplicativo não apaga. As cópias de segurança permanecem enquanto os seus próprios arquivos em `database/backups/` forem mantidos. Excluir itens ou a conta de usuário no aplicativo não apaga essas cópias. Os prazos do serviço de códigos e dos provedores estão no item 7.
 
 Desinstalar ou apagar apenas o programa não garante que o banco e os backups sejam removidos. **Atenção:** apagar manualmente `database/sino.db` remove os dados de todos os usuários daquela instalação, não apenas os seus. Os backups são arquivos separados em `database/backups/` e permanecem até serem apagados também. O aplicativo não oferece uma função para desfazer essa remoção.
 
@@ -291,6 +300,13 @@ HISTORICO_VERSOES = {
          "motivo": "Muda o compartilhamento com provedores, a retenção, a localização e a transferência "
                    "internacional dos dados e identifica quem opera o serviço (regra 5.53); texto e "
                    "classificação aprovados pela autora em 13/10/2026 (P41)."},
+        {"versao": "2026-10-30", "classificacao": "relevante",
+         "resumo": "Atualizamos a Política de Privacidade para explicar como o Sino registra e armazena "
+                   "pagamentos individuais, incluindo pagamentos parciais, correções e estornos, e como "
+                   "esses dados são tratados em exclusões e backups.",
+         "motivo": "Descreve dados tratados de forma nova pelos pagamentos parciais da Sino 6.10 (registros "
+                   "individuais de pagamento, correções e estornos), itens 2, 3, 6, 8 e 10 (regra 5.53); "
+                   "texto, resumo e classificação aprovados pela autora em 30/10/2026."},
     ),
 }
 
