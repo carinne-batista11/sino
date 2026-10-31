@@ -7,7 +7,7 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
 ## Sino 6.10 — pagamentos parciais (30/10/2026)
 
-**Ainda não publicada.** Implementada e validada com ressalvas; o merge na `main` e a publicação dependem de autorização da autora. Funcionalidade nova, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), regra 5.54 e migração v10 em 9.2).
+**Publicada no GitHub em 30/10/2026** (etiqueta `sino-6.10`). Implementada e validada com ressalvas. Funcionalidade nova, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), regra 5.54 e migração v10 em 9.2).
 
 **Concluído**
 

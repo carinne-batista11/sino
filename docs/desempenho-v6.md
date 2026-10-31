@@ -162,7 +162,7 @@ Tempos em milissegundos; "—" = não medido nessa rodada. As duas primeiras col
 
 ## Atualização (30/10/2026): Sino 6.10, com pagamentos parciais
 
-Medição da Etapa 7B da Sino 6.10 (ainda não publicada), sobre o código da branch `integracao/sino-6.10` no commit `7b074f7`. Os registros de 04/10 e 24/10/2026, acima, ficam preservados.
+Medição da Etapa 7B da Sino 6.10 (~~ainda não publicada~~ publicada no GitHub em 30/10/2026), sobre o código da branch `integracao/sino-6.10` no commit `7b074f7`. Os registros de 04/10 e 24/10/2026, acima, ficam preservados.
 
 ### Ambiente
 

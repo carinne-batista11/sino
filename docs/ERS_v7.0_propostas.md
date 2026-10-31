@@ -2305,10 +2305,11 @@ Uma etapa específica para **avaliar** como disponibilizar o Sino a outras pesso
 * Etapa 6 — remoção de código sem uso deixado pela integração (`7b074f7`); `editar_data_pagamento` mantida (D6-A) e nomes `pp_*` mantidos (D6-B).
 * Etapa 7 — diagnóstico (7A) e ensaios (7B): migração em cópias do banco e dos backups, suíte 1.593/1.593, desempenho com perfis com e sem pagamentos parciais, capturas e análise da D2. **Aprovada com ressalvas** (ERS v7.0, 13.4). O teste com leitor de tela (Orca) foi retirado do escopo pela autora e **não** foi executado.
 * Etapa 8 — esta documentação.
+* Etapa 9 — publicação no GitHub em 30/10/2026 (`main` por fast-forward e etiqueta `sino-6.10`), sem migrar o banco pessoal.
 
 **4. O que ficou só no protótipo.** Título "Sino — Protótipo Pagamentos Parciais", comentários e nomes de teste com "protótipo", a migração idempotente própria do protótipo (substituída pela v10 formal) e a tabela de marcação de histórico, abandonada no próprio protótipo. O prefixo `pp_` permaneceu nos nomes persistidos (`pp_pagamentos`) e nos marcadores internos da interface.
 
-**5. Pendências.** As da ERS v7.0, 13.4 ("Pagamentos parciais"): A1/A2/A3 da data de conta legada (mantidas adiadas, D8-C); validação manual ampla; Orca; RNF06 no pior caso; `tests/medir_desempenho.py`; revisão jurídica da nova versão da Política (30/10/2026, relevante, P45; integrada no complemento da Etapa 8). A publicação (merge, etiqueta `sino-6.10` e push) depende de autorização da autora.
+**5. Pendências.** As da ERS v7.0, 13.4 ("Pagamentos parciais"): A1/A2/A3 da data de conta legada (mantidas adiadas, D8-C); validação manual ampla; Orca; RNF06 no pior caso; `tests/medir_desempenho.py`; revisão jurídica da nova versão da Política (30/10/2026, relevante, P45; integrada no complemento da Etapa 8). ~~A publicação (merge, etiqueta `sino-6.10` e push) depende de autorização da autora.~~ *Atualização (30/10/2026):* publicada no GitHub, etiqueta `sino-6.10`.
 
 ## Resumo geral da ERS v7.0 proposta (04/10/2026)
 
