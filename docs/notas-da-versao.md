@@ -7,7 +7,7 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
 ## Sino 6.11 — nova tela Nova conta (02/11/2026)
 
-**Em preparação; não publicada.** Implementada e validada na branch de integração `integracao/sino-6.11`. Evolução da interface, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 8 e decisão P46). Sem regra nova e sem mudança no banco de dados.
+**Publicada no GitHub em 02/11/2026** (etiqueta `sino-6.11`). Implementada e validada; avaliação manual da versão integrada aprovada pela autora. Evolução da interface, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 8 e decisão P46). Sem regra nova e sem mudança no banco de dados.
 
 **Concluído**
 
@@ -19,10 +19,11 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 - **Sem mudança de regras:** criação de contas únicas, mensais e anuais, validações, mensagens, término conferido só ao salvar e gravação iguais aos da Sino 6.10. O banco continua na versão 10, sem migração.
 - **Teclado e nomes acessíveis:** "Escolher data" e "Escolher recorrência" são botões focáveis com nome. Ao abrir o diálogo, o foco vai para a opção confirmada; ao fechar, volta para o campo Recorrência. A tecla Escape não fecha o diálogo (modal, como os de Editar conta): ele se fecha por Cancelar ou Confirmar.
 - **Testes:** 1.615 testes automáticos aprovados (os 1.595 da Sino 6.10 e 20 novos), sem falhas, erros nem testes ignorados, em bancos temporários e sem acesso à rede; 96 testes específicos da tela; 14 cenários de criação de contas com o mesmo resultado da Sino 6.10; telas verificadas por capturas em 320, 360, 380, 800 e 1000 px, nos temas Claro e Escuro, inclusive pelo teclado. O verificador de legibilidade passou a medir o contraste dos botões sobre o fundo definido no estilo e cobre o novo diálogo nos dois temas.
+- **Validação manual:** a autora avaliou e aprovou a nova tela no protótipo isolado (versão 3) e, depois, na versão integrada da 6.11, inclusive a quebra de linha do resumo da Recorrência em 320 px. Avaliação manual final aprovada.
 
 **Parcial e pendente**
 
-- **Validação manual:** a autora avaliou e aprovou a nova tela num protótipo isolado (versão 3, 02/11/2026). O código integrado foi verificado por testes automáticos e capturas, sem nova validação manual.
+- ~~**Validação manual:** a autora avaliou e aprovou a nova tela num protótipo isolado (versão 3, 02/11/2026). O código integrado foi verificado por testes automáticos e capturas, sem nova validação manual.~~ *Atualização (02/11/2026):* concluída na versão integrada (ver "Concluído").
 - **Leitor de tela (Orca) e AT-SPI não testados** nesta versão.
 - **Limitações visuais conhecidas, herdadas da Sino 6.10** (sem correção prevista): em 320 px, o botão Cancelar do rodapé pode quebrar em duas linhas e as ações do diálogo podem ficar empilhadas, sem sobreposição; em 320 e 360 px, os campos Mês e Ano do diálogo podem mostrar o texto cortado. O mesmo acontece no rodapé e no diálogo "Transformar em recorrente" de Editar conta; o corte de Mês e Ano também já existia na Nova conta da 6.10.
 

@@ -2333,8 +2333,9 @@ Nas três versões, os cenários de criação de contas deram o mesmo resultado 
 * E2 — interface (`38496b1`), sem os identificadores e os comentários do protótipo; testes (`f03b092`): os dois testes do calendário passam a procurar o botão dentro do campo, e os 19 testes do protótipo entram na suíte; legibilidade (`aac4927`): o diálogo passa a ser verificado nos dois temas, e o verificador mede o contraste dos botões sobre o fundo definido no estilo (antes acusava um falso positivo no botão escolhido; contraste real de 5,36:1 no Claro e 5,53:1 no Escuro).
 * E3 — validação técnica: suíte 1.614/1.614, 14/14 cenários iguais aos da 6.10 e capturas de 320 a 1000 px. Achado: o resumo da Recorrência era cortado no meio da palavra em janelas estreitas, também a 380 px com meses longos. A autora aprovou a alternativa D (quebra de linha, como em Editar), aplicada em `545760b`; suíte 1.615/1.615.
 * E4 — esta documentação.
+* E5 — avaliação manual da versão integrada pela autora (aprovada, inclusive a quebra de linha do resumo da Recorrência em 320 px), auditoria final de leitura e conferência do repositório remoto; publicação no GitHub em 02/11/2026 (`main` por fast-forward e etiqueta `sino-6.11`), sem abrir o banco pessoal.
 
-**4. Pendências.** As da ERS v7.0, 13.4 ("Nova conta"). A publicação (levar a branch à `main`, etiqueta `sino-6.11` e push) depende de autorização da autora.
+**4. Pendências.** As da ERS v7.0, 13.4 ("Nova conta"). ~~A publicação (levar a branch à `main`, etiqueta `sino-6.11` e push) depende de autorização da autora.~~ *Atualização (02/11/2026):* publicada no GitHub, etiqueta `sino-6.11`.
 
 ## Resumo geral da ERS v7.0 proposta (04/10/2026)
 
