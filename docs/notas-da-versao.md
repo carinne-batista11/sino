@@ -5,6 +5,27 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.11 — nova tela Nova conta (02/11/2026)
+
+**Em preparação; não publicada.** Implementada e validada na branch de integração `integracao/sino-6.11`. Evolução da interface, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 8 e decisão P46). Sem regra nova e sem mudança no banco de dados.
+
+**Concluído**
+
+- **Nova conta no padrão de Editar conta:** campos em duas colunas a partir de janelas médias (Nome; Valor e Data de vencimento; Categoria e Recorrência; Descrição) e em uma coluna nas janelas estreitas, com ícones dentro dos campos. O calendário fica dentro do campo Data de vencimento (botão "Escolher data" ou clique no campo).
+- **Recorrência num campo próprio:** mostra "Escolha o tipo da conta" até a primeira escolha confirmada e, depois, o resumo ("Única", "Mensal, sem término", "Mensal até junho de 2027"…). Sem abrir o campo, a conta é salva como Única, como antes.
+- **Diálogo "Configurar recorrência"**, centralizado, no mesmo padrão de "Transformar em recorrente" de Editar conta: Única, Mensal ou Anual (a escolhida em verde); para Mensal e Anual, "Sem data de término" e, com ele desligado, Mês e Ano. **Cancelar** fecha sem aplicar o que mudou; **Confirmar** leva a escolha ao campo; ao reabrir, aparece o que foi confirmado. O término escolhido fica guardado ao passar por Única e não vale para uma conta Única. Nada é gravado antes de "Salvar conta".
+- **Rodapé fixo** com as mensagens de erro, Cancelar e "Salvar conta"; a seta Voltar continua.
+- **Janelas estreitas:** o resumo da Recorrência quebra por palavra, como em Editar conta, em vez de ser cortado no limite do campo.
+- **Sem mudança de regras:** criação de contas únicas, mensais e anuais, validações, mensagens, término conferido só ao salvar e gravação iguais aos da Sino 6.10. O banco continua na versão 10, sem migração.
+- **Teclado e nomes acessíveis:** "Escolher data" e "Escolher recorrência" são botões focáveis com nome. Ao abrir o diálogo, o foco vai para a opção confirmada; ao fechar, volta para o campo Recorrência. A tecla Escape não fecha o diálogo (modal, como os de Editar conta): ele se fecha por Cancelar ou Confirmar.
+- **Testes:** 1.615 testes automáticos aprovados (os 1.595 da Sino 6.10 e 20 novos), sem falhas, erros nem testes ignorados, em bancos temporários e sem acesso à rede; 96 testes específicos da tela; 14 cenários de criação de contas com o mesmo resultado da Sino 6.10; telas verificadas por capturas em 320, 360, 380, 800 e 1000 px, nos temas Claro e Escuro, inclusive pelo teclado. O verificador de legibilidade passou a medir o contraste dos botões sobre o fundo definido no estilo e cobre o novo diálogo nos dois temas.
+
+**Parcial e pendente**
+
+- **Validação manual:** a autora avaliou e aprovou a nova tela num protótipo isolado (versão 3, 02/11/2026). O código integrado foi verificado por testes automáticos e capturas, sem nova validação manual.
+- **Leitor de tela (Orca) e AT-SPI não testados** nesta versão.
+- **Limitações visuais conhecidas, herdadas da Sino 6.10** (sem correção prevista): em 320 px, o botão Cancelar do rodapé pode quebrar em duas linhas e as ações do diálogo podem ficar empilhadas, sem sobreposição; em 320 e 360 px, os campos Mês e Ano do diálogo podem mostrar o texto cortado. O mesmo acontece no rodapé e no diálogo "Transformar em recorrente" de Editar conta; o corte de Mês e Ano também já existia na Nova conta da 6.10.
+
 ## Sino 6.10 — pagamentos parciais (30/10/2026)
 
 **Publicada no GitHub em 30/10/2026** (etiqueta `sino-6.10`). Implementada e validada com ressalvas. Funcionalidade nova, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), regra 5.54 e migração v10 em 9.2).

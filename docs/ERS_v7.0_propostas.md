@@ -2311,6 +2311,31 @@ Uma etapa específica para **avaliar** como disponibilizar o Sino a outras pesso
 
 **5. Pendências.** As da ERS v7.0, 13.4 ("Pagamentos parciais"): A1/A2/A3 da data de conta legada (mantidas adiadas, D8-C); validação manual ampla; Orca; RNF06 no pior caso; `tests/medir_desempenho.py`; revisão jurídica da nova versão da Política (30/10/2026, relevante, P45; integrada no complemento da Etapa 8). ~~A publicação (merge, etiqueta `sino-6.10` e push) depende de autorização da autora.~~ *Atualização (30/10/2026):* publicada no GitHub, etiqueta `sino-6.10`.
 
+---
+
+## Nova tela Nova conta — protótipo e integração (Sino 6.11)
+
+*Registro de 02/11/2026.* Evolução da interface, fora do planejamento (M1–M14), sem regra nova. Descrição vigente na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 8; decisão consolidada na P46.
+
+**1. Protótipo isolado (30/10 a 02/11/2026) — não é o Sino oficial.** Clone separado a partir da Sino 6.10 (`b2bea99`), sem remoto e sem publicação, com banco fictício e sandbox sem rede. Decisões de interface do protótipo (D1–D10, 30/10/2026): grade de Editar, ícones nos campos, calendário dentro do campo, Recorrência num campo próprio, rodapé fixo e gravação com a mesma lógica da 6.10. Três versões avaliadas pela autora:
+
+* v1 (30/10/2026) — Recorrência num diálogo centralizado;
+* v2 (31/10/2026) — painel expansível dentro do formulário. A lógica foi aprovada, mas o painel aumentava a altura do cartão e deslocava a Descrição;
+* v3 (02/11/2026) — diálogo "Configurar recorrência" no padrão de "Transformar em recorrente" de Editar, com a lógica da v2. **Aprovada pela autora** em 02/11/2026.
+
+Nas três versões, os cenários de criação de contas deram o mesmo resultado da 6.10.
+
+**2. Planejamento (02/11/2026).** Diagnóstico de leitura favorável com ressalvas; decisões D1–D9 aprovadas pela autora (P46).
+
+**3. Integração oficial (02/11/2026), branch `integracao/sino-6.11`:**
+
+* E1 — cópia de recuperação do banco pessoal (v10), feita antes da integração porque o backup automático mais recente era anterior a registros feitos depois da migração v10. Nenhum arquivo existente foi alterado.
+* E2 — interface (`38496b1`), sem os identificadores e os comentários do protótipo; testes (`f03b092`): os dois testes do calendário passam a procurar o botão dentro do campo, e os 19 testes do protótipo entram na suíte; legibilidade (`aac4927`): o diálogo passa a ser verificado nos dois temas, e o verificador mede o contraste dos botões sobre o fundo definido no estilo (antes acusava um falso positivo no botão escolhido; contraste real de 5,36:1 no Claro e 5,53:1 no Escuro).
+* E3 — validação técnica: suíte 1.614/1.614, 14/14 cenários iguais aos da 6.10 e capturas de 320 a 1000 px. Achado: o resumo da Recorrência era cortado no meio da palavra em janelas estreitas, também a 380 px com meses longos. A autora aprovou a alternativa D (quebra de linha, como em Editar), aplicada em `545760b`; suíte 1.615/1.615.
+* E4 — esta documentação.
+
+**4. Pendências.** As da ERS v7.0, 13.4 ("Nova conta"). A publicação (levar a branch à `main`, etiqueta `sino-6.11` e push) depende de autorização da autora.
+
 ## Resumo geral da ERS v7.0 proposta (04/10/2026)
 
 *Registro histórico de 04/10/2026 (com as migrações já ajustadas pela P31). O estado atual de cada melhoria está na "Lista de melhorias propostas", no início deste documento, e na ERS v7.0 (13.4 e 15.3); em particular, M8 (produção restrita concluída na E4; terceiros pendente) e M9 (aplicada na E1) mudaram depois deste resumo.*
