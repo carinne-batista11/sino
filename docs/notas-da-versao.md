@@ -7,7 +7,7 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
 ## Sino 6.11 — nova tela Nova conta (02/11/2026)
 
-**Publicada no GitHub em 02/11/2026** (etiqueta `sino-6.11`). Implementada e validada; avaliação manual da versão integrada aprovada pela autora. Evolução da interface, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 8 e decisão P46). Sem regra nova e sem mudança no banco de dados.
+**Publicada no GitHub em 02/11/2026** (etiqueta `sino-6.11`). Implementada e validada; avaliação manual da versão integrada aprovada pela autora. Implantação encerrada em 02/11/2026. Evolução da interface, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 8 e decisão P46). Sem regra nova e sem mudança no banco de dados.
 
 **Concluído**
 
@@ -20,6 +20,7 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 - **Teclado e nomes acessíveis:** "Escolher data" e "Escolher recorrência" são botões focáveis com nome. Ao abrir o diálogo, o foco vai para a opção confirmada; ao fechar, volta para o campo Recorrência. A tecla Escape não fecha o diálogo (modal, como os de Editar conta): ele se fecha por Cancelar ou Confirmar.
 - **Testes:** 1.615 testes automáticos aprovados (os 1.595 da Sino 6.10 e 20 novos), sem falhas, erros nem testes ignorados, em bancos temporários e sem acesso à rede; 96 testes específicos da tela; 14 cenários de criação de contas com o mesmo resultado da Sino 6.10; telas verificadas por capturas em 320, 360, 380, 800 e 1000 px, nos temas Claro e Escuro, inclusive pelo teclado. O verificador de legibilidade passou a medir o contraste dos botões sobre o fundo definido no estilo e cobre o novo diálogo nos dois temas.
 - **Validação manual:** a autora avaliou e aprovou a nova tela no protótipo isolado (versão 3) e, depois, na versão integrada da 6.11, inclusive a quebra de linha do resumo da Recorrência em 320 px. Avaliação manual final aprovada.
+- **Implantação (02/11/2026):** primeira execução da 6.11 com o banco pessoal da autora aprovada: login, Início, navegação entre meses e a nova tela funcionaram. O banco continuou na versão 10, íntegro, sem migração e sem alteração nos registros financeiros (a única gravação foi a troca de tema, de Claro para Escuro, feita pela autora em Ajustes). Backups e cópias de recuperação preservados.
 
 **Parcial e pendente**
 
