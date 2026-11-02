@@ -7563,10 +7563,13 @@ def main(page: ft.Page):
         )
         # O Flet 0.86.5 não deixa o rótulo sempre no alto, e a dica (hint) só
         # aparece com ele no alto; por isso a orientação é o próprio texto do
-        # campo (somente leitura, em cinza), trocado pelo resumo depois.
+        # campo (somente leitura, em cinza), trocado pelo resumo depois. Em
+        # janelas estreitas, o texto quebra por palavra (como a Recorrência de
+        # Editar), em vez de ser cortado no limite do campo.
         campo_recorrencia = ft.TextField(
             label="Recorrência", value=ORIENTACAO_RECORRENCIA, read_only=True,
-            can_request_focus=False, color=cores.texto_secundario, data="recorrencia_nova_conta",
+            can_request_focus=False, multiline=True, min_lines=1, max_lines=3,
+            color=cores.texto_secundario, data="recorrencia_nova_conta",
             suffix_icon=botao_escolher_recorrencia,
             **estilo_criacao(ft.Icons.REPEAT),
         )

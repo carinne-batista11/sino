@@ -362,6 +362,13 @@ class TestDialogoRecorrencia(Base):
                 self.assertIs(self.pagina.run_task.call_args[0][1], seta)    # o foco volta para a seta
                 self.abrir()
 
+    # janelas estreitas: o resumo quebra por palavra, como a Recorrência de Editar
+    def test_resumo_quebra_linha_em_vez_de_ser_cortado(self):
+        campo = self.campo("Recorrência")
+        self.assertEqual((campo.multiline, campo.min_lines, campo.max_lines), (True, 1, 3))
+        self.assertTrue(campo.read_only)
+        self.assertFalse(campo.can_request_focus)                            # o foco continua na seta
+
 
 class TestMesmoPadraoDeEditar(Base):
     """A estrutura do diálogo novo é a de "Transformar em recorrente" (Editar)."""
