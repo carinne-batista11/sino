@@ -7424,20 +7424,34 @@ def main(page: ft.Page):
     #  TELA DE NOVA CONTA
     # ======================================================
     def mostrar_tela_nova_conta(categoria_pre_selecionada=None):
+        # Sino 6.11: Nova conta no padrão visual de Editar conta -- grade
+        # responsiva, ícones nos campos, calendário dentro do campo, Recorrência
+        # num campo com diálogo centralizado e rodapé fixo. A lógica de salvar
+        # (validações, mensagens, ordem e chamadas ao banco) é a mesma da 6.10.
         page.controls.clear()
         page.overlay.clear()
         page.padding = 0
 
         data_selecionada = {"valor": None}
 
+        # Mesmo estilo dos campos de Editar (raio, bordas, texto e ícone
+        # decorativo à esquerda), copiado aqui para não mexer em Editar.
+        def estilo_criacao(icone=None):
+            estilo = dict(**estilo_campo_texto(), border_radius=RAIO_EDICAO, border_width=1,
+                          focused_border_width=2, text_size=15)
+            if icone is not None:
+                estilo["prefix_icon"] = ft.Icon(icone, size=20, color=cores.texto_secundario)
+            return estilo
+
         campo_nome = ft.TextField(
             label="Nome da conta", hint_text="Ex: Aluguel, Internet...", color=cores.texto_principal,
             counter=texto_contador("", limites.LIMITE_NOME_CONTA),
-            **estilo_campo_texto(),
+            **estilo_criacao(ft.Icons.DESCRIPTION_OUTLINED),
         )
         campo_valor = ft.TextField(
-            label="Valor", hint_text="R$ 0,00", keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
-            **estilo_campo_texto(),
+            label="Valor", hint_text="0,00", keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
+            prefix=ft.Text("R$ ", size=15, color=cores.texto_secundario),
+            **estilo_criacao(ft.Icons.PAYMENTS_OUTLINED),
         )
         # RF04/RF32 (5.22): descrição opcional. 5.23: contador por grafemas e
         # mensagem ao passar do limite -- sem max_length (cortaria sem aviso).
@@ -7446,14 +7460,10 @@ def main(page: ft.Page):
             label="Descrição (opcional)", hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
             multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
             counter=texto_contador("", limites.LIMITE_DESCRICAO),
-            **estilo_campo_texto(),
+            **estilo_criacao(ft.Icons.NOTES),
         )
         ligar_contador_de_limite(campo_nome, "nome_conta", limites.LIMITE_NOME_CONTA)
         ligar_contador_de_limite(campo_descricao, "descricao", limites.LIMITE_DESCRICAO)
-        campo_data = ft.TextField(
-            label="Data de vencimento", hint_text="dd/mm/aaaa", read_only=True, expand=True, color=cores.texto_principal,
-            **estilo_campo_texto(),
-        )
 
         def ao_escolher_data(e):
             if e.control.value:
@@ -7471,10 +7481,27 @@ def main(page: ft.Page):
         def abrir_seletor_data(e):
             page.show_dialog(seletor_data)
 
+        # Calendário dentro do campo: o botão "Escolher data" (focável, com
+        # nome acessível) fica à direita; um clique no próprio campo também
+        # abre o calendário. O campo em si sai da ordem do Tab -- quem recebe
+        # o foco é o botão.
+        campo_data = ft.TextField(
+            label="Data de vencimento", hint_text="dd/mm/aaaa", read_only=True, can_request_focus=False,
+            color=cores.texto_principal, on_click=abrir_seletor_data,
+            suffix_icon=ft.IconButton(
+                icon=icone_com_nome(ft.Icons.CALENDAR_MONTH, "Escolher data", cores.acao_primaria),
+                icon_color=cores.acao_primaria, data="escolher_data_nova_conta",
+                on_click=abrir_seletor_data,
+            ),
+            **estilo_criacao(),
+        )
+
         campo_categoria = ft.Dropdown(
             label="Categoria",
             value=str(categoria_pre_selecionada) if categoria_pre_selecionada else "",
             options=montar_opcoes_categoria(), color=cores.texto_principal,
+            expand=True, border_radius=RAIO_EDICAO, border_width=1, focused_border_width=2, text_size=15,
+            leading_icon=ft.Icon(ft.Icons.SELL_OUTLINED, size=20, color=cores.texto_secundario),
             **estilo_lista(),
         )
         ultima_categoria_valida = {"valor": campo_categoria.value}
@@ -7503,92 +7530,197 @@ def main(page: ft.Page):
         # `on_change` (Flet 0.86.5 não declara esse campo em Dropdown).
         campo_categoria.on_select = ao_mudar_categoria
 
-        # RF10: tipo de conta -- Única (avulsa), Mensal ou Anual (recorrentes).
-        tipo_selecionado = {"valor": "unica"}
+        # RF10/5.18: tipo de conta e término -- mesmos valores iniciais da
+        # Sino 6.10 (Única; "Sem data de término" desligado; término no mês
+        # e ano atuais). A configuração é escolhida num diálogo
+        # centralizado no padrão de "Transformar em recorrente" (Editar conta);
+        # o diálogo trabalha num rascunho e só o Confirmar o leva para
+        # `recorrencia`, que é de onde o Salvar lê (como a 6.10 lia dos chips e
+        # do cartão de término). Nada é gravado no banco antes do Salvar.
+        hoje = date.today()
+        recorrencia = {"tipo": "unica", "sem_termino": False, "mes": str(hoje.month), "ano": str(hoje.year)}
+        # Antes da primeira confirmação, o campo mostra só a orientação
+        # "Escolha o tipo da conta" -- sem obrigar a escolher: o Salvar usa
+        # "Única", como sempre. Depois, mostra o resumo da escolha confirmada.
+        estado_recorrencia = {"confirmada": False}
+        ORIENTACAO_RECORRENCIA = "Escolha o tipo da conta"
 
-        # RF10/5.18: término opcional, escolhido pelo usuário -- "Sem data de
-        # término" começa DESATIVADO (o término fica visível por padrão); quando
-        # ativado, mostra o seletor visual de mês/ano (não mais campo de texto).
-        sem_termino = ft.Switch(value=False, active_color=cores.acao_primaria)
+        def texto_da_recorrencia():
+            # Texto curto. Com "Única", o término não vale (como no Salvar).
+            if recorrencia["tipo"] == "unica":
+                return "Única"
+            frequencia = "Mensal" if recorrencia["tipo"] == "mensal" else "Anual"
+            if recorrencia["sem_termino"]:
+                return f"{frequencia}, sem término"
+            return f"{frequencia} até {MESES_PT[int(recorrencia['mes']) - 1].lower()} de {recorrencia['ano']}"
 
-        ano_atual = date.today().year
-        campo_mes_termino = ft.Dropdown(
-            label="Mês", color=cores.texto_principal, expand=True,
-            value=str(date.today().month),
-            options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
-            **estilo_lista(),
+        # O campo de sempre, com a seta à direita. O campo sai da ordem do Tab;
+        # quem recebe o foco é o botão da seta (e é para ele que o foco volta
+        # quando o diálogo fecha).
+        botao_escolher_recorrencia = ft.IconButton(
+            icon=icone_com_nome(ft.Icons.ARROW_DROP_DOWN, "Escolher recorrência", cores.texto_secundario, 24),
+            icon_color=cores.texto_secundario, data="escolher_recorrencia",
         )
-        campo_ano_termino = ft.Dropdown(
-            label="Ano", color=cores.texto_principal, expand=True,
-            value=str(ano_atual),
-            options=[ft.dropdown.Option(key=str(a), text=str(a)) for a in range(ano_atual, ano_atual + 11)],
-            **estilo_lista(),
-        )
-        linha_termino = ft.Row(spacing=8, controls=[campo_mes_termino, campo_ano_termino], visible=False)
-
-        cartao_termino = ft.Container(
-            bgcolor=cores.fundo_card,
-            border_radius=12,
-            padding=14,
-            visible=False,
-            content=ft.Column(
-                spacing=12,
-                controls=[
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        controls=[
-                            ft.Text("Sem data de término", size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
-                            sem_termino,
-                        ],
-                    ),
-                    linha_termino,
-                ],
-            ),
+        # O Flet 0.86.5 não deixa o rótulo sempre no alto, e a dica (hint) só
+        # aparece com ele no alto; por isso a orientação é o próprio texto do
+        # campo (somente leitura, em cinza), trocado pelo resumo depois.
+        campo_recorrencia = ft.TextField(
+            label="Recorrência", value=ORIENTACAO_RECORRENCIA, read_only=True,
+            can_request_focus=False, color=cores.texto_secundario, data="recorrencia_nova_conta",
+            suffix_icon=botao_escolher_recorrencia,
+            **estilo_criacao(ft.Icons.REPEAT),
         )
 
-        def atualizar_secao_termino():
-            eh_recorrente = tipo_selecionado["valor"] != "unica"
-            cartao_termino.visible = eh_recorrente
-            linha_termino.visible = eh_recorrente and not sem_termino.value
-            page.update()
+        def atualizar_campo_recorrencia():
+            if estado_recorrencia["confirmada"]:
+                campo_recorrencia.value = texto_da_recorrencia()
+                campo_recorrencia.color = cores.texto_principal
 
-        sem_termino.on_change = lambda e: atualizar_secao_termino()
+        async def focar_depois(controle):
+            await asyncio.sleep(0.05)
+            try:
+                await controle.focus()
+            except Exception:  # noqa: BLE001 -- foco é só conveniência do teclado
+                pass
 
-        linha_tipo = ft.Row(spacing=8, controls=[])
+        def mostrar_dialogo_recorrencia(e=None):
+            # Rascunho da configuração confirmada: alternar entre Única, Mensal
+            # e Anual preserva o término escolhido; Cancelar descarta o rascunho;
+            # Confirmar o copia. Nenhuma validação aqui -- o término continua
+            # conferido só no Salvar, como na 6.10.
+            rascunho = dict(recorrencia)
 
-        def chip_tipo(valor, rotulo):
-            ativo = tipo_selecionado["valor"] == valor
-            return ft.Container(
-                content=ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD,
-                                 color=cores.chip_ativo_texto if ativo else cores.chip_inativo_texto),
-                bgcolor=cores.chip_ativo_fundo if ativo else cores.chip_inativo_fundo,
-                border=None if ativo else ft.Border.all(1, cores.borda_suave),
-                border_radius=10,
-                padding=ft.Padding(0, 12, 0, 12),
-                alignment=ft.Alignment.CENTER,
-                expand=True,
-                on_click=lambda e, v=valor: selecionar_tipo(v),
+            # Mesmos controles e medidas do diálogo "Transformar em recorrente".
+            sem_termino = ft.Switch(value=rascunho["sem_termino"], active_color=cores.acao_primaria,
+                                    data="sem_termino_recorrencia")
+            ano_atual = date.today().year
+            campo_mes_termino = ft.Dropdown(
+                label="Mês", color=cores.texto_principal, expand=True, value=rascunho["mes"],
+                options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
+                **estilo_lista(),
+            )
+            campo_ano_termino = ft.Dropdown(
+                label="Ano", color=cores.texto_principal, expand=True, value=rascunho["ano"],
+                options=[ft.dropdown.Option(key=str(a), text=str(a)) for a in range(ano_atual, ano_atual + 11)],
+                **estilo_lista(),
+            )
+            linha_termino = ft.Row(spacing=8, controls=[campo_mes_termino, campo_ano_termino])
+            linha_sem_termino = ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                controls=[ft.Text("Sem data de término", size=13, color=cores.texto_principal), sem_termino],
             )
 
-        def montar_chips_tipo():
-            linha_tipo.controls.clear()
-            for valor, rotulo in (("unica", "Única"), ("mensal", "Mensal"), ("anual", "Anual")):
-                linha_tipo.controls.append(chip_tipo(valor, rotulo))
+            # Opções no visual dos chips de frequência de Editar (verde quando
+            # escolhida), mas como botões: focáveis e acionáveis por Enter/Espaço.
+            # Criados uma vez por abertura: escolher troca só o estilo, e o foco
+            # do teclado continua no botão escolhido.
+            def estilo_chip(ativo):
+                return ft.ButtonStyle(
+                    bgcolor=cores.chip_ativo_fundo if ativo else cores.chip_inativo_fundo,
+                    color=cores.chip_ativo_texto if ativo else cores.chip_inativo_texto,
+                    side=None if ativo else ft.BorderSide(1, cores.borda_suave),
+                    shape=ft.RoundedRectangleBorder(radius=10), elevation=0,
+                    text_style=ft.TextStyle(size=13, weight=ft.FontWeight.BOLD),
+                    padding=ft.Padding(4, 12, 4, 12),
+                )
 
-        def selecionar_tipo(valor):
-            tipo_selecionado["valor"] = valor
-            montar_chips_tipo()
-            atualizar_secao_termino()
+            linha_tipo = ft.Row(spacing=8, controls=[
+                ft.Button(content=rotulo, expand=True, height=40, data=f"tipo_recorrencia_{valor}",
+                          on_click=lambda e, v=valor: selecionar_tipo(v))
+                for valor, rotulo in (("unica", "Única"), ("mensal", "Mensal"), ("anual", "Anual"))
+            ])
 
-        montar_chips_tipo()
+            def atualizar():
+                # Única: só os três botões (o término fica guardado no rascunho
+                # e não vale no Salvar). Mensal/Anual: "Sem data de término";
+                # Mês e Ano só com ele desligado.
+                for botao in linha_tipo.controls:
+                    botao.style = estilo_chip(botao.data == f"tipo_recorrencia_{rascunho['tipo']}")
+                linha_sem_termino.visible = rascunho["tipo"] != "unica"
+                linha_termino.visible = rascunho["tipo"] != "unica" and not rascunho["sem_termino"]
+
+            def selecionar_tipo(valor):
+                rascunho["tipo"] = valor
+                atualizar()
+                page.update()
+
+            def ao_mudar_sem_termino(e):
+                rascunho["sem_termino"] = sem_termino.value
+                atualizar()
+                page.update()
+
+            def ao_mudar_mes(e):
+                rascunho["mes"] = campo_mes_termino.value
+
+            def ao_mudar_ano(e):
+                rascunho["ano"] = campo_ano_termino.value
+
+            sem_termino.on_change = ao_mudar_sem_termino
+            campo_mes_termino.on_select = ao_mudar_mes
+            campo_ano_termino.on_select = ao_mudar_ano
+
+            def fechar():
+                page.pop_dialog()
+                page.update()
+                page.run_task(focar_depois, botao_escolher_recorrencia)
+
+            def cancelar(e):
+                fechar()
+
+            def confirmar(e):
+                recorrencia.update(rascunho)
+                estado_recorrencia["confirmada"] = True
+                atualizar_campo_recorrencia()
+                fechar()
+
+            atualizar()
+            dialogo = ft.AlertDialog(
+                modal=True,
+                bgcolor=cores.fundo_dialogo,
+                data="dialogo_recorrencia",
+                title=ft.Text("Configurar recorrência", color=cores.texto_principal),
+                # Largura e espaço do rodapé iguais aos de "Transformar em
+                # recorrente" (lá a largura vem do texto mais longo; aqui é
+                # fixa, e o Flet a reduz em janelas estreitas). A linha vazia
+                # ocupa o lugar da mensagem de erro de Editar: aqui não há
+                # validação -- o término é conferido no Salvar.
+                content=ft.Column(
+                    tight=True,
+                    spacing=12,
+                    width=548,
+                    controls=[
+                        ft.Text("Escolha como esta conta deverá se repetir.", color=cores.texto_principal),
+                        linha_tipo,
+                        linha_sem_termino,
+                        linha_termino,
+                        ft.Text(value="", color=cores.texto_erro, size=12),
+                    ],
+                ),
+                actions=[
+                    ft.TextButton(content="Cancelar", on_click=cancelar,
+                                  style=ft.ButtonStyle(color=cores.acao_primaria)),
+                    ft.Button(content="Confirmar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                              on_click=confirmar),
+                ],
+            )
+            page.show_dialog(dialogo)
+            # Teclado: o foco vai para a opção confirmada.
+            page.run_task(focar_depois, next(b for b in linha_tipo.controls
+                                             if b.data == f"tipo_recorrencia_{rascunho['tipo']}"))
+
+        # Clique no campo ou o botão da seta (Tab + Enter) abrem o diálogo.
+        campo_recorrencia.on_click = mostrar_dialogo_recorrencia
+        botao_escolher_recorrencia.on_click = mostrar_dialogo_recorrencia
 
         erro = ft.Text(value="", color=cores.texto_erro, size=12)
 
         def salvar(e):
+            # Mesma lógica da Sino 6.10; só a origem do tipo e do término mudou
+            # (configuração confirmada no diálogo, em vez dos chips e do cartão).
             nome = campo_nome.value.strip() if campo_nome.value else ""
             valor = parse_valor(campo_valor.value)
             categoria_id = int(campo_categoria.value) if campo_categoria.value else None
-            tipo = tipo_selecionado["valor"]
+            tipo = recorrencia["tipo"]
             data_termino = None
 
             descricao = limites.normalizar_descricao(campo_descricao.value)
@@ -7605,9 +7737,9 @@ def main(page: ft.Page):
                 erro.value = "Informe um valor válido."
             elif data_selecionada["valor"] is None:
                 erro.value = "Escolha a data de vencimento."
-            elif tipo != "unica" and not sem_termino.value:
-                mes_termino = int(campo_mes_termino.value)
-                ano_termino = int(campo_ano_termino.value)
+            elif tipo != "unica" and not recorrencia["sem_termino"]:
+                mes_termino = int(recorrencia["mes"])
+                ano_termino = int(recorrencia["ano"])
                 data_venc = data_selecionada["valor"]
                 if (ano_termino, mes_termino) < (data_venc.year, data_venc.month):
                     erro.value = "O término não pode ser anterior à data de vencimento inicial."
@@ -7651,51 +7783,67 @@ def main(page: ft.Page):
             ],
         )
 
-        cartao_tipo = ft.Container(
-            bgcolor=cores.fundo_card,
-            border_radius=12,
-            padding=14,
-            content=ft.Column(
-                spacing=8,
-                controls=[
-                    ft.Text("Tipo de conta", size=14, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
-                    linha_tipo,
-                ],
-            ),
+        # Rodapé fixo no padrão de Editar -- mensagem de erro, Cancelar
+        # (mesmo destino da seta Voltar: sai sem gravar) e "Salvar conta",
+        # sempre verde, validando ao clicar.
+        botao_cancelar = ft.Button(
+            content="Cancelar",
+            bgcolor=cores.botao_secundario_fundo,
+            color=cores.botao_secundario_texto,
+            style=ft.ButtonStyle(side=ft.BorderSide(1, cores.borda_suave),
+                                 shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO),
+                                 padding=ft.Padding(8, 0, 8, 0)),
+            col={"xs": 4, "sm": 3, "md": 2}, height=44,
+            on_click=lambda e: mostrar_tela_principal(),
+        )
+        botao_salvar = ft.Button(
+            content="Salvar conta",
+            icon=ft.Icons.SAVE_OUTLINED,
+            bgcolor=cores.acao_primaria,
+            color=cores.texto_sobre_acao,
+            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO),
+                                 padding=ft.Padding(8, 0, 8, 0)),
+            col={"xs": 8, "sm": 5, "md": 3}, height=44,
+            on_click=salvar,
+        )
+        rodape = ft.Container(
+            data="rodape_nova_conta",
+            bgcolor=cores.fundo_pagina,
+            border=ft.Border(top=ft.BorderSide(1, cores.divisor)),
+            padding=ft.Padding(20, 2, 20, 14),
+            content=ft.Column(spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[
+                erro,
+                ft.ResponsiveRow(alignment=ft.MainAxisAlignment.END, spacing=10,
+                                 controls=[botao_cancelar, botao_salvar]),
+            ]),
         )
 
-        conteudo = ft.Column(
+        # Duas colunas a partir de md (como Editar); abaixo, uma só, na
+        # mesma ordem.
+        area = ft.Column(
             scroll=ft.ScrollMode.AUTO,
             expand=True,
             controls=[
                 ft.Container(
-                    padding=ft.Padding(20, 40, 20, 24),
+                    padding=ft.Padding(20, 32, 20, 20),
                     content=ft.Column(
                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                        spacing=12,
                         controls=[
                             cabecalho,
-                            ft.Container(height=20),
-                            campo_nome,
-                            campo_valor,
-                            ft.Row(controls=[
-                                campo_data,
-                                ft.IconButton(icon=icone_com_nome(ft.Icons.CALENDAR_MONTH, "Escolher data",
-                                                                  cores.acao_primaria),
-                                              icon_color=cores.acao_primaria, on_click=abrir_seletor_data),
-                            ]),
-                            campo_categoria,
-                            campo_descricao,
                             ft.Container(height=8),
-                            cartao_tipo,
-                            ft.Container(height=8),
-                            cartao_termino,
-                            ft.Container(height=8),
-                            erro,
-                            ft.Button(
-                                content="Salvar conta",
-                                bgcolor=cores.acao_primaria,
-                                color=cores.texto_sobre_acao,
-                                on_click=salvar,
+                            ft.ResponsiveRow(
+                                data="grade_nova_conta", spacing=12, run_spacing=12,
+                                vertical_alignment=ft.CrossAxisAlignment.START,
+                                controls=[
+                                    ft.Container(col=12, content=campo_nome),
+                                    ft.Container(col={"xs": 12, "md": 6}, content=campo_valor),
+                                    ft.Container(col={"xs": 12, "md": 6}, content=campo_data),
+                                    ft.Container(col={"xs": 12, "md": 6},
+                                                 content=ft.Row(controls=[campo_categoria])),
+                                    ft.Container(col={"xs": 12, "md": 6}, content=campo_recorrencia),
+                                    ft.Container(col=12, content=campo_descricao),
+                                ],
                             ),
                         ],
                     ),
@@ -7703,7 +7851,11 @@ def main(page: ft.Page):
             ],
         )
 
-        page.add(conteudo)
+        page.add(ft.Column(
+            data="nova_conta_com_rodape", expand=True, spacing=0,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            controls=[area, rodape],
+        ))
 
     sessao.ao_encerrar = mostrar_tela_login  # Sair da conta (botão em Ajustes, passo 4)
     mostrar_tela_login()
