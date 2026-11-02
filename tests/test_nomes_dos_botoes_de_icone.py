@@ -59,7 +59,11 @@ class TestVoltarECalendario(BaseNomes):
         return voltar
 
     def assert_calendario_abre_o_seletor(self, paleta=CLARO):
-        calendario = self.botao_de_icone(ft.Icons.CALENDAR_MONTH)
+        # Sino 6.11: em Nova conta, o calendário fica dentro do campo Data
+        # (suffix_icon), como em Editar (test_edicao).
+        data = next(c for c in self.controles() if isinstance(c, ft.TextField) and c.label == "Data de vencimento")
+        calendario = data.suffix_icon
+        self.assertEqual(getattr(calendario.icon, "icon", None), ft.Icons.CALENDAR_MONTH)
         self.assert_nome_no_icone(calendario, "Escolher data", None, paleta["acao_primaria"])
         self.clicar(calendario)
         self.assertIsInstance(self.pagina.dialogos[-1], ft.DatePicker)
