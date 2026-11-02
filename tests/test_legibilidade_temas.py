@@ -251,6 +251,16 @@ class TesteDeLegibilidade(TesteDeSessao):
                    and isinstance(c.content, ft.Icon) and c.content.icon == ft.Icons.ADD)
         self.clicar(pagina, fab)
         self.registrar(pagina, "Nova conta", paleta)
+        # Sino 6.11: diálogo "Configurar recorrência", com Mensal escolhida
+        # (opção ativa e inativas, "Sem data de término", Mês e Ano visíveis).
+        recorrencia = next(c for c in self.todos(pagina) if isinstance(c, ft.TextField) and c.label == "Recorrência")
+        self.clicar(pagina, recorrencia.suffix_icon)
+        dialogo = next(d for d in pagina.dialogos if d.open)
+        self.assertEqual(dialogo.data, "dialogo_recorrencia")
+        self.clicar(pagina, next(c for c, _ in percorrer_com_fundo(dialogo, "#000000")
+                                 if getattr(c, "data", None) == "tipo_recorrencia_mensal"))
+        self.registrar(pagina, "Nova conta/Recorrência", paleta)
+        self.fechar_dialogos(pagina)
         self.clicar(pagina, self.botao(pagina, "Salvar conta"))           # mensagem de erro de validação
         self.registrar(pagina, "Nova conta/erro", paleta)
         self.ir_para_inicio(pagina)
@@ -372,7 +382,7 @@ class TesteDeLegibilidade(TesteDeSessao):
                     if cor is None:
                         problemas.append(f"{local}: botão sem cor de texto: {controle.content!r}")
                     elif verificar_contraste and not controle.disabled:
-                        base = cor_solida(controle.bgcolor, fundo) if getattr(controle, "bgcolor", None) else fundo
+                        base = cor_solida(fundo_do_botao(controle), fundo) if fundo_do_botao(controle) else fundo
                         razao = contraste(cor_solida(cor, base), base)
                         if razao < MINIMO_TEXTO:
                             problemas.append(f"{local}: botão {razao:.2f}:1: {controle.content!r}")
