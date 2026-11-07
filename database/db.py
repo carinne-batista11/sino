@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import time
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from calendar import monthrange
 
@@ -280,6 +281,31 @@ def _reverter_transacao(conexao):
             conexao.execute("ROLLBACK;")
         except sqlite3.Error:
             pass
+
+
+@contextmanager
+def transacao():
+    """
+    Sino 6.12 (Etapa 2, D14): UMA transação explícita para operações compostas.
+    Entrega um cursor de `conectar()` (chaves estrangeiras ligadas) com BEGIN já
+    executado; COMMIT ao sair normalmente; qualquer exceção -- inclusive
+    BaseException, como KeyboardInterrupt -- desfaz TUDO o que foi gravado dentro
+    do bloco (ROLLBACK) e é repassada sem ser mascarada. A conexão é sempre fechada.
+    As funções `_..._no_cursor` gravam só no cursor recebido (nunca confirmam nem
+    desfazem), para que várias delas componham uma única gravação atômica.
+    """
+    conexao = conectar()
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN;")
+        yield cursor
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
 
 
 def _criar_tabelas_v6(cursor, banco_novo):
@@ -3686,45 +3712,48 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
     descricao = normalizar_descricao(descricao)
     _validar_textos_conta(nome, descricao)
 
+    with transacao() as cursor:
+        return _criar_serie_recorrente_no_cursor(cursor, usuario_id, nome, valor, data_vencimento, frequencia,
+                                                 data_termino=data_termino, categoria_id=categoria_id,
+                                                 descricao=descricao)
+
+
+def _criar_serie_recorrente_no_cursor(cursor, usuario_id, nome, valor, data_vencimento, frequencia,
+                                      data_termino=None, categoria_id=None, descricao=None):
+    """
+    Sino 6.12 (Etapa 2): núcleo de `criar_serie_recorrente`, gravando só no
+    `cursor` recebido (dentro de `transacao()`), sem COMMIT/ROLLBACK próprios.
+    Mesmas validações, mesmas linhas e mesmo retorno (serie_id, [ids]).
+    """
+    if frequencia not in ("mensal", "anual"):
+        raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
+    descricao = normalizar_descricao(descricao)
+    _validar_textos_conta(nome, descricao)
+
     ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
     mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
 
     datas = _gerar_datas_ocorrencias(frequencia, data_vencimento, data_termino)
     horizonte_gerado_ate = datas[-1]
 
-    conexao = sqlite3.connect(NOME_DO_BANCO)
-    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
-    conexao.execute("PRAGMA foreign_keys = ON;")
-    cursor = conexao.cursor()
-    try:
-        cursor.execute("BEGIN;")
-
-        cursor.execute(
-            """
-            INSERT INTO series_recorrencia
-                (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                 mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao,
-                 posicao_ancora)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
-            """,
+    cursor.execute(
+        """
+        INSERT INTO series_recorrencia
             (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-             mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
-        )
-        serie_id = cursor.lastrowid
+             mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao,
+             posicao_ancora)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
+        """,
+        (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+         mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
+    )
+    serie_id = cursor.lastrowid
 
-        ids_ocorrencias = [
-            _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
-                                data_ocorrencia, descricao, posicao=posicao)
-            for posicao, data_ocorrencia in enumerate(datas, start=1)
-        ]
-
-        cursor.execute("COMMIT;")
-    except Exception:
-        cursor.execute("ROLLBACK;")
-        raise
-    finally:
-        conexao.close()
-
+    ids_ocorrencias = [
+        _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
+                            data_ocorrencia, descricao, posicao=posicao)
+        for posicao, data_ocorrencia in enumerate(datas, start=1)
+    ]
     return serie_id, ids_ocorrencias
 
 
@@ -3872,75 +3901,71 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
     if frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
 
-    conexao = sqlite3.connect(NOME_DO_BANCO)
-    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
-    conexao.execute("PRAGMA foreign_keys = ON;")
-    cursor = conexao.cursor()
-    try:
-        cursor.execute(
-            """
-            SELECT usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, descricao
-            FROM contas WHERE id = ?
-            """,
-            (conta_id,),
-        )
-        linha = cursor.fetchone()
-        if linha is None:
-            raise ValueError(f"conta com id={conta_id} não existe")
-        usuario_id, categoria_id, serie_id_atual, nome, valor, data_vencimento, descricao = linha
-        if serie_id_atual is not None:
-            cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id_atual,))
-            linha_serie_atual = cursor.fetchone()
-            serie_atual_ativa = linha_serie_atual is not None and linha_serie_atual[0] == 1
-            if serie_atual_ativa:
-                raise ValueError(
-                    f"conta id={conta_id} já pertence a uma série ativa (serie_id={serie_id_atual}) -- "
-                    "RF28 só se aplica a conta avulsa ou com recorrência encerrada"
-                )
+    with transacao() as cursor:
+        return _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_termino=data_termino)
 
-        ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
-        mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
 
-        datas = _gerar_datas_ocorrencias(frequencia, data_vencimento, data_termino)
-        datas_futuras = datas[1:]  # a primeira (data_vencimento) já existe -- é a própria conta_id
-        horizonte_gerado_ate = datas[-1]
-
-        try:
-            cursor.execute("BEGIN;")
-
-            cursor.execute(
-                """
-                INSERT INTO series_recorrencia
-                    (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                     mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao,
-                     posicao_ancora)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
-                """,
-                (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
-                 mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
-            )
-            serie_id = cursor.lastrowid
-
-            # Etapa 2b: a conta vira a âncora (posição 1) e sua vaga é o
-            # próprio vencimento.
-            cursor.execute(
-                "UPDATE contas SET serie_id = ?, posicao = 1, data_prevista = data_vencimento WHERE id = ?",
-                (serie_id, conta_id),
+def _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_termino=None):
+    """
+    Sino 6.12 (Etapa 2): núcleo de `transformar_em_recorrente`, gravando só no
+    `cursor` recebido (dentro de `transacao()`), sem COMMIT/ROLLBACK próprios.
+    Mesmas recusas (ValueError antes de qualquer gravação) e mesmo retorno.
+    """
+    if frequencia not in ("mensal", "anual"):
+        raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
+    cursor.execute(
+        """
+        SELECT usuario_id, categoria_id, serie_id, nome, valor, data_vencimento, descricao
+        FROM contas WHERE id = ?
+        """,
+        (conta_id,),
+    )
+    linha = cursor.fetchone()
+    if linha is None:
+        raise ValueError(f"conta com id={conta_id} não existe")
+    usuario_id, categoria_id, serie_id_atual, nome, valor, data_vencimento, descricao = linha
+    if serie_id_atual is not None:
+        cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id_atual,))
+        linha_serie_atual = cursor.fetchone()
+        serie_atual_ativa = linha_serie_atual is not None and linha_serie_atual[0] == 1
+        if serie_atual_ativa:
+            raise ValueError(
+                f"conta id={conta_id} já pertence a uma série ativa (serie_id={serie_id_atual}) -- "
+                "RF28 só se aplica a conta avulsa ou com recorrência encerrada"
             )
 
-            ids_novos = [
-                _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
-                                    data_ocorrencia, descricao, posicao=posicao)
-                for posicao, data_ocorrencia in enumerate(datas_futuras, start=2)
-            ]
+    ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
+    mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
 
-            cursor.execute("COMMIT;")
-        except Exception:
-            cursor.execute("ROLLBACK;")
-            raise
-    finally:
-        conexao.close()
+    datas = _gerar_datas_ocorrencias(frequencia, data_vencimento, data_termino)
+    datas_futuras = datas[1:]  # a primeira (data_vencimento) já existe -- é a própria conta_id
+    horizonte_gerado_ate = datas[-1]
 
+    cursor.execute(
+        """
+        INSERT INTO series_recorrencia
+            (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+             mes_ancora, data_inicio, data_termino, ativa, horizonte_gerado_ate, descricao,
+             posicao_ancora)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 1)
+        """,
+        (usuario_id, nome, valor, categoria_id, frequencia, dia_ancora,
+         mes_ancora, data_vencimento, data_termino, horizonte_gerado_ate, descricao),
+    )
+    serie_id = cursor.lastrowid
+
+    # Etapa 2b: a conta vira a âncora (posição 1) e sua vaga é o
+    # próprio vencimento.
+    cursor.execute(
+        "UPDATE contas SET serie_id = ?, posicao = 1, data_prevista = data_vencimento WHERE id = ?",
+        (serie_id, conta_id),
+    )
+
+    ids_novos = [
+        _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
+                            data_ocorrencia, descricao, posicao=posicao)
+        for posicao, data_ocorrencia in enumerate(datas_futuras, start=2)
+    ]
     return serie_id, ids_novos
 
 
@@ -4425,23 +4450,34 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
     descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
     _validar_textos_conta(nome, descricao)
 
-    conexao = conectar()
-    cursor = conexao.cursor()
+    with transacao() as cursor:
+        return _editar_conta_ocorrencia_no_cursor(
+            cursor, conta_id, nome=nome, valor=valor, categoria_id=categoria_id,
+            data_vencimento=data_vencimento, remover_categoria=remover_categoria, descricao=descricao,
+            remover_descricao=remover_descricao, pp_diferenca=pp_diferenca)
+
+
+def _editar_conta_ocorrencia_no_cursor(cursor, conta_id, nome=None, valor=None, categoria_id=None,
+                                       data_vencimento=None, remover_categoria=False, descricao=None,
+                                       remover_descricao=False, pp_diferenca=None):
+    """
+    Sino 6.12 (Etapa 2): núcleo de `editar_conta_ocorrencia` ("Somente este
+    mês"), gravando só no `cursor` recebido (dentro de `transacao()`), sem
+    COMMIT/ROLLBACK próprios. Mesmas recusas antes de gravar e mesmo retorno.
+    """
+    descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
+    _validar_textos_conta(nome, descricao)
 
     cursor.execute("SELECT serie_id, valor FROM contas WHERE id = ?", (conta_id,))
     linha = cursor.fetchone()
     if linha is None:
-        conexao.close()
         return False
     serie_id = linha[0]
     if valor is not None and valor != linha[1]:
-        try:  # Pagamentos parciais: o novo valor não pode ficar abaixo do que já foi pago
-            _exigir_valor_cobre_pagamentos(cursor, valor, "id = ?", (conta_id,))
-            if pp_diferenca is not None:  # conta quitada: só a que a tela mostrava
-                _conferir_quitada(cursor, conta_id, pp_diferenca["esperado"])
-        except (ValorMenorQuePagoError, DadosDesatualizadosError):
-            conexao.close()
-            raise
+        # Pagamentos parciais: o novo valor não pode ficar abaixo do que já foi pago
+        _exigir_valor_cobre_pagamentos(cursor, valor, "id = ?", (conta_id,))
+        if pp_diferenca is not None:  # conta quitada: só a que a tela mostrava
+            _conferir_quitada(cursor, conta_id, pp_diferenca["esperado"])
 
     campos, valores = [], []
     if nome is not None:
@@ -4473,8 +4509,6 @@ def editar_conta_ocorrencia(conta_id, nome=None, valor=None, categoria_id=None, 
             if pp_diferenca is not None and pp_diferenca["registrar"]:
                 _registrar_diferenca(cursor, conta_id)  # mesma transação da alteração do valor
             _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
-        conexao.commit()
-    conexao.close()
     return True
 
 
