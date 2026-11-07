@@ -374,11 +374,13 @@ class TestExclusoesLimpamOsComplementos(BaseV11):
                          [r for r in restantes if r[0] != self.mensais[0]])
         self.sem_violacoes()
 
-    def test_alterar_frequencia_apaga_pendentes_substituidas(self):
-        db.alterar_frequencia_serie(self.mensais[0], "anual", data_termino="2028-08")
-        ids = {r[0] for r in self.consultar("SELECT id FROM contas WHERE serie_id = ?", (self.serie_mensal,))}
-        pendentes = {r[0] for r in self.consultar("SELECT conta_id FROM ocorrencias_valor_pendente")}
-        self.assertTrue(pendentes <= ids)
+    def test_alterar_frequencia_de_serie_variavel_recusada(self):
+        # Ajuste deliberado na Etapa 8: desde a Etapa 8 uma série variável não muda de frequência
+        # (R6; proposta técnica 9) -- a recusa acontece antes de gravar, sem órfãos.
+        antes = {t: self.consultar(f"SELECT * FROM {t} ORDER BY 1") for t in V11 + ("contas", "series_recorrencia")}
+        with self.assertRaises(db.ValorVariavelRecusadoError):
+            db.alterar_frequencia_serie(self.mensais[0], "anual", data_termino="2028-08")
+        self.assertEqual({t: self.consultar(f"SELECT * FROM {t} ORDER BY 1") for t in antes}, antes)
         self.assertEqual(self.consultar("PRAGMA foreign_key_check"), [])
 
     def test_excluir_usuario_apaga_tudo(self):

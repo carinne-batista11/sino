@@ -3998,7 +3998,7 @@ def ocorrencias_mantidas_no_vencimento(conta_id, data_vencimento):
 
 
 def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
-                            data_termino=None, categoria_id=None, descricao=None):
+                            data_termino=None, categoria_id=None, descricao=None, variavel=False):
     """
     Cria uma série recorrente (RF10 — Mensal/Anual): insere `series_recorrencia`
     e gera as ocorrências correspondentes em `contas`, cada uma apontando
@@ -4017,6 +4017,10 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
     `descricao` (5.22) vai para o modelo da série e para cada ocorrência,
     normalizada como em `criar_conta_unica`; limites de nome/descrição
     (5.23) são verificados antes de qualquer gravação.
+
+    Sino 6.12 (Etapa 8): `variavel=True` cria a série de valor variável -- a
+    primeira ocorrência com o `valor` informado (obrigatório) e as seguintes
+    com valor pendente, na mesma transação.
     """
     if frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
@@ -4026,11 +4030,11 @@ def criar_serie_recorrente(usuario_id, nome, valor, data_vencimento, frequencia,
     with transacao() as cursor:
         return _criar_serie_recorrente_no_cursor(cursor, usuario_id, nome, valor, data_vencimento, frequencia,
                                                  data_termino=data_termino, categoria_id=categoria_id,
-                                                 descricao=descricao)
+                                                 descricao=descricao, variavel=variavel)
 
 
 def _criar_serie_recorrente_no_cursor(cursor, usuario_id, nome, valor, data_vencimento, frequencia,
-                                      data_termino=None, categoria_id=None, descricao=None):
+                                      data_termino=None, categoria_id=None, descricao=None, variavel=False):
     """
     Sino 6.12 (Etapa 2): núcleo de `criar_serie_recorrente`, gravando só no
     `cursor` recebido (dentro de `transacao()`), sem COMMIT/ROLLBACK próprios.
@@ -4040,6 +4044,8 @@ def _criar_serie_recorrente_no_cursor(cursor, usuario_id, nome, valor, data_venc
         raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
     descricao = normalizar_descricao(descricao)
     _validar_textos_conta(nome, descricao)
+    if variavel:  # Sino 6.12 (Etapa 8): a primeira ocorrência sempre com valor
+        _exigir_primeiro_valor(valor)
 
     ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
     mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
@@ -4065,6 +4071,9 @@ def _criar_serie_recorrente_no_cursor(cursor, usuario_id, nome, valor, data_venc
                             data_ocorrencia, descricao, posicao=posicao)
         for posicao, data_ocorrencia in enumerate(datas, start=1)
     ]
+    if variavel:  # Sino 6.12 (Etapa 8): as seguintes nascem com valor pendente
+        _registrar_serie_variavel(cursor, serie_id)
+        _marcar_valor_pendente(cursor, ids_ocorrencias[1:])
     return serie_id, ids_ocorrencias
 
 
@@ -4154,6 +4163,8 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
                 for data_ocorrencia in novas_datas
                 if _competencia(data_ocorrencia) not in ocupadas
             ]
+            if _serie_variavel_no_cursor(cursor, serie_id):  # Sino 6.12 (Etapa 8): nascem pendentes
+                _marcar_valor_pendente(cursor, ids_novos)
             _renumerar_segmento(cursor, serie_id, posicao_ancora)
 
             cursor.execute(
@@ -4171,7 +4182,7 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
     return ids_novos
 
 
-def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
+def transformar_em_recorrente(conta_id, frequencia, data_termino=None, variavel=False):
     """
     RF28 (5.4): transforma uma conta avulsa (Única) em recorrente. A
     ocorrência existente passa a ser a âncora de uma nova série -- não é
@@ -4208,15 +4219,21 @@ def transformar_em_recorrente(conta_id, frequencia, data_termino=None):
     um `serie_id` novo. Nome, valor, categoria e descrição da conta viram o
     modelo da série e são copiados para as ocorrências criadas; como são
     dados já gravados (não uma entrada nova), não são revalidados (P4).
+
+    Sino 6.12 (Etapa 8, R2): `variavel=True` cria a série de valor variável; a
+    conta continua a primeira ocorrência com valor, status, data de pagamento e
+    pagamentos intactos, e as ocorrências criadas nascem com valor pendente.
+    Conta com valor pendente: recusada (a primeira ocorrência sempre tem valor).
     """
     if frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {frequencia!r} (use 'mensal' ou 'anual')")
 
     with transacao() as cursor:
-        return _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_termino=data_termino)
+        return _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_termino=data_termino,
+                                                    variavel=variavel)
 
 
-def _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_termino=None):
+def _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_termino=None, variavel=False):
     """
     Sino 6.12 (Etapa 2): núcleo de `transformar_em_recorrente`, gravando só no
     `cursor` recebido (dentro de `transacao()`), sem COMMIT/ROLLBACK próprios.
@@ -4244,6 +4261,8 @@ def _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_term
                 f"conta id={conta_id} já pertence a uma série ativa (serie_id={serie_id_atual}) -- "
                 "RF28 só se aplica a conta avulsa ou com recorrência encerrada"
             )
+    if _valor_pendente_no_cursor(cursor, conta_id):  # Sino 6.12 (Etapa 8)
+        raise ValorVariavelRecusadoError(MENSAGEM_TRANSFORMAR_COM_VALOR_PENDENTE)
 
     ano_ancora, mes_ancora_da_data, dia_ancora = map(int, data_vencimento.split("-"))
     mes_ancora = mes_ancora_da_data if frequencia == "anual" else None
@@ -4277,6 +4296,9 @@ def _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_term
                             data_ocorrencia, descricao, posicao=posicao)
         for posicao, data_ocorrencia in enumerate(datas_futuras, start=2)
     ]
+    if variavel:  # Sino 6.12 (Etapa 8, R2): só as criadas ficam pendentes; a conta não muda
+        _registrar_serie_variavel(cursor, serie_id)
+        _marcar_valor_pendente(cursor, ids_novos)
     return serie_id, ids_novos
 
 
@@ -4284,12 +4306,13 @@ def listar_contas(usuario_id, ano_mes=None):
     conexao = conectar()
     cursor = conexao.cursor()
     total_pago = _sql_total_pago_centavos(cursor)
+    pendente = _sql_eh_pendente(cursor)  # Sino 6.12 (Etapa 8): valor pendente (R8)
 
     if ano_mes:
         cursor.execute(
             f"""
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
-                   serie_id, data_pagamento, editado_individualmente, descricao, {total_pago}
+                   serie_id, data_pagamento, editado_individualmente, descricao, {total_pago}, {pendente}
             FROM contas WHERE usuario_id = ? AND data_vencimento LIKE ?
             ORDER BY data_vencimento, posicao, id
             """,
@@ -4299,7 +4322,7 @@ def listar_contas(usuario_id, ano_mes=None):
         cursor.execute(
             f"""
             SELECT id, nome, valor, data_vencimento, status, categoria_id,
-                   serie_id, data_pagamento, editado_individualmente, descricao, {total_pago}
+                   serie_id, data_pagamento, editado_individualmente, descricao, {total_pago}, {pendente}
             FROM contas WHERE usuario_id = ?
             ORDER BY data_vencimento, posicao, id
             """,
@@ -4320,6 +4343,7 @@ def listar_contas(usuario_id, ano_mes=None):
             "status": status, "categoria_id": l[5], "serie_id": l[6],
             "data_pagamento": l[7], "editado_individualmente": l[8],
             "descricao": l[9], **_situacao_do_pagamento(l[4], l[2], l[10]),
+            "valor_pendente": bool(l[11]),
         })
     return contas
 
@@ -4348,7 +4372,7 @@ def listar_contas_proximas(usuario_id, dias=7):
     cursor.execute(
         f"""
         SELECT id, nome, valor, data_vencimento, status, categoria_id, serie_id, descricao,
-               {_sql_total_pago_centavos(cursor)}
+               {_sql_total_pago_centavos(cursor)}, {_sql_eh_pendente(cursor)}
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente'
               AND data_vencimento BETWEEN ? AND ?
@@ -4362,7 +4386,7 @@ def listar_contas_proximas(usuario_id, dias=7):
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
          "status": l[4], "categoria_id": l[5], "serie_id": l[6], "descricao": l[7],
-         **_situacao_do_pagamento(l[4], l[2], l[8])}
+         **_situacao_do_pagamento(l[4], l[2], l[8]), "valor_pendente": bool(l[9])}
         for l in linhas
     ]
 
@@ -4377,7 +4401,7 @@ def listar_contas_atrasadas(usuario_id):
     cursor.execute(
         f"""
         SELECT id, nome, valor, data_vencimento, categoria_id, serie_id, descricao,
-               {_sql_total_pago_centavos(cursor)}
+               {_sql_total_pago_centavos(cursor)}, {_sql_eh_pendente(cursor)}
         FROM contas
         WHERE usuario_id = ? AND status = 'pendente' AND data_vencimento < ?
         ORDER BY data_vencimento
@@ -4390,7 +4414,7 @@ def listar_contas_atrasadas(usuario_id):
     return [
         {"id": l[0], "nome": l[1], "valor": l[2], "data_vencimento": l[3],
          "status": "atrasado", "categoria_id": l[4], "serie_id": l[5], "descricao": l[6],
-         **_situacao_do_pagamento("pendente", l[2], l[7])}
+         **_situacao_do_pagamento("pendente", l[2], l[7]), "valor_pendente": bool(l[8])}
         for l in linhas
     ]
 
@@ -4704,6 +4728,8 @@ def _conferir_unica_para_parcelar(cursor, conta_id):
             raise ParcelamentoRecusadoError(MENSAGEM_NAO_E_UNICA)
     if status == "pago" or data_pagamento is not None or _contas_com_pagamentos(cursor, "id = ?", (conta_id,)):
         raise ParcelamentoRecusadoError(MENSAGEM_UNICA_COM_PAGAMENTOS)
+    if _valor_pendente_no_cursor(cursor, conta_id):  # Sino 6.12 (Etapa 8): o total precisa ser conhecido
+        raise ParcelamentoRecusadoError(MENSAGEM_PARCELAR_COM_VALOR_PENDENTE)
     return valor, vencimento
 
 
@@ -5015,6 +5041,161 @@ def _recusar_se_parcelada(conta_id):
         raise ParcelamentoRecusadoError(MENSAGEM_PARCELADA_NAO_MUDA_DE_TIPO)
 
 
+# ------------------------------------------------------------------
+#  Sino 6.12 (Etapa 8): recorrências de valor VARIÁVEL (R2, R8, R9).
+#
+#  Série variável = linha em `series_valor_variavel` (sem linha = Fixa, o
+#  comportamento da 6.11). A primeira ocorrência sempre tem valor informado; as
+#  seguintes -- na criação, na transformação de uma Única (R2) e na geração sob
+#  demanda -- nascem com VALOR PENDENTE: linha em `ocorrencias_valor_pendente` e
+#  `contas.valor = 0` só como marcador interno (nunca exibido nem somado).
+#  Ocorrência pendente não recebe pagamento (nem "Marcar como paga", nem
+#  pagamento parcial): a recusa fica aqui e em `pagamentos.py`, pois a v11 não
+#  tem gatilho em `pp_pagamentos`; o gatilho da v11 impede o inverso (marcar
+#  como pendente uma ocorrência com registros). Informar o valor, R3, R4 e R5
+#  ficam para a Etapa 9: até lá, o valor de uma pendente e o valor por "Este
+#  mês em diante" numa série variável são recusados sem gravar nada.
+# ------------------------------------------------------------------
+MENSAGEM_PRIMEIRO_VALOR_OBRIGATORIO = "Informe o valor da primeira ocorrência."
+MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE = ("Esta conta está com valor pendente. Informe o valor antes de registrar "
+                                         "um pagamento.")
+MENSAGEM_VALOR_PENDENTE_NAO_EDITAVEL = "Informar o valor de uma ocorrência com valor pendente ainda não está disponível."
+MENSAGEM_VALOR_COLETIVO_VARIAVEL = ("Numa recorrência de valor variável, o valor só pode ser alterado em "
+                                    "“Somente este mês”.")
+MENSAGEM_VARIAVEL_NAO_MUDA_FREQUENCIA = "Uma recorrência de valor variável não pode mudar de frequência."
+MENSAGEM_TRANSFORMAR_COM_VALOR_PENDENTE = "Esta conta está com valor pendente: informe o valor antes de transformá-la."
+MENSAGEM_PARCELAR_COM_VALOR_PENDENTE = "Esta conta está com valor pendente: informe o valor antes de parcelá-la."
+
+
+class ValorVariavelRecusadoError(ValueError):
+    """Sino 6.12 (Etapa 8): operação recusada por valor pendente ou série variável (nada é gravado)."""
+
+
+def _serie_variavel_no_cursor(cursor, serie_id):
+    if serie_id is None or not _tabela_existe(cursor, TABELA_SERIES_VARIAVEIS):
+        return False
+    return cursor.execute(f"SELECT 1 FROM {TABELA_SERIES_VARIAVEIS} WHERE serie_id = ?",
+                          (serie_id,)).fetchone() is not None
+
+
+def serie_variavel(serie_id):
+    """True se a série tem valor variável (só leitura)."""
+    conexao = conectar()
+    try:
+        return _serie_variavel_no_cursor(conexao.cursor(), serie_id)
+    finally:
+        conexao.close()
+
+
+def _valor_pendente_no_cursor(cursor, conta_id):
+    if not _tabela_existe(cursor, TABELA_VALOR_PENDENTE):
+        return False
+    return cursor.execute(f"SELECT 1 FROM {TABELA_VALOR_PENDENTE} WHERE conta_id = ?",
+                          (conta_id,)).fetchone() is not None
+
+
+def conta_com_valor_pendente(conta_id):
+    """True se a ocorrência está com o valor pendente (só leitura)."""
+    conexao = conectar()
+    try:
+        return _valor_pendente_no_cursor(conexao.cursor(), conta_id)
+    finally:
+        conexao.close()
+
+
+def _agora_iso():
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _registrar_serie_variavel(cursor, serie_id):
+    cursor.execute(f"INSERT INTO {TABELA_SERIES_VARIAVEIS} (serie_id, definido_em) VALUES (?, ?)",
+                   (serie_id, _agora_iso()))
+
+
+def _marcar_valor_pendente(cursor, ids):
+    """Ocorrências novas (sem pagamentos) passam a ter o valor pendente; o gatilho da
+    v11 recusa (e a transação inteira é desfeita) se alguma tiver registros de pagamento."""
+    agora = _agora_iso()
+    for conta_id in ids:
+        cursor.execute("UPDATE contas SET valor = 0 WHERE id = ?", (conta_id,))
+        cursor.execute(f"INSERT INTO {TABELA_VALOR_PENDENTE} (conta_id, definido_em) VALUES (?, ?)",
+                       (conta_id, agora))
+
+
+def _exigir_primeiro_valor(valor):
+    if valor is None or isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor < 0:
+        raise ValorVariavelRecusadoError(MENSAGEM_PRIMEIRO_VALOR_OBRIGATORIO)
+
+
+def _recusar_se_variavel(conta_id):
+    """R6 para as séries variáveis (a 6.12 não oferece "Alterar frequência" a elas)."""
+    conexao = conectar()
+    try:
+        cursor = conexao.cursor()
+        linha = cursor.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,)).fetchone()
+        variavel = linha is not None and _serie_variavel_no_cursor(cursor, linha[0])
+    finally:
+        conexao.close()
+    if variavel:
+        raise ValorVariavelRecusadoError(MENSAGEM_VARIAVEL_NAO_MUDA_FREQUENCIA)
+
+
+def _sql_eh_pendente(cursor, coluna_id="contas.id"):
+    """Expressão SQL 1/0: a conta está com valor pendente? (0 sem a tabela)."""
+    if not _tabela_existe(cursor, TABELA_VALOR_PENDENTE):
+        return "0"
+    return f"(CASE WHEN {coluna_id} IN (SELECT conta_id FROM {TABELA_VALOR_PENDENTE}) THEN 1 ELSE 0 END)"
+
+
+def pendentes_do_periodo(usuario_id, inicio, fim):
+    """V7: quantas contas com valor pendente vencem entre `inicio` e `fim` (ISO, inclusive)."""
+    conexao = conectar()
+    try:
+        return conexao.execute(
+            f"SELECT COALESCE(SUM({_sql_eh_pendente(conexao.cursor())}), 0) FROM contas "
+            "WHERE usuario_id = ? AND data_vencimento BETWEEN ? AND ?", (usuario_id, inicio, fim)).fetchone()[0]
+    finally:
+        conexao.close()
+
+
+def pendentes_por_mes(usuario_id, primeiro_ano_mes, ultimo_ano_mes):
+    """V7: {"AAAA-MM": quantidade} só dos meses do intervalo com contas de valor pendente."""
+    conexao = conectar()
+    try:
+        linhas = conexao.execute(
+            f"SELECT substr(data_vencimento, 1, 7), SUM({_sql_eh_pendente(conexao.cursor())}) FROM contas "
+            "WHERE usuario_id = ? AND substr(data_vencimento, 1, 7) BETWEEN ? AND ? GROUP BY 1",
+            (usuario_id, primeiro_ano_mes, ultimo_ano_mes)).fetchall()
+    finally:
+        conexao.close()
+    return {mes: n for mes, n in linhas if n}
+
+
+def pendentes_por_ano(usuario_id):
+    """V7: {ano: quantidade} só dos anos com contas de valor pendente."""
+    conexao = conectar()
+    try:
+        linhas = conexao.execute(
+            f"SELECT substr(data_vencimento, 1, 4), SUM({_sql_eh_pendente(conexao.cursor())}) FROM contas "
+            "WHERE usuario_id = ? GROUP BY 1", (usuario_id,)).fetchall()
+    finally:
+        conexao.close()
+    return {int(ano): n for ano, n in linhas if n}
+
+
+def pendentes_por_categoria(usuario_id, inicio, fim):
+    """V7: {categoria_id (None = sem categoria): quantidade} das contas com valor pendente no período."""
+    conexao = conectar()
+    try:
+        linhas = conexao.execute(
+            f"SELECT categoria_id, SUM({_sql_eh_pendente(conexao.cursor())}) FROM contas "
+            "WHERE usuario_id = ? AND data_vencimento BETWEEN ? AND ? GROUP BY categoria_id",
+            (usuario_id, inicio, fim)).fetchall()
+    finally:
+        conexao.close()
+    return {categoria_id: n for categoria_id, n in linhas if n}
+
+
 def obter_info_serie(serie_id):
     """
     Dados de uma série para exibição (frase contextual de recorrência,
@@ -5090,6 +5271,8 @@ def marcar_conta_como_paga(conta_id, data_pagamento=None):
                 cursor.execute("ROLLBACK;")
                 return False
             status, valor, pago_centavos = linha
+            if _valor_pendente_no_cursor(cursor, conta_id):  # Sino 6.12 (Etapa 8): R8
+                raise ValorVariavelRecusadoError(MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE)
             saldo = centavos_de(valor) - pago_centavos
             if saldo <= 0:
                 cursor.execute("ROLLBACK;")
@@ -5251,6 +5434,8 @@ def _editar_conta_ocorrencia_no_cursor(cursor, conta_id, nome=None, valor=None, 
     serie_id = linha[0]
     if _serie_parcelada_no_cursor(cursor, serie_id):  # Sino 6.12 (Etapa 7): D5, P4, C7
         _conferir_edicao_de_parcela(cursor, conta_id, serie_id, linha[1], linha[2], valor, data_vencimento)
+    if valor is not None and _valor_pendente_no_cursor(cursor, conta_id):  # Sino 6.12 (Etapa 8)
+        raise ValorVariavelRecusadoError(MENSAGEM_VALOR_PENDENTE_NAO_EDITAVEL)
     if valor is not None and valor != linha[1]:
         # Pagamentos parciais: o novo valor não pode ficar abaixo do que já foi pago
         _exigir_valor_cobre_pagamentos(cursor, valor, "id = ?", (conta_id,))
@@ -5482,6 +5667,9 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             conta_id, serie_id, posicao_referencia, nome=nome, valor=valor, categoria_id=categoria_id,
             data_vencimento=data_vencimento, remover_categoria=remover_categoria, descricao=descricao,
             remover_descricao=remover_descricao)
+    if valor is not None and _serie_variavel_no_cursor(cursor_leitura, serie_id):  # Sino 6.12 (Etapa 8)
+        conexao_leitura.close()
+        raise ValorVariavelRecusadoError(MENSAGEM_VALOR_COLETIVO_VARIAVEL)
 
     if valor is not None:  # Pagamentos parciais: a selecionada segue as regras individuais (as protegidas não mudam)
         try:
@@ -5691,6 +5879,7 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
     tentativa contra série inativa.
     """
     _recusar_se_parcelada(conta_id)  # Sino 6.12: parcelada não muda de tipo
+    _recusar_se_variavel(conta_id)   # Sino 6.12 (Etapa 8): R6 para as variáveis
     if nova_frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {nova_frequencia!r} (use 'mensal' ou 'anual')")
 

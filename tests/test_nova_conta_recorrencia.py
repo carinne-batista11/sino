@@ -428,12 +428,16 @@ class TestMesmoPadraoDeEditar(Base):
         self.assertEqual(a["cancelar"], b["cancelar"])
         self.assertEqual((a["confirmar"][0], a["confirmar"][1:]), (b["confirmar"][0], b["confirmar"][1:]))
         self.assertEqual(b["confirmar"], (ft.Button, CLARO["acao_primaria"], CLARO["texto_sobre_acao"]))
-        self.assertEqual(len(editar.content.controls), 5)                    # 5ª: mensagem de erro
-        # Sino 6.12: a 5ª linha passa a ser a quantidade de parcelas (só visível na Parcelada);
+        # Sino 6.12 (Etapa 8, ajuste deliberado): depois do término, "Valor fixo | Valor variável"
+        # nos dois diálogos (em Transformar, a linha e a ajuda; em Nova conta, um bloco só).
+        self.assertEqual(len(editar.content.controls), 7)                    # 7ª: mensagem de erro
+        self.assertEqual(editar.content.controls[4].data, "comportamento_transformar")
+        # Sino 6.12: depois do bloco do valor, a quantidade de parcelas (só visível na Parcelada);
         # a linha reservada, sempre vazia, continua sendo a última.
-        self.assertEqual(len(novo.content.controls), 6)
-        self.assertEqual(novo.content.controls[4].data, "quantidade_parcelas_nova_conta")
-        reserva_editar, reserva_novo = editar.content.controls[4], novo.content.controls[5]
+        self.assertEqual(len(novo.content.controls), 7)
+        self.assertEqual(novo.content.controls[4].controls[0].data, "linha_comportamento_valor")
+        self.assertEqual(novo.content.controls[5].data, "quantidade_parcelas_nova_conta")
+        reserva_editar, reserva_novo = editar.content.controls[6], novo.content.controls[6]
         self.assertEqual((type(reserva_editar), reserva_editar.size, reserva_editar.value, reserva_editar.color),
                          (type(reserva_novo), reserva_novo.size, reserva_novo.value, reserva_novo.color))
         self.assertEqual(novo.content.width, 548)

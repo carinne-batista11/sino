@@ -57,6 +57,12 @@ class ContaJaPagaError(PagamentoError):
         super().__init__("Esta conta já está paga.")
 
 
+class ContaComValorPendenteError(PagamentoError, db.ValorVariavelRecusadoError):
+    """Sino 6.12 (Etapa 8, R8): ocorrência com valor pendente não recebe pagamento."""
+    def __init__(self):
+        super().__init__(db.MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE)
+
+
 class DataDePagamentoFuturaError(PagamentoError):
     def __init__(self):
         super().__init__("A data de pagamento não pode ser no futuro.")
@@ -128,6 +134,7 @@ def obter_situacao(conta_id):
         if linha is None:
             return None
         valor, status, data_pagamento, vencimento = linha
+        valor_pendente = db._valor_pendente_no_cursor(cursor, conta_id)  # Sino 6.12 (Etapa 8)
         pagamentos = []
         if db._tabela_existe(cursor, db.TABELA_PAGAMENTOS):
             pagamentos = [
@@ -157,6 +164,7 @@ def obter_situacao(conta_id):
         "pagamentos": pagamentos,   # histórico completo, em ordem de data (ativos e estornados)
         "ativos": ativos,           # só os que contam no total pago
         "paga_sem_registros": not em_aberto and not ativos,
+        "valor_pendente": valor_pendente,  # Sino 6.12 (Etapa 8): valor ainda não informado (R8)
     }
 
 
@@ -273,6 +281,8 @@ def registrar_pagamento_parcial(conta_id, valor_centavos, data_pagamento=None, s
         if linha is None:
             raise ContaNaoEncontradaError()
         status, valor, pago_centavos = linha
+        if db._valor_pendente_no_cursor(cursor, conta_id):  # Sino 6.12 (Etapa 8): R8
+            raise ContaComValorPendenteError()
         if status == "pago":
             raise ContaJaPagaError()
         saldo = db.centavos_de(valor) - pago_centavos

@@ -193,14 +193,46 @@ def formatar_moeda(valor):
 
 
 TEXTO_VALOR_PENDENTE = "Valor pendente"
+TEXTO_INFORMAR_VALOR = "O valor desta ocorrência ainda não foi informado."
+TEXTO_AJUDA_VARIAVEL = "Com valor variável, as próximas ocorrências ficam com “Valor pendente”."
 
 
 def texto_do_valor(conta):
     """Sino 6.12 (Etapa 3): o valor de uma conta como texto -- "Valor pendente"
     quando ainda não foi informado (nunca "R$ 0,00"); um valor conhecido, mesmo
-    0,00, sai formatado em reais. Ainda sem uso nas telas (Etapas 8 e 11)."""
+    0,00, sai formatado em reais. Em uso nas listas desde a Etapa 8."""
     valor = database.valor_conhecido(conta)
     return TEXTO_VALOR_PENDENTE if valor is None else formatar_moeda(valor)
+
+
+def frase_valores_pendentes(quantidade):
+    """Sino 6.12 (Etapa 8, V6/V7): contagem das contas com valor pendente (fora das somas)."""
+    if quantidade == 1:
+        return "1 conta com valor pendente"
+    return f"{quantidade} contas com valor pendente"
+
+
+def texto_total_proximas(proximas):
+    """V6: total (saldo) das contas dos próximos 7 dias com valor conhecido; as com valor
+    pendente são contadas, nunca somadas como R$ 0,00."""
+    pendentes = database.quantidade_com_valor_pendente(proximas)
+    conhecidas = [c for c in proximas if not c.get("valor_pendente")]
+    partes = []
+    if conhecidas:
+        partes.append(f"Total de {formatar_moeda(sum(c['saldo'] for c in conhecidas))}")
+    if pendentes:
+        partes.append(frase_valores_pendentes(pendentes))
+    return " · ".join(partes)
+
+
+def texto_valor_do_periodo(total, pendentes):
+    """V7: rótulo de uma barra ou categoria -- "Valor pendente" quando só há contas com
+    valor pendente (nunca "R$ 0,00"); senão, o total conhecido e a contagem das pendentes."""
+    if pendentes and not total:
+        return TEXTO_VALOR_PENDENTE
+    if pendentes:
+        return f"{formatar_moeda(total)}\n+{pendentes} pendente{'s' if pendentes > 1 else ''}"
+    return formatar_moeda(total)
 
 
 def frase_vencimento_futuro(dias_delta):
@@ -230,16 +262,19 @@ def frase_resumo_proximas(quantidade):
     return f"{quantidade} contas vencem nos próximos 7 dias"
 
 
-def frase_recorrencia(frequencia, data_termino):
+def frase_recorrencia(frequencia, data_termino, variavel=False):
     """RF29 revisado (5.8, D7): frase contextual sobre a recorrência de uma
     série ativa, no lugar do texto genérico "Recorrente: Sim". Não trata o
     caso de série encerrada -- quem chama decide esse texto a partir de
     `ativa` (obter_info_serie), já que aqui a série é sempre ativa."""
     frequencia_texto = "mensalmente" if frequencia == "mensal" else "anualmente"
+    # Sino 6.12 (Etapa 8): recorrência de valor variável.
+    complemento = " O valor varia a cada ocorrência." if variavel else ""
     if data_termino:
         ano_t, mes_t = map(int, data_termino.split("-"))
-        return f"Esta conta se repete {frequencia_texto} até {MESES_PT[mes_t - 1].lower()} de {ano_t}."
-    return f"Esta conta se repete {frequencia_texto} sem prazo definido para término."
+        return (f"Esta conta se repete {frequencia_texto} até {MESES_PT[mes_t - 1].lower()} de {ano_t}."
+                f"{complemento}")
+    return f"Esta conta se repete {frequencia_texto} sem prazo definido para término.{complemento}"
 
 
 def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, data_antiga, data_nova,
@@ -688,11 +723,11 @@ def status_ao_desmarcar(conta, hoje):
     return "atrasado" if date.fromisoformat(conta["data_vencimento"]) < hoje else "pendente"
 
 
-def texto_recorrencia_detalhes(serie_ativa, info_serie):
+def texto_recorrencia_detalhes(serie_ativa, info_serie, variavel=False):
     """Frase de recorrência: série ativa -> frase contextual; conta única ou
     série encerrada (tratada como avulsa, 5.8) -> TEXTO_NAO_RECORRENTE."""
     if serie_ativa:
-        return frase_recorrencia(info_serie["frequencia"], info_serie["data_termino"])
+        return frase_recorrencia(info_serie["frequencia"], info_serie["data_termino"], variavel)
     return TEXTO_NAO_RECORRENTE
 
 
@@ -879,13 +914,21 @@ def palavras_do_nome(nome):
     return [p for p in nome.split(" ") if p] or [nome]
 
 
+def texto_do_total_da_categoria(item):
+    """Sino 6.12 (Etapa 8, V7): total da categoria no comparativo -- "Valor pendente" quando a
+    categoria só tem contas com valor pendente no período (nunca "R$ 0,00")."""
+    if not item["total"] and item.get("pendentes"):
+        return TEXTO_VALOR_PENDENTE
+    return formatar_moeda(item["total"])
+
+
 def chaves_de_medicao_do_comparativo(distribuicao):
     """(tipo, texto) medidos pela faixa invisível: cada nome, cada palavra e cada valor."""
     chaves = set()
     for item in distribuicao:
         chaves.add(("nome", item["nome"]))
         chaves.update(("palavra", p) for p in palavras_do_nome(item["nome"]))
-        chaves.add(("valor", formatar_moeda(item["total"])))
+        chaves.add(("valor", texto_do_total_da_categoria(item)))
     return chaves
 
 
@@ -917,12 +960,12 @@ def geometria_do_comparativo(distribuicao, medidas):
         larguras = [largura_do_rotulo(
             medidas[("nome", i["nome"])][0],
             max(medidas[("palavra", p)][0] for p in palavras_do_nome(i["nome"])),
-            medidas[("valor", formatar_moeda(i["total"]))][0]) for i in distribuicao]
+            medidas[("valor", texto_do_total_da_categoria(i))][0]) for i in distribuicao]
         linha = max((medidas[("nome", i["nome"])][1] for i in distribuicao), default=COMPARATIVO_LINHA_ESTIMADA)
-        altura_do_valor = max((medidas[("valor", formatar_moeda(i["total"]))][1] for i in distribuicao),
+        altura_do_valor = max((medidas[("valor", texto_do_total_da_categoria(i))][1] for i in distribuicao),
                               default=COMPARATIVO_LINHA_ESTIMADA)
     else:
-        larguras = [largura_estimada_do_rotulo(i["nome"], formatar_moeda(i["total"])) for i in distribuicao]
+        larguras = [largura_estimada_do_rotulo(i["nome"], texto_do_total_da_categoria(i)) for i in distribuicao]
         linha = altura_do_valor = COMPARATIVO_LINHA_ESTIMADA
     grupos = [round(w + COMPARATIVO_ESPACO_ENTRE_GRUPOS, 1) for w in larguras]
     inicios, x = [], 0.0
@@ -3166,6 +3209,9 @@ def main(page: ft.Page):
         valor_total = ft.Text("R$ 0,00", size=26, weight=ft.FontWeight.BOLD, color=cores.texto_card_total)
         valor_pago = ft.Text("pago R$ 0,00", size=12, color=cores.total_pago)
         valor_pendente = ft.Text("pendente R$ 0,00", size=12, color=cores.total_pendente)
+        # Sino 6.12 (Etapa 8, V7): contas do mês com valor pendente, fora do total.
+        aviso_valores_pendentes = ft.Text("", size=12, color=cores.texto_secundario_card_total, visible=False,
+                                          data="aviso_valores_pendentes_mes")
 
         # RF12/5.16 (Etapa 3): sem filtros -- o total é sempre a soma de todas
         # as contas do mês; pago/pendente continuam como informação complementar.
@@ -3177,6 +3223,7 @@ def main(page: ft.Page):
                 controls=[
                     ft.Text("Total do mês", size=12, color=cores.texto_secundario_card_total),
                     valor_total,
+                    aviso_valores_pendentes,
                     ft.Container(height=8),
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -3316,6 +3363,8 @@ def main(page: ft.Page):
             identificacao_parcelada = (database.obter_identificacao(conta["serie_id"], conta["id"])
                                        if serie_ativa else None)
             eh_parcelada = bool(identificacao_parcelada and identificacao_parcelada["tipo"] == "parcela")
+            # Sino 6.12 (Etapa 8): recorrência de valor variável (frase própria; sem "Alterar frequência", R6).
+            eh_variavel = bool(serie_ativa and database.serie_variavel(conta["serie_id"]))
 
             # Sino 6.10 (visual de Editar, duas colunas): todos os campos com o
             # mesmo raio, bordas e fonte; ícone de identificação à esquerda (só
@@ -3354,7 +3403,8 @@ def main(page: ft.Page):
             # já existentes) nunca é mutado por essas escolhas -- só por uma
             # aplicação de verdade no Salvar (que, de qualquer forma, sai
             # desta tela logo em seguida).
-            rascunho_recorrencia = {"acao": None, "frequencia": None, "data_termino": None}
+            rascunho_recorrencia = {"acao": None, "frequencia": None, "data_termino": None,
+                                    "variavel": False}  # Sino 6.12 (Etapa 8): Fixo/Variável
 
             # Vencimento (Nome/Valor/Categoria não entram aqui) já é pendente
             # até Salvar desde o RF07 -- mas os diálogos de Transformar/
@@ -3394,6 +3444,7 @@ def main(page: ft.Page):
                 rascunho_recorrencia["acao"] = None
                 rascunho_recorrencia["frequencia"] = None
                 rascunho_recorrencia["data_termino"] = None
+                rascunho_recorrencia["variavel"] = False
                 atualizar_bloco_recorrencia()
                 gatilho_estado_salvar["chamar"]()
 
@@ -3428,17 +3479,23 @@ def main(page: ft.Page):
                     else:
                         frequencia_exibida = info_serie["frequencia"]
                         termino_exibido = info_serie["data_termino"]
-                    texto_recorrencia = frase_recorrencia(frequencia_exibida, termino_exibido)
+                    variavel_exibida = (rascunho_recorrencia["variavel"] if acao_pendente == "transformar"
+                                        else eh_variavel)
+                    texto_recorrencia = frase_recorrencia(frequencia_exibida, termino_exibido, variavel_exibida)
                     acoes_recorrencia = [
                         item_recorrencia("Alterar frequência", lambda e: mostrar_dialogo_alterar_frequencia()),
                         item_recorrencia("Encerrar recorrência", lambda e: mostrar_dialogo_encerrar_recorrencia()),
                     ]
+                    if variavel_exibida:  # Sino 6.12 (Etapa 8): R6 -- a variável não muda de frequência
+                        acoes_recorrencia = acoes_recorrencia[1:]
                 else:
                     texto_recorrencia = TEXTO_NAO_RECORRENTE
                     acoes_recorrencia = [
                         item_recorrencia("Transformar em recorrente",
                                          lambda e: mostrar_dialogo_transformar_recorrente()),
                     ]
+                    if situacao_pagamento["atual"] and situacao_pagamento["atual"].get("valor_pendente"):
+                        acoes_recorrencia = []  # Sino 6.12 (Etapa 8): a primeira ocorrência precisa ter valor
 
                 if acao_pendente is not None:
                     acoes_recorrencia.append(
@@ -3671,15 +3728,16 @@ def main(page: ft.Page):
                         ))
                 corpo["area"].controls = [conteudo]
 
-            def construir_seletor_frequencia(estado):
+            def construir_seletor_frequencia(estado, opcoes=(("mensal", "Mensal"), ("anual", "Anual")), data=None):
                 # RF27/RF28: chips Mensal/Anual reutilizáveis nos diálogos de
                 # transformar em recorrente e alterar frequência -- mesmo estilo
-                # visual dos chips de tipo da tela Nova conta.
-                linha = ft.Row(spacing=8, controls=[])
+                # visual dos chips de tipo da tela Nova conta. Sino 6.12 (Etapa 8):
+                # as mesmas peças para Valor fixo/Valor variável (`opcoes`).
+                linha = ft.Row(spacing=8, controls=[], data=data)
 
                 def montar():
                     linha.controls.clear()
-                    for valor, rotulo in (("mensal", "Mensal"), ("anual", "Anual")):
+                    for valor, rotulo in opcoes:
                         ativo = estado["valor"] == valor
                         linha.controls.append(
                             ft.Container(
@@ -3814,6 +3872,16 @@ def main(page: ft.Page):
                         on_click=pago_parcialmente_detalhes,
                         style=ft.ButtonStyle(color=cores.acao_primaria),
                     ))
+                if situacao.get("valor_pendente"):
+                    # Sino 6.12 (Etapa 8, V8): pagamentos desativados, com o motivo (o banco também recusa).
+                    for botao in controles_status[1:]:
+                        botao.disabled = True
+                        # Aparência de desativado (as cores próprias dos botões a esconderiam).
+                        botao.bgcolor = cores.botao_desabilitado_fundo
+                        botao.color = cores.botao_desabilitado_texto
+                        botao.style = ft.ButtonStyle(color=cores.botao_desabilitado_texto)
+                    controles_status.append(ft.Text(database.MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE, size=13,
+                                                    color=cores.texto_secundario, data="motivo_pagamento_bloqueado"))
                 linha_status = ft.Row(
                     wrap=True, spacing=10, run_spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -3876,14 +3944,18 @@ def main(page: ft.Page):
                 # Pagamentos parciais: estrutura fixa, em qualquer situação de pagamento --
                 # Valor/Vencimento, Total pago/Saldo devedor, Categoria/Parcela,
                 # Recorrência, Descrição e Pagamentos registrados, sempre nessa ordem.
+                # Sino 6.12 (Etapa 8, V8): valor pendente no lugar do valor (nunca "R$ 0,00") e sem saldo.
+                pendente = situacao.get("valor_pendente")
                 celulas = [
-                    celula(ft.Icons.PAYMENTS_OUTLINED, "Valor da conta", formatar_moeda(conta["valor"])),
+                    celula(ft.Icons.PAYMENTS_OUTLINED, "Valor da conta",
+                           TEXTO_VALOR_PENDENTE if pendente else formatar_moeda(conta["valor"]),
+                           complemento=TEXTO_INFORMAR_VALOR if pendente else None),
                     celula(ft.Icons.CALENDAR_MONTH, "Vencimento", data_venc.strftime("%d/%m/%Y"),
                            complemento="Vence hoje" if status["vence_hoje"] else None),
                     celula(ft.Icons.PRICE_CHECK, "Total pago",
                            formatar_moeda(pagamentos.reais(situacao["pago_centavos"]))),
                     celula(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED, "Saldo devedor",
-                           formatar_moeda(pagamentos.reais(situacao["saldo_centavos"]))),
+                           "—" if pendente else formatar_moeda(pagamentos.reais(situacao["saldo_centavos"]))),
                 ]
                 # Etapa 10 (8.4): sempre os seis campos, nesta ordem; sem
                 # informação, o campo continua com o texto de ausência.
@@ -3902,7 +3974,7 @@ def main(page: ft.Page):
                            cor_valor=cores.texto_principal if parcela_texto else cores.texto_secundario),
                     celula(ft.Icons.REPEAT, "Recorrência",
                            frase_parcelamento(identificacao_parcelada["total"], info_serie["data_termino"])
-                           if eh_parcelada else texto_recorrencia_detalhes(serie_ativa, info_serie),
+                           if eh_parcelada else texto_recorrencia_detalhes(serie_ativa, info_serie, eh_variavel),
                            largura_total=True),
                     # 5.22: completa, com as quebras de linha; linha inteira.
                     celula(ft.Icons.NOTES, "Descrição", conta.get("descricao") or TEXTO_SEM_DESCRICAO,
@@ -4084,6 +4156,11 @@ def main(page: ft.Page):
                 # aceita os dois casos, só rejeita série ativa.
                 frequencia_transf = {"valor": "mensal"}
                 linha_frequencia_transf = construir_seletor_frequencia(frequencia_transf)
+                # Sino 6.12 (Etapa 8, R2): valor Fixo (padrão, como na 6.11) ou Variável.
+                comportamento_transf = {"valor": "fixo"}
+                linha_comportamento_transf = construir_seletor_frequencia(
+                    comportamento_transf, (("fixo", "Valor fixo"), ("variavel", "Valor variável")),
+                    data="comportamento_transformar")
 
                 # "Sem data de término" começa DESATIVADO -- mesmo padrão já usado em
                 # "Nova conta" e em "Alterar frequência" (D5): o término fica visível e
@@ -4138,6 +4215,7 @@ def main(page: ft.Page):
                     rascunho_recorrencia["acao"] = "transformar"
                     rascunho_recorrencia["frequencia"] = frequencia_transf["valor"]
                     rascunho_recorrencia["data_termino"] = data_termino
+                    rascunho_recorrencia["variavel"] = comportamento_transf["valor"] == "variavel"
                     page.pop_dialog()
                     atualizar_bloco_recorrencia()
                     gatilho_estado_salvar["chamar"]()
@@ -4164,6 +4242,9 @@ def main(page: ft.Page):
                                 ],
                             ),
                             linha_termino_transf,
+                            # Sino 6.12 (Etapa 8, R2): Valor fixo | Valor variável.
+                            linha_comportamento_transf,
+                            ft.Text(TEXTO_AJUDA_VARIAVEL, size=12, color=cores.texto_secundario),
                             erro_transf,
                         ],
                     ),
@@ -4447,6 +4528,10 @@ def main(page: ft.Page):
                 # Pagamentos parciais: o valor continua editável; só não pode ficar abaixo
                 # da soma dos pagamentos ativos (conferido no Salvar e no banco).
                 recarregar_situacao()
+                # Sino 6.12 (Etapa 8, V8): ocorrência com valor pendente -- "Valor pendente" no
+                # lugar do valor, sem edição (informar o valor fica para a Etapa 9; o banco recusa).
+                valor_pendente_edit = bool(situacao_pagamento["atual"]
+                                           and situacao_pagamento["atual"].get("valor_pendente"))
                 campo_valor_edit = ft.TextField(
                     label="Valor",
                     value=f"{conta['valor']:.2f}".replace(".", ","),
@@ -4457,6 +4542,17 @@ def main(page: ft.Page):
                     prefix=ft.Text("R$ ", size=15, color=cores.texto_secundario),
                     **estilo_edicao(ft.Icons.PAYMENTS_OUTLINED),
                 )
+                if valor_pendente_edit:
+                    campo_valor_edit.value = TEXTO_VALOR_PENDENTE
+                    campo_valor_edit.prefix = None
+                    campo_valor_edit.read_only = True
+                    campo_valor_edit.color = cores.texto_secundario
+                    campo_valor_edit.helper = TEXTO_INFORMAR_VALOR
+                    campo_valor_edit.data = "valor_pendente_edicao"
+
+                def valor_do_campo():
+                    """Valor digitado; com valor pendente, o gravado (o campo não é editável)."""
+                    return conta["valor"] if valor_pendente_edit else parse_valor(campo_valor_edit.value)
                 # Somente leitura como antes: a data muda pelo calendário, que agora
                 # abre pelo lápis ou por um clique no próprio campo.
                 campo_data_edit = ft.TextField(
@@ -4546,7 +4642,8 @@ def main(page: ft.Page):
                     return ao_clicar
 
                 campo_nome_edit.suffix_icon = botao_lapis("Editar nome da conta", focar(campo_nome_edit))
-                campo_valor_edit.suffix_icon = botao_lapis("Editar valor", focar(campo_valor_edit))
+                if not valor_pendente_edit:
+                    campo_valor_edit.suffix_icon = botao_lapis("Editar valor", focar(campo_valor_edit))
                 campo_data_edit.suffix_icon = botao_lapis("Editar data de vencimento", abrir_seletor_data)
                 campo_data_edit.on_click = abrir_seletor_data
                 campo_descricao_edit.suffix_icon = botao_lapis("Editar descrição", focar(campo_descricao_edit))
@@ -4563,7 +4660,7 @@ def main(page: ft.Page):
                     # explica o erro. Voltar ao estado original desabilita
                     # Salvar de novo automaticamente.
                     nome_atual = campo_nome_edit.value.strip() if campo_nome_edit.value else ""
-                    valor_atual = parse_valor(campo_valor_edit.value)
+                    valor_atual = valor_do_campo()
                     categoria_atual = (
                         int(campo_categoria_edit.value) if campo_categoria_edit.value else None
                     )
@@ -4635,7 +4732,7 @@ def main(page: ft.Page):
                 def atualizar_resumo():
                     """Resumo conforme o campo Valor: igual ao gravado (ou vazio/
                     inválido) mostra o saldo gravado; outro valor válido, a prévia."""
-                    digitado = parse_valor(campo_valor_edit.value)
+                    digitado = valor_do_campo()
                     novo = database.centavos_de(digitado) if digitado is not None else None
                     nota_resumo.visible = True
                     if novo is None:
@@ -4654,6 +4751,8 @@ def main(page: ft.Page):
                         nota_resumo.value = "Prévia considerando o novo valor. Nenhuma alteração foi salva."
                     rotulo_saldo.value = "Saldo devedor previsto" if previsto else "Saldo devedor"
                     valor_saldo.value = "—" if saldo is None else formatar_moeda(pagamentos.reais(saldo))
+                    if valor_pendente_edit:  # Sino 6.12 (Etapa 8): sem saldo enquanto o valor não é informado
+                        valor_saldo.value = "—"
 
                 atualizar_resumo()
                 # Mês e ano da ocorrência editada (vencimento gravado); o traço e
@@ -4753,6 +4852,7 @@ def main(page: ft.Page):
                             novo_serie_id, _ = database.transformar_em_recorrente(
                                 conta["id"], rascunho_recorrencia["frequencia"],
                                 data_termino=rascunho_recorrencia["data_termino"],
+                                variavel=rascunho_recorrencia["variavel"],  # Sino 6.12 (Etapa 8, R2)
                             )
                             conta["serie_id"] = novo_serie_id
                         elif acao == "alterar_frequencia":
@@ -4768,7 +4868,7 @@ def main(page: ft.Page):
 
                 def salvar_edicao(e):
                     nome = campo_nome_edit.value.strip() if campo_nome_edit.value else ""
-                    valor = parse_valor(campo_valor_edit.value)
+                    valor = valor_do_campo()
                     descricao = limites.normalizar_descricao(campo_descricao_edit.value)
                     # P4 (decisão da Etapa 2): TODOS os textos do formulário
                     # precisam estar dentro do limite, mesmo que o usuário só
@@ -5043,8 +5143,8 @@ def main(page: ft.Page):
                     def aplicar_somente_esta(e):
                         try:
                             sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
-                        except (limites.LimiteDeCaracteresError,
-                                database.ParcelamentoRecusadoError) as erro_limite:  # Sino 6.12: parcelas
+                        except (limites.LimiteDeCaracteresError, database.ParcelamentoRecusadoError,
+                                database.ValorVariavelRecusadoError) as erro_limite:  # Sino 6.12
                             mostrar_recusa(erro_limite)
                             return
                         except database.ValorMenorQuePagoError as recusa:
@@ -5069,7 +5169,8 @@ def main(page: ft.Page):
                         except (limites.LimiteDeCaracteresError,
                                 database.VencimentoAntesDaParcelaAnteriorError,
                                 database.CompetenciaComPagamentosError,
-                                database.ParcelamentoRecusadoError) as erro:  # I4; Sino 6.12: parcelas
+                                database.ParcelamentoRecusadoError,
+                                database.ValorVariavelRecusadoError) as erro:  # I4; Sino 6.12
                             mostrar_recusa(erro)
                             return
                         except database.ValorMenorQuePagoError as recusa:
@@ -5293,7 +5394,8 @@ def main(page: ft.Page):
                 ),
                 ft.Column(
                     controls=[
-                        ft.Text(formatar_moeda(conta["valor"]), size=14, weight=ft.FontWeight.BOLD,
+                        # Sino 6.12 (Etapa 8, V5): "Valor pendente" no lugar do valor, nunca "R$ 0,00".
+                        ft.Text(texto_do_valor(conta), size=14, weight=ft.FontWeight.BOLD,
                                  color=cores.texto_principal),
                         ft.Text(rotulo_status, size=12, color=cor),
                     ],
@@ -5383,6 +5485,14 @@ def main(page: ft.Page):
                         tooltip="Marcar como paga",
                         on_click=marcar_como_paga_rapido,
                     )
+                    if conta.get("valor_pendente"):  # Sino 6.12 (Etapa 8, V8): sem pagamento até informar o valor
+                        icone_pagamento.disabled = True
+                        icone_pagamento.icon = icone_com_nome(
+                            ft.Icons.CHECK_CIRCLE_OUTLINE, f"Marcar {conta_no_nome}, como paga: indisponível, "
+                            "valor pendente", cores.botao_desabilitado_texto, 22)
+                        icone_pagamento.icon_color = cores.botao_desabilitado_texto
+                        icone_pagamento.tooltip = database.MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE
+                        icone_pagamento.data = "pagamento_bloqueado_valor_pendente"
                 controles_linha.append(icone_pagamento)
 
             if empilhada:
@@ -5451,11 +5561,15 @@ def main(page: ft.Page):
             valor_total.value = formatar_moeda(total)
             valor_pago.value = f"pago {formatar_moeda(pago)}"
             valor_pendente.value = f"pendente {formatar_moeda(pendente)}"
+            pendentes_do_mes = database.quantidade_com_valor_pendente(contas_mes)
+            aviso_valores_pendentes.value = f"{frase_valores_pendentes(pendentes_do_mes)}, fora do total"
+            aviso_valores_pendentes.visible = pendentes_do_mes > 0
+            if pendentes_do_mes and pendentes_do_mes == len(contas_mes):  # mês só com pendentes: não "R$ 0,00"
+                valor_total.value = TEXTO_VALOR_PENDENTE
+                aviso_valores_pendentes.value = frase_valores_pendentes(pendentes_do_mes)
 
             proximas = database.listar_contas_proximas(usuario_atual["id"], dias=7)
             if proximas:
-                # Pagamentos parciais: o que ainda falta pagar (saldo), não o valor cheio.
-                total_proximas = sum(c["saldo"] for c in proximas)
                 banner_semana.bgcolor = cores.aviso_fundo
                 banner_semana.border_radius = 10
                 banner_semana.padding = 12
@@ -5467,7 +5581,8 @@ def main(page: ft.Page):
                             controls=[
                                 ft.Text(frase_resumo_proximas(len(proximas)), size=13,
                                          weight=ft.FontWeight.BOLD, color=cores.aviso_texto),
-                                ft.Text(f"Total de {formatar_moeda(total_proximas)}", size=12, color=cores.aviso_texto),
+                                # Pagamentos parciais: o saldo; Sino 6.12 (V6): pendentes só contadas.
+                                ft.Text(texto_total_proximas(proximas), size=12, color=cores.aviso_texto),
                             ],
                             spacing=0,
                         ),
@@ -6257,12 +6372,14 @@ def main(page: ft.Page):
                 ],
             )
 
-        def bloco_totais(total, pago):
+        def bloco_totais(total, pago, pendentes=0):
             modo, ano, _ = periodo_atual()
             rotulo_total = "Total do ano" if modo == "anual" else "Total do mês"
             explicacao = (f"Valor total das contas cadastradas em {ano} (pagas, pendentes e atrasadas)."
                           if modo == "anual" else
                           "Todas as contas cadastradas neste mês (pagas, pendentes e atrasadas).")
+            if pendentes:  # Sino 6.12 (Etapa 8, V7): contadas à parte, fora do total
+                explicacao += f" {frase_valores_pendentes(pendentes)}, fora do total."
             cartao_total = cartao(
                 col={"xs": 12, "md": 6}, bgcolor=cores.grafico_total_fundo, borda=cores.grafico_total_borda,
                 height=ALTURA_CARTOES_TOTAIS,
@@ -6274,8 +6391,9 @@ def main(page: ft.Page):
                             ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=cores.texto_secundario,
                                     tooltip=explicacao),
                         ]),
-                        ft.Text(formatar_moeda(total), size=28, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
-                        ft.Text(explicacao, size=12, color=cores.texto_secundario),
+                        ft.Text(TEXTO_VALOR_PENDENTE if pendentes and not total else formatar_moeda(total),
+                                size=28, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
+                        ft.Text(explicacao, size=12, color=cores.texto_secundario, data="explicacao_total"),
                     ]),
                 ]),
             )
@@ -6305,8 +6423,9 @@ def main(page: ft.Page):
             return ft.ResponsiveRow(spacing=16, run_spacing=16, controls=[cartao_total, cartao_pago])
 
         def grafico_barras(pontos):
-            """pontos: [(rótulo, valor, destaque)] -- valor logo acima de cada barra."""
-            maior = max((valor for _, valor, _ in pontos), default=0) or 1
+            """pontos: [(rótulo, valor, destaque, texto)] -- texto do valor logo acima de cada barra
+            (Sino 6.12, V7: "Valor pendente" ou a contagem das pendentes, nunca "R$ 0,00" por elas)."""
+            maior = max((valor for _, valor, _, _ in pontos), default=0) or 1
             grupos = [
                 fch.BarChartGroup(x=i, rods=[fch.BarChartRod(
                     from_y=0, to_y=valor, width=46,
@@ -6314,13 +6433,13 @@ def main(page: ft.Page):
                     border_radius=ft.BorderRadius.only(top_left=6, top_right=6),
                     selected=True,  # rótulo fixo acima da barra (gráfico não interativo)
                     tooltip=fch.BarChartRodTooltip(
-                        text=formatar_moeda(valor),
+                        text=texto,
                         text_style=ft.TextStyle(
                             size=13, weight=ft.FontWeight.BOLD,
                             color=cores.grafico_barra_destaque if destaque else cores.texto_secundario),
                     ),
                 )])
-                for i, (_, valor, destaque) in enumerate(pontos)
+                for i, (_, valor, destaque, texto) in enumerate(pontos)
             ]
             return fch.BarChart(
                 groups=grupos, height=230, interactive=False,
@@ -6332,7 +6451,7 @@ def main(page: ft.Page):
                         rotulo, size=14,
                         weight=ft.FontWeight.BOLD if destaque else None,
                         color=cores.grafico_barra_destaque if destaque else cores.texto_principal))
-                    for i, (rotulo, _, destaque) in enumerate(pontos)
+                    for i, (rotulo, _, destaque, _) in enumerate(pontos)
                 ]),
                 left_axis=fch.ChartAxis(show_labels=False),
                 right_axis=fch.ChartAxis(show_labels=False),
@@ -6345,15 +6464,21 @@ def main(page: ft.Page):
             if estado["perspectiva"] == "anual":
                 subtitulo = "Total das contas cadastradas por ano"
                 ano_destacado = ano
-                pontos = [(str(a), total, a == ano_destacado) for a, total in database.totais_por_ano(usuario_atual["id"])]
+                pendentes = database.pendentes_por_ano(usuario_atual["id"])
+                pontos = [(str(a), total, a == ano_destacado, texto_valor_do_periodo(total, pendentes.get(a, 0)))
+                          for a, total in database.totais_por_ano(usuario_atual["id"])]
             else:
                 subtitulo = "Total de contas cadastradas nos últimos 6 meses"
                 fim = (ano, 12) if modo == "anual" else (ano, mes)
                 meses = janela_seis_meses(*fim)
-                totais = database.totais_por_mes(usuario_atual["id"], f"{meses[0][0]:04d}-{meses[0][1]:02d}",
-                                                 f"{meses[-1][0]:04d}-{meses[-1][1]:02d}")
+                intervalo = (f"{meses[0][0]:04d}-{meses[0][1]:02d}", f"{meses[-1][0]:04d}-{meses[-1][1]:02d}")
+                totais = database.totais_por_mes(usuario_atual["id"], *intervalo)
+                pendentes = database.pendentes_por_mes(usuario_atual["id"], *intervalo)
                 pontos = [(MESES_ABREVIADOS[m - 1], totais.get(f"{a:04d}-{m:02d}", 0.0),
-                           modo == "mensal" and (a, m) == (ano, mes)) for a, m in meses]
+                           modo == "mensal" and (a, m) == (ano, mes),
+                           texto_valor_do_periodo(totais.get(f"{a:04d}-{m:02d}", 0.0),
+                                                  pendentes.get(f"{a:04d}-{m:02d}", 0)))
+                          for a, m in meses]
             cabecalho = ft.ResponsiveRow(vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
                 ft.Column(col={"xs": 12, "sm": 7}, spacing=2, controls=[
                     ft.Text("Evolução dos gastos", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
@@ -6368,7 +6493,7 @@ def main(page: ft.Page):
                         ft.Text("Ainda não há dados para exibir.", size=13, color=cores.texto_secundario))
             return cartao(ft.Column(spacing=16, controls=[cabecalho, conteudo]))
 
-        def bloco_categorias(total, distribuicao):
+        def bloco_categorias(total, distribuicao, pendentes=0):
             """`distribuicao`: distribuicao_por_categoria do período (a mesma do comparativo)."""
             modo, ano, mes = periodo_atual()
             titulo = ft.Column(spacing=2, controls=[
@@ -6377,9 +6502,12 @@ def main(page: ft.Page):
                         size=14, color=cores.texto_secundario),
             ])
             if not total:
+                # Sino 6.12 (Etapa 8, V7): período só com valores pendentes mostra esse estado.
                 return cartao(ft.Column(spacing=16, controls=[
                     titulo,
-                    ft.Text("Ainda não há dados para exibir neste período.", size=14, color=cores.texto_secundario),
+                    ft.Text(f"{frase_valores_pendentes(pendentes)}: a distribuição aparece quando os valores "
+                            "forem informados." if pendentes else "Ainda não há dados para exibir neste período.",
+                            size=14, color=cores.texto_secundario),
                 ]))
             layout = layout_gastos_por_categoria(page.width)
             tamanho = layout["tamanho_rosca"]
@@ -6389,8 +6517,9 @@ def main(page: ft.Page):
                 cor = item["cor_exibicao"]
                 fatia = item["total"] / total
                 # Percentuais só na legenda (nenhum título nas fatias).
-                secoes.append(fch.PieChartSection(value=item["total"], color=cor,
-                                                  radius=layout["tamanho_rosca"] * 0.2, title=""))
+                if item["total"]:  # Sino 6.12: categoria só com valores pendentes não tem fatia
+                    secoes.append(fch.PieChartSection(value=item["total"], color=cor,
+                                                      radius=layout["tamanho_rosca"] * 0.2, title=""))
                 sem_categoria = item["categoria_id"] is None
                 linhas.append(ft.Container(
                     padding=ft.Padding(0, 8, 0, 8),
@@ -6405,9 +6534,11 @@ def main(page: ft.Page):
                         ft.Text(item["nome"], size=15,
                                 width=layout["largura_nome"], expand=layout["largura_nome"] is None,
                                 color=cores.texto_sem_categoria if sem_categoria else cores.texto_principal),
-                        ft.Text(formatar_moeda(item["total"]), size=15, width=layout["largura_valor"],
+                        ft.Text(texto_valor_do_periodo(item["total"], item.get("pendentes", 0)), size=15,
+                                width=layout["largura_valor"],
                                 text_align=ft.TextAlign.RIGHT, color=cores.texto_principal),
-                        ft.Text(formatar_percentual(fatia * 100), size=15, width=layout["largura_percentual"],
+                        ft.Text(formatar_percentual(fatia * 100) if item["total"] else "—", size=15,
+                                width=layout["largura_percentual"],
                                 text_align=ft.TextAlign.RIGHT,
                                 weight=ft.FontWeight.BOLD, color=cores.texto_principal),
                     ]),
@@ -6552,7 +6683,7 @@ def main(page: ft.Page):
                 # clique, toque ou Enter mostram "Casa: R$ 1.450,00" num aviso (D2),
                 # sem rolar. Nome acessível no texto do próprio botão, sem
                 # Semantics externo (como no seletor de mês da E11).
-                nome, valor = item["nome"], formatar_moeda(item["total"])
+                nome, valor = item["nome"], texto_do_total_da_categoria(item)
                 cor = cores.texto_sem_categoria if item["categoria_id"] is None else cores.texto_principal
                 completo = f"{nome}: {valor}"
                 # Nome inteiro, sem reticências nem limite de linhas no texto: a
@@ -6581,7 +6712,7 @@ def main(page: ft.Page):
                         border_radius=ft.BorderRadius.only(top_left=6, top_right=6),
                         selected=True,  # valor fixo acima da coluna (gráfico não interativo)
                         tooltip=fch.BarChartRodTooltip(
-                            text=formatar_moeda(item["total"]),
+                            text=texto_do_total_da_categoria(item),
                             text_style=ft.TextStyle(size=COMPARATIVO_TAMANHO_VALOR, weight=ft.FontWeight.BOLD,
                                                     color=cores.texto_principal),
                         ),
@@ -6666,24 +6797,29 @@ def main(page: ft.Page):
             modo, ano, mes = periodo_atual()
             inicio, fim = intervalo_do_periodo(modo, ano, mes)
             total, pago = database.resumo_do_periodo(usuario_atual["id"], inicio, fim)
+            # Sino 6.12 (Etapa 8, V7): contas com valor pendente, contadas à parte.
+            pendentes = database.pendentes_do_periodo(usuario_atual["id"], inicio, fim)
             # Rosca e comparativo (5.48) com os mesmos dados, ordem e cores.
             distribuicao = distribuicao_por_categoria(
                 database.gastos_por_categoria(usuario_atual["id"], inicio, fim),
                 database.cores_de_exibicao(database.listar_categorias(usuario_atual["id"])),
                 cores.sem_categoria,
             ) if total else []
+            pendentes_por_categoria = database.pendentes_por_categoria(usuario_atual["id"], inicio, fim)
+            for item in distribuicao:
+                item["pendentes"] = pendentes_por_categoria.get(item["categoria_id"], 0)
             corpo.controls = [
                 ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
                     alternador((("mensal", "Mensal"), ("anual", "Anual")), estado["modo"], escolher_modo),
                 ]),
                 bloco_navegacao(),
-                bloco_totais(total, pago),
+                bloco_totais(total, pago, pendentes),
                 bloco_evolucao(),
-                bloco_categorias(total, distribuicao),
+                bloco_categorias(total, distribuicao, pendentes),
                 *([bloco_comparativo_categorias(distribuicao)] if total else []),   # some sem contas
                 bloco_comparacao(total),
             ]
-            if not total:
+            if not total and not pendentes:
                 corpo.controls.insert(2, ft.Text("Ainda não há dados para exibir neste período.", size=14,
                                                  color=cores.texto_secundario, text_align=ft.TextAlign.CENTER))
             page.update()
@@ -7792,7 +7928,8 @@ def main(page: ft.Page):
         # do cartão de término). Nada é gravado no banco antes do Salvar.
         hoje = date.today()
         recorrencia = {"tipo": "unica", "sem_termino": False, "mes": str(hoje.month), "ano": str(hoje.year),
-                       "parcelas": OPCOES_DE_PARCELAS[0]}  # Sino 6.12: quantidade da Parcelada
+                       "parcelas": OPCOES_DE_PARCELAS[0],  # Sino 6.12: quantidade da Parcelada
+                       "variavel": False}                  # Sino 6.12 (Etapa 8): Fixo (padrão) ou Variável
         # Antes da primeira confirmação, o campo mostra só a orientação
         # "Escolha o tipo da conta" -- sem obrigar a escolher: o Salvar usa
         # "Única", como sempre. Depois, mostra o resumo da escolha confirmada.
@@ -7806,9 +7943,11 @@ def main(page: ft.Page):
             if recorrencia["tipo"] == "parcelada":  # Sino 6.12
                 return f"Parcelada em {recorrencia['parcelas']} parcelas"
             frequencia = "Mensal" if recorrencia["tipo"] == "mensal" else "Anual"
+            variavel = ", valor variável" if recorrencia["variavel"] else ""  # Sino 6.12 (Etapa 8)
             if recorrencia["sem_termino"]:
-                return f"{frequencia}, sem término"
-            return f"{frequencia} até {MESES_PT[int(recorrencia['mes']) - 1].lower()} de {recorrencia['ano']}"
+                return f"{frequencia}, sem término{variavel}"
+            return (f"{frequencia} até {MESES_PT[int(recorrencia['mes']) - 1].lower()} de {recorrencia['ano']}"
+                    f"{variavel}")
 
         # O campo de sempre, com a seta à direita. O campo sai da ordem do Tab;
         # quem recebe o foco é o botão da seta (e é para ele que o foco volta
@@ -7901,6 +8040,20 @@ def main(page: ft.Page):
                                       ("anual", "Anual"))
             ])
 
+            # Sino 6.12 (Etapa 8): valor Fixo (padrão, como na 6.11) ou Variável -- só Mensal/Anual.
+            linha_comportamento = ft.Row(spacing=8, data="linha_comportamento_valor", controls=[
+                ft.Button(content=rotulo, expand=1, height=40, data=f"comportamento_{valor}",
+                          on_click=lambda e, v=valor: selecionar_comportamento(v))
+                for valor, rotulo in (("fixo", "Valor fixo"), ("variavel", "Valor variável"))
+            ])
+            ajuda_variavel = ft.Text(TEXTO_AJUDA_VARIAVEL, size=12, color=cores.texto_secundario)
+            bloco_comportamento = ft.Column(spacing=6, controls=[linha_comportamento, ajuda_variavel])
+
+            def selecionar_comportamento(valor):
+                rascunho["variavel"] = valor == "variavel"
+                atualizar()
+                page.update()
+
             def atualizar():
                 # Única: só os três botões (o término fica guardado no rascunho
                 # e não vale no Salvar). Mensal/Anual: "Sem data de término";
@@ -7908,6 +8061,11 @@ def main(page: ft.Page):
                 for botao in linha_tipo.controls:
                     botao.style = estilo_chip(botao.data == f"tipo_recorrencia_{rascunho['tipo']}")
                 recorrente = rascunho["tipo"] in ("mensal", "anual")
+                for botao in linha_comportamento.controls:
+                    botao.style = estilo_chip(botao.data == ("comportamento_variavel" if rascunho["variavel"]
+                                                             else "comportamento_fixo"))
+                bloco_comportamento.visible = recorrente
+                ajuda_variavel.visible = rascunho["variavel"]
                 linha_sem_termino.visible = recorrente
                 linha_termino.visible = recorrente and not rascunho["sem_termino"]
                 campo_parcelas.visible = rascunho["tipo"] == "parcelada"  # Sino 6.12
@@ -7970,6 +8128,7 @@ def main(page: ft.Page):
                         linha_tipo,
                         linha_sem_termino,
                         linha_termino,
+                        bloco_comportamento,  # Sino 6.12 (Etapa 8): Valor fixo | Valor variável
                         campo_parcelas,
                         ft.Text(value="", color=cores.texto_erro, size=12),
                     ],
@@ -8048,8 +8207,9 @@ def main(page: ft.Page):
                         usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
                         "mensal" if tipo == "mensal" else "anual",
                         data_termino=data_termino, categoria_id=categoria_id, descricao=descricao,
+                        variavel=recorrencia["variavel"],  # Sino 6.12 (Etapa 8)
                     )
-            except limites.LimiteDeCaracteresError as erro_limite:
+            except (limites.LimiteDeCaracteresError, database.ValorVariavelRecusadoError) as erro_limite:
                 # Segunda barreira (a persistência valida de novo, 5.23).
                 erro.value = str(erro_limite)
                 page.update()
