@@ -4736,6 +4736,273 @@ def transformar_unica_em_parcelada(conta_id, quantidade):
     return serie_id, ids
 
 
+# ------------------------------------------------------------------
+#  Sino 6.12 (Etapa 7): edição e exclusão de parcelas.
+#
+#  Parcela PROTEGIDA = tem registro de pagamento (ativo ou estornado) ou
+#  quitação; parcela EDITADA = editada individualmente; LIVRE = nenhuma das
+#  duas. Total do parcelamento = soma das parcelas existentes (C3); a linha de
+#  `parcelamentos` guarda só o original. Toda recusa acontece antes de gravar
+#  (ParcelamentoRecusadoError) e toda operação composta é uma transação (D14).
+# ------------------------------------------------------------------
+MENSAGEM_PARCELA_PROTEGIDA_EDICAO = ("Esta parcela tem registros de pagamento: o valor e o vencimento dela não "
+                                     "podem ser alterados.")
+MENSAGEM_PARCELA_PROTEGIDA_EXCLUSAO = ("Esta parcela tem registros de pagamento (inclusive desfeitos) e não pode "
+                                       "ser excluída.")
+MENSAGEM_EM_DIANTE_COM_PROTEGIDAS = ("Há parcelas com registros de pagamento a partir desta. Exclua somente as "
+                                     "parcelas sem pagamentos.")
+MENSAGEM_COMPETENCIA_DE_OUTRA_PARCELA = "Já existe outra parcela deste parcelamento nesse mês. Escolha outro mês."
+MENSAGEM_VENCIMENTO_COM_PROTEGIDAS = ("O novo vencimento levaria parcelas para o mês de uma parcela com registros de "
+                                      "pagamento, que mantém o vencimento. Nada foi alterado.")
+MENSAGEM_VALOR_COLETIVO_PARCELADA = ("Para mudar o valor de várias parcelas, use “Alterar parcelamento” "
+                                     "nos detalhes da conta.")
+MENSAGEM_REDUCAO_COM_FIXAS = ("Para reduzir a quantidade, seria preciso excluir parcelas com pagamentos ou "
+                              "editadas. Nada foi alterado.")
+MENSAGEM_SEM_PARCELAS_LIVRES = ("Não há parcelas livres (sem pagamentos e sem edição individual) suficientes "
+                                "para esse valor total. Nada foi alterado.")
+
+
+def _serie_parcelada_no_cursor(cursor, serie_id):
+    if serie_id is None or not _tabela_existe(cursor, TABELA_PARCELAMENTOS):
+        return False
+    return cursor.execute(f"SELECT 1 FROM {TABELA_PARCELAMENTOS} WHERE serie_id = ?",
+                          (serie_id,)).fetchone() is not None
+
+
+def _parcela_protegida(cursor, conta_id):
+    """Registro de pagamento (ativo ou estornado) ou quitação, inclusive sem registro."""
+    linha = cursor.execute("SELECT status, data_pagamento FROM contas WHERE id = ?", (conta_id,)).fetchone()
+    return (linha is not None and (linha[0] == "pago" or linha[1] is not None)) or bool(
+        _contas_com_pagamentos(cursor, "id = ?", (conta_id,)))
+
+
+def _parcelas(cursor, serie_id):
+    """Parcelas da série em ordem: dicts com id, posicao, vencimento, vaga, valor_centavos, protegida, editada."""
+    linhas = cursor.execute(
+        "SELECT id, posicao, data_vencimento, data_prevista, valor, editado_individualmente FROM contas "
+        "WHERE serie_id = ? ORDER BY posicao, id", (serie_id,)).fetchall()
+    return [{"id": i, "posicao": pos, "vencimento": venc, "vaga": vaga, "valor_centavos": centavos_de(valor),
+             "protegida": _parcela_protegida(cursor, i), "editada": editado == 1}
+            for i, pos, venc, vaga, valor, editado in linhas]
+
+
+def situacao_das_parcelas(conta_id):
+    """Só leitura: as parcelas do parcelamento da conta (ordem, vencimento, valor,
+    protegida/editada) e o total atual. ParcelamentoRecusadoError se não for parcela."""
+    conexao = conectar()
+    try:
+        cursor = conexao.cursor()
+        linha = cursor.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,)).fetchone()
+        if linha is None or not _serie_parcelada_no_cursor(cursor, linha[0]):
+            raise ParcelamentoRecusadoError("Esta conta não é parcelada.")
+        parcelas = _parcelas(cursor, linha[0])
+        return {"serie_id": linha[0], "parcelas": parcelas,
+                "total_centavos": sum(p["valor_centavos"] for p in parcelas)}
+    finally:
+        conexao.close()
+
+
+def _plano_do_parcelamento(cursor, serie_id, novo_total_centavos, nova_quantidade):
+    """
+    D6/E5/R12: plano de um novo total e/ou quantidade. Protegidas e editadas
+    ("fixas") mantêm o valor; só as LIVRES (inclusive as novas) recebem o novo
+    total menos as fixas, com a diferença de centavos na primeira livre (D3).
+    Aumentar a quantidade cria parcelas livres depois da última; reduzir exclui
+    parcelas do fim, só se forem livres. Recusa (nada gravado) quando a operação
+    exigiria alterar ou excluir uma fixa, ou quando as livres não comportam o valor.
+    """
+    if isinstance(nova_quantidade, bool) or not isinstance(nova_quantidade, int) or not (
+            MINIMO_PARCELAS <= nova_quantidade <= MAXIMO_PARCELAS):
+        raise ParcelamentoRecusadoError(MENSAGEM_QUANTIDADE_DE_PARCELAS)
+    if not isinstance(novo_total_centavos, int) or novo_total_centavos <= 0:
+        raise ParcelamentoRecusadoError(MENSAGEM_VALOR_TOTAL_INVALIDO)
+    parcelas = _parcelas(cursor, serie_id)
+    atuais = len(parcelas)
+    removidas = parcelas[nova_quantidade:]
+    if any(p["protegida"] or p["editada"] for p in removidas):
+        raise ParcelamentoRecusadoError(MENSAGEM_REDUCAO_COM_FIXAS)
+    mantidas = parcelas[:nova_quantidade]
+    dia_ancora = cursor.execute("SELECT dia_ancora FROM series_recorrencia WHERE id = ?", (serie_id,)).fetchone()[0]
+    novas, ultima = [], mantidas[-1]["vaga"]
+    for _ in range(nova_quantidade - atuais):
+        ano, mes = map(int, ultima[:7].split("-"))
+        ultima = _somar_mes(ano, mes, dia_ancora)
+        novas.append({"id": None, "vencimento": ultima, "vaga": ultima})
+    fixas = [p for p in mantidas if p["protegida"] or p["editada"]]
+    livres = [p for p in mantidas if not (p["protegida"] or p["editada"])] + novas
+    restante = novo_total_centavos - sum(p["valor_centavos"] for p in fixas)
+    if not livres:
+        if restante != 0:
+            raise ParcelamentoRecusadoError(MENSAGEM_SEM_PARCELAS_LIVRES)
+        valores = []
+    else:
+        if restante < len(livres):
+            raise ParcelamentoRecusadoError(MENSAGEM_SEM_PARCELAS_LIVRES)
+        valores = dividir_em_parcelas(restante, len(livres))
+    novo_valor = {id(p): v for p, v in zip(livres, valores)}
+    resultado = []
+    for p in mantidas + novas:
+        if p["id"] is None:
+            situacao = "nova"
+        elif p["protegida"]:
+            situacao = "com_pagamentos"
+        elif p["editada"]:
+            situacao = "editada"
+        else:
+            situacao = "recalculada"
+        resultado.append({"id": p["id"], "vencimento": p["vencimento"], "vaga": p["vaga"],
+                          "antes_centavos": p.get("valor_centavos"),
+                          "depois_centavos": novo_valor.get(id(p), p.get("valor_centavos")), "situacao": situacao})
+    return {"parcelas": resultado, "removidas": [p["id"] for p in removidas],
+            "total_centavos": novo_total_centavos, "valor_modelo_centavos": valores[-1] if valores else None}
+
+
+def _serie_parcelada_da_conta(cursor, conta_id):
+    linha = cursor.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,)).fetchone()
+    if linha is None or not _serie_parcelada_no_cursor(cursor, linha[0]):
+        raise ParcelamentoRecusadoError("Esta conta não é parcelada.")
+    return linha[0]
+
+
+def previa_alteracao_parcelamento(conta_id, novo_total=None, nova_quantidade=None):
+    """Só leitura: o plano de `alterar_parcelamento` (mesmas recusas). Sem um dos
+    argumentos, vale o atual (total = soma das parcelas; quantidade = parcelas existentes)."""
+    conexao = conectar()
+    try:
+        cursor = conexao.cursor()
+        serie_id = _serie_parcelada_da_conta(cursor, conta_id)
+        return _plano_do_parcelamento(cursor, serie_id, *_argumentos_do_plano(cursor, serie_id, novo_total,
+                                                                              nova_quantidade))
+    finally:
+        conexao.close()
+
+
+def _argumentos_do_plano(cursor, serie_id, novo_total, nova_quantidade):
+    parcelas = cursor.execute("SELECT valor FROM contas WHERE serie_id = ?", (serie_id,)).fetchall()
+    if novo_total is None:
+        total = sum(centavos_de(v) for (v,) in parcelas)
+    elif isinstance(novo_total, bool) or not isinstance(novo_total, (int, float)) or not novo_total > 0:
+        raise ParcelamentoRecusadoError(MENSAGEM_VALOR_TOTAL_INVALIDO)
+    else:
+        total = centavos_de(novo_total)
+    return total, (len(parcelas) if nova_quantidade is None else nova_quantidade)
+
+
+def alterar_parcelamento(conta_id, novo_total=None, nova_quantidade=None):
+    """
+    D6/E5/R12: aplica o plano de `previa_alteracao_parcelamento` numa única
+    transação -- exclui as livres do fim (redução), cria as novas (aumento),
+    grava os valores das livres, o valor-modelo e o novo término da série. As
+    parcelas protegidas e editadas não mudam. Retorna o plano aplicado.
+    """
+    with transacao() as cursor:
+        serie_id = _serie_parcelada_da_conta(cursor, conta_id)
+        plano = _plano_do_parcelamento(cursor, serie_id, *_argumentos_do_plano(cursor, serie_id, novo_total,
+                                                                              nova_quantidade))
+        if plano["removidas"]:
+            marcas = ",".join("?" * len(plano["removidas"]))
+            _apagar_complementos_de_contas(cursor, f"id IN ({marcas})", plano["removidas"])
+            cursor.execute(f"DELETE FROM contas WHERE id IN ({marcas})", plano["removidas"])
+        usuario_id, nome, categoria_id, descricao = cursor.execute(
+            "SELECT usuario_id, nome, categoria_id, descricao FROM series_recorrencia WHERE id = ?",
+            (serie_id,)).fetchone()
+        posicao = cursor.execute("SELECT COALESCE(MAX(posicao), 0) FROM contas WHERE serie_id = ?",
+                                 (serie_id,)).fetchone()[0]
+        for parcela in plano["parcelas"]:
+            valor = parcela["depois_centavos"] / 100
+            if parcela["id"] is None:
+                posicao += 1
+                parcela["id"] = _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
+                                                    parcela["vencimento"], descricao, posicao=posicao)
+            elif parcela["situacao"] == "recalculada":
+                cursor.execute("UPDATE contas SET valor = ? WHERE id = ?", (valor, parcela["id"]))
+        ultima_vaga = plano["parcelas"][-1]["vaga"]
+        campos = ["data_termino = ?", "horizonte_gerado_ate = ?"]
+        valores = [ultima_vaga[:7], ultima_vaga]
+        if plano["valor_modelo_centavos"] is not None:
+            campos.append("valor = ?")
+            valores.append(plano["valor_modelo_centavos"] / 100)
+        cursor.execute(f"UPDATE series_recorrencia SET {', '.join(campos)} WHERE id = ?", (*valores, serie_id))
+    return plano
+
+
+def _conferir_edicao_de_parcela(cursor, conta_id, serie_id, valor_atual, vencimento_atual, valor, data_vencimento):
+    """D5/P4/C7 ("Somente este mês" numa parcela): valor e vencimento só mudam numa
+    parcela sem registros de pagamento; o novo vencimento não pode cair no mês de
+    outra parcela do mesmo parcelamento."""
+    muda_valor = valor is not None and valor != valor_atual
+    muda_data = data_vencimento is not None and data_vencimento != vencimento_atual
+    if (muda_valor or muda_data) and _parcela_protegida(cursor, conta_id):
+        raise ParcelamentoRecusadoError(MENSAGEM_PARCELA_PROTEGIDA_EDICAO)
+    if muda_data and cursor.execute(
+            "SELECT 1 FROM contas WHERE serie_id = ? AND id != ? AND substr(data_vencimento, 1, 7) = ?",
+            (serie_id, conta_id, data_vencimento[:7])).fetchone():
+        raise ParcelamentoRecusadoError(MENSAGEM_COMPETENCIA_DE_OUTRA_PARCELA)
+
+
+def _editar_parcelada_em_diante(conta_id, serie_id, posicao_referencia, nome=None, valor=None, categoria_id=None,
+                                data_vencimento=None, remover_categoria=False, descricao=None,
+                                remover_descricao=False):
+    """
+    "Este mês em diante" numa parcela (Etapa 7). Nome, categoria e descrição: a
+    selecionada, as seguintes e o modelo da série, como nas recorrências (5.1).
+    Valor coletivo: recusado (o valor de várias parcelas muda por
+    `alterar_parcelamento`; decisão pendente). Vencimento (C7/P4/E6): a
+    selecionada recebe a data; as seguintes seguem mês a mês a partir dela, com o
+    novo dia; as protegidas mantêm o vencimento e precisam continuar no próprio
+    mês da nova sequência -- senão, recusa integral; o término passa a ser o mês
+    da última parcela. A selecionada não pode ter registros de pagamento nem ir
+    para antes da parcela anterior. Uma transação.
+    """
+    if valor is not None:
+        raise ParcelamentoRecusadoError(MENSAGEM_VALOR_COLETIVO_PARCELADA)
+    with transacao() as cursor:
+        parcelas = [p for p in _parcelas(cursor, serie_id) if p["posicao"] >= posicao_referencia]
+        if data_vencimento is not None:
+            if parcelas[0]["protegida"]:
+                raise ParcelamentoRecusadoError(MENSAGEM_PARCELA_PROTEGIDA_EDICAO)
+            anterior = cursor.execute(
+                "SELECT data_prevista FROM contas WHERE serie_id = ? AND posicao < ? ORDER BY posicao DESC LIMIT 1",
+                (serie_id, posicao_referencia)).fetchone()
+            if anterior is not None and data_vencimento[:7] <= anterior[0][:7]:
+                raise VencimentoAntesDaParcelaAnteriorError()
+            ano, mes, dia = map(int, data_vencimento.split("-"))
+            vagas = [data_vencimento]
+            for _ in parcelas[1:]:
+                ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+                vagas.append(date(ano, mes, _ajustar_dia(ano, mes, dia)).isoformat())
+            for parcela, vaga in zip(parcelas, vagas):
+                if parcela["protegida"]:
+                    if parcela["vencimento"][:7] != vaga[:7]:
+                        raise ParcelamentoRecusadoError(MENSAGEM_VENCIMENTO_COM_PROTEGIDAS)
+                else:
+                    cursor.execute("UPDATE contas SET data_vencimento = ?, data_prevista = ? WHERE id = ?",
+                                   (vaga, vaga, parcela["id"]))
+            cursor.execute(
+                "UPDATE series_recorrencia SET dia_ancora = ?, data_inicio = ?, posicao_ancora = ?, "
+                "data_termino = ?, horizonte_gerado_ate = ? WHERE id = ?",
+                (dia, data_vencimento, posicao_referencia, vagas[-1][:7], vagas[-1], serie_id))
+        campos, valores = [], []
+        if nome is not None:
+            campos.append("nome = ?")
+            valores.append(nome)
+        if remover_categoria:
+            campos.append("categoria_id = NULL")
+        elif categoria_id is not None:
+            campos.append("categoria_id = ?")
+            valores.append(categoria_id)
+        if remover_descricao:
+            campos.append("descricao = NULL")
+        elif descricao is not None:
+            campos.append("descricao = ?")
+            valores.append(descricao)
+        if campos:
+            cursor.execute(f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?",
+                           (*valores, serie_id, posicao_referencia))
+            cursor.execute(f"UPDATE series_recorrencia SET {', '.join(campos)} WHERE id = ?", (*valores, serie_id))
+    return True
+
+
 def _recusar_se_parcelada(conta_id):
     """Regra estrutural da 6.12: operações que mudariam o tipo de uma conta
     parcelada são recusadas antes de qualquer gravação."""
@@ -4977,11 +5244,13 @@ def _editar_conta_ocorrencia_no_cursor(cursor, conta_id, nome=None, valor=None, 
     descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
     _validar_textos_conta(nome, descricao)
 
-    cursor.execute("SELECT serie_id, valor FROM contas WHERE id = ?", (conta_id,))
+    cursor.execute("SELECT serie_id, valor, data_vencimento FROM contas WHERE id = ?", (conta_id,))
     linha = cursor.fetchone()
     if linha is None:
         return False
     serie_id = linha[0]
+    if _serie_parcelada_no_cursor(cursor, serie_id):  # Sino 6.12 (Etapa 7): D5, P4, C7
+        _conferir_edicao_de_parcela(cursor, conta_id, serie_id, linha[1], linha[2], valor, data_vencimento)
     if valor is not None and valor != linha[1]:
         # Pagamentos parciais: o novo valor não pode ficar abaixo do que já foi pago
         _exigir_valor_cobre_pagamentos(cursor, valor, "id = ?", (conta_id,))
@@ -5207,6 +5476,12 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     if ativa == 0:
         conexao_leitura.close()
         return False
+    if _serie_parcelada_no_cursor(cursor_leitura, serie_id):  # Sino 6.12 (Etapa 7): regras próprias
+        conexao_leitura.close()
+        return _editar_parcelada_em_diante(
+            conta_id, serie_id, posicao_referencia, nome=nome, valor=valor, categoria_id=categoria_id,
+            data_vencimento=data_vencimento, remover_categoria=remover_categoria, descricao=descricao,
+            remover_descricao=remover_descricao)
 
     if valor is not None:  # Pagamentos parciais: a selecionada segue as regras individuais (as protegidas não mudam)
         try:
@@ -5659,6 +5934,9 @@ def excluir_conta(conta_id):
             return False
         serie_id = linha[0]
 
+        if _serie_parcelada_no_cursor(cursor, serie_id) and _parcela_protegida(cursor, conta_id):
+            raise ParcelamentoRecusadoError(MENSAGEM_PARCELA_PROTEGIDA_EXCLUSAO)  # Sino 6.12: C4/E4
+
         try:
             cursor.execute("BEGIN;")
             _apagar_pagamentos(cursor, "id = ?", (conta_id,))  # Pagamentos parciais: junto com a conta
@@ -5736,6 +6014,9 @@ def excluir_conta_serie(conta_id):
         if linha is None:
             return False
         serie_id, posicao_referencia = linha
+        if _serie_parcelada_no_cursor(cursor, serie_id) and any(  # Sino 6.12: P1
+                p["protegida"] for p in _parcelas(cursor, serie_id) if p["posicao"] >= posicao_referencia):
+            raise ParcelamentoRecusadoError(MENSAGEM_EM_DIANTE_COM_PROTEGIDAS)
         try:
             cursor.execute("BEGIN;")
 

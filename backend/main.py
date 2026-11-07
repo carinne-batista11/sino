@@ -3539,6 +3539,99 @@ def main(page: ft.Page):
                 ))
                 page.update()
 
+            def mostrar_dialogo_alterar_parcelamento():
+                """Sino 6.12 (Etapa 7): novo valor total e/ou quantidade. Só as parcelas livres
+                são recalculadas; com pagamentos e editadas ficam como estão (prévia antes)."""
+                situacao_atual = database.situacao_das_parcelas(conta["id"])
+                rotulos = {"recalculada": "", "nova": " · nova", "com_pagamentos": " · com pagamentos (mantida)",
+                           "editada": " · editada (mantida)"}
+                escolha = {"quantidade": str(len(situacao_atual["parcelas"]))}
+                campo_total = ft.TextField(
+                    label="Valor total", value=formatar_moeda(situacao_atual["total_centavos"] / 100)[3:],
+                    prefix=ft.Text("R$ ", color=cores.texto_secundario), keyboard_type=ft.KeyboardType.NUMBER,
+                    color=cores.texto_principal, data="total_alterar_parcelamento", **estilo_campo_texto(),
+                )
+                campo_quantidade = ft.Dropdown(
+                    label="Quantidade de parcelas", color=cores.texto_principal, value=escolha["quantidade"],
+                    options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS],
+                    data="quantidade_alterar_parcelamento", **estilo_lista(),
+                )
+                lista_previa = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO)
+                erro_alterar = ft.Text(value="", color=cores.texto_erro, size=12)
+
+                def atualizar_previa(e=None):
+                    total = parse_valor(campo_total.value)
+                    lista_previa.controls = []
+                    if total is None:
+                        erro_alterar.value = database.MENSAGEM_VALOR_TOTAL_INVALIDO
+                    else:
+                        try:
+                            resultado = database.previa_alteracao_parcelamento(
+                                conta["id"], novo_total=total, nova_quantidade=int(escolha["quantidade"]))
+                        except database.ParcelamentoRecusadoError as recusa:
+                            erro_alterar.value = str(recusa)
+                        else:
+                            erro_alterar.value = ""
+                            n = len(resultado["parcelas"])
+                            for posicao, parcela in enumerate(resultado["parcelas"], start=1):
+                                ano, mes, dia = parcela["vencimento"].split("-")
+                                lista_previa.controls.append(ft.Text(
+                                    f"Parcela {posicao} de {n} · {dia}/{mes}/{ano} · "
+                                    f"{formatar_moeda(parcela['depois_centavos'] / 100)}{rotulos[parcela['situacao']]}",
+                                    size=14, color=cores.texto_principal))
+                            if resultado["removidas"]:
+                                lista_previa.controls.append(ft.Text(
+                                    f"{len(resultado['removidas'])} parcela(s) sem pagamentos do fim serão excluídas.",
+                                    size=13, color=cores.texto_secundario))
+                    lista_previa.height = min(300, 26 * max(1, len(lista_previa.controls)))
+                    if e is not None:
+                        page.update()
+
+                def ao_mudar_quantidade(e):
+                    escolha["quantidade"] = campo_quantidade.value
+                    atualizar_previa(e)
+
+                campo_quantidade.on_select = ao_mudar_quantidade
+                campo_total.on_change = atualizar_previa
+
+                def fechar(e=None):
+                    page.pop_dialog()
+                    page.update()
+
+                def aplicar(e):
+                    total = parse_valor(campo_total.value)
+                    if total is None:
+                        erro_alterar.value = database.MENSAGEM_VALOR_TOTAL_INVALIDO
+                        page.update()
+                        return
+                    try:
+                        database.alterar_parcelamento(conta["id"], novo_total=total,
+                                                      nova_quantidade=int(escolha["quantidade"]))
+                    except database.ParcelamentoRecusadoError as recusa:
+                        erro_alterar.value = str(recusa)
+                        page.update()
+                        return
+                    page.pop_dialog()
+                    mostrar_tela_principal(tuple(mes_atual))
+
+                atualizar_previa()
+                page.show_dialog(ft.AlertDialog(
+                    modal=True, bgcolor=cores.fundo_dialogo, data="dialogo_alterar_parcelamento",
+                    title=ft.Text("Alterar parcelamento", color=cores.texto_principal),
+                    content=ft.Column(tight=True, spacing=12, width=548, controls=[
+                        ft.Text("Só as parcelas sem pagamentos e sem edição individual são recalculadas; "
+                                "as demais ficam como estão.", color=cores.texto_principal),
+                        campo_total, campo_quantidade, lista_previa, erro_alterar,
+                    ]),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=fechar,
+                                      style=ft.ButtonStyle(color=cores.acao_primaria)),
+                        ft.Button(content="Aplicar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                                  on_click=aplicar),
+                    ],
+                ))
+                page.update()
+
             def item_recorrencia(rotulo, ao_clicar):
                 return ft.PopupMenuItem(content=rotulo, on_click=ao_clicar,
                                         label_text_style=ft.TextStyle(color=cores.texto_principal, size=14))
@@ -3859,6 +3952,13 @@ def main(page: ft.Page):
                                               data="parcelar_conta", style=ft.ButtonStyle(color=cores.acao_primaria),
                                               on_click=lambda e: mostrar_dialogo_parcelar()),
                             ])] if not serie_ativa else []),
+                            # Sino 6.12 (Etapa 7, D6/E5/R12): novo total e/ou quantidade, com prévia.
+                            *([ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
+                                ft.TextButton(content="Alterar parcelamento", icon=ft.Icons.TUNE,
+                                              data="alterar_parcelamento",
+                                              style=ft.ButtonStyle(color=cores.acao_primaria),
+                                              on_click=lambda e: mostrar_dialogo_alterar_parcelamento()),
+                            ])] if eh_parcelada else []),
                         ],
                     ),
                 )
@@ -3901,6 +4001,9 @@ def main(page: ft.Page):
                     except database.PagamentosRegistradosError as recusa:
                         mostrar_aviso_pagamentos(str(recusa))
                         return
+                    except database.ParcelamentoRecusadoError as recusa:  # Sino 6.12: C4/E4/P1
+                        mostrar_aviso_pagamentos(str(recusa), titulo="Não é possível excluir")
+                        return
                     if sucesso:
                         mostrar_tela_principal(tuple(mes_atual))
                     else:
@@ -3928,6 +4031,9 @@ def main(page: ft.Page):
                     except database.PagamentosRegistradosError as recusa:
                         mostrar_aviso_pagamentos(str(recusa))
                         return
+                    except database.ParcelamentoRecusadoError as recusa:  # Sino 6.12: C4/E4/P1
+                        mostrar_aviso_pagamentos(str(recusa), titulo="Não é possível excluir")
+                        return
                     if sucesso:
                         mostrar_tela_principal(tuple(mes_atual))
                     else:
@@ -3939,6 +4045,9 @@ def main(page: ft.Page):
                         sucesso = database.excluir_conta_serie(conta["id"])
                     except database.PagamentosRegistradosError as recusa:
                         mostrar_aviso_pagamentos(str(recusa))
+                        return
+                    except database.ParcelamentoRecusadoError as recusa:  # Sino 6.12: C4/E4/P1
+                        mostrar_aviso_pagamentos(str(recusa), titulo="Não é possível excluir")
                         return
                     if sucesso:
                         mostrar_tela_principal(tuple(mes_atual))
@@ -4934,7 +5043,8 @@ def main(page: ft.Page):
                     def aplicar_somente_esta(e):
                         try:
                             sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
-                        except limites.LimiteDeCaracteresError as erro_limite:
+                        except (limites.LimiteDeCaracteresError,
+                                database.ParcelamentoRecusadoError) as erro_limite:  # Sino 6.12: parcelas
                             mostrar_recusa(erro_limite)
                             return
                         except database.ValorMenorQuePagoError as recusa:
@@ -4958,7 +5068,8 @@ def main(page: ft.Page):
                             sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
                         except (limites.LimiteDeCaracteresError,
                                 database.VencimentoAntesDaParcelaAnteriorError,
-                                database.CompetenciaComPagamentosError) as erro:  # I4: recusa integral
+                                database.CompetenciaComPagamentosError,
+                                database.ParcelamentoRecusadoError) as erro:  # I4; Sino 6.12: parcelas
                             mostrar_recusa(erro)
                             return
                         except database.ValorMenorQuePagoError as recusa:
