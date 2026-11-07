@@ -342,12 +342,14 @@ class TestProtecaoDosPagamentos(BaseVariavel):
         self.assertEqual(self.estado(), antes)
         self.assert_banco_valido()
 
-    def test_valor_da_pendente_nao_e_editado_nesta_etapa(self):
+    def test_valor_invalido_na_pendente_recusado(self):
+        # Ajuste deliberado na Etapa 9: informar o valor passou a ser permitido (ver
+        # test_612_variavel_edicao); continua recusado um valor inválido, sem gravar nada.
         antes = self.estado()
-        for valor in (80.0, 0.0):
+        for valor in (-1.0, "80", True):
             with self.subTest(valor=valor), self.assertRaises(db.ValorVariavelRecusadoError) as recusa:
                 db.editar_conta_ocorrencia(self.ids[1], valor=valor)
-            self.assertEqual(str(recusa.exception), db.MENSAGEM_VALOR_PENDENTE_NAO_EDITAVEL)
+            self.assertEqual(str(recusa.exception), db.MENSAGEM_VALOR_INVALIDO)
         self.assertEqual(self.estado(), antes)
 
     def test_nome_e_vencimento_da_pendente_editaveis(self):
@@ -358,14 +360,6 @@ class TestProtecaoDosPagamentos(BaseVariavel):
     def test_valor_da_primeira_editavel(self):
         self.assertTrue(db.editar_conta_ocorrencia(self.ids[0], valor=170.0))
         self.assertEqual(self.valores(self.serie)[0], 170.0)
-
-    def test_valor_em_diante_recusado_na_variavel(self):
-        antes = self.estado()
-        for conta in (self.ids[0], self.ids[2]):
-            with self.subTest(conta=conta), self.assertRaises(db.ValorVariavelRecusadoError) as recusa:
-                db.editar_conta_serie(conta, valor=200.0)
-            self.assertEqual(str(recusa.exception), db.MENSAGEM_VALOR_COLETIVO_VARIAVEL)
-        self.assertEqual(self.estado(), antes)
 
     def test_nome_e_vencimento_em_diante_mantem_pendentes(self):
         pendentes = self.pendentes()

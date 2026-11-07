@@ -194,6 +194,10 @@ def formatar_moeda(valor):
 
 TEXTO_VALOR_PENDENTE = "Valor pendente"
 TEXTO_INFORMAR_VALOR = "O valor desta ocorrência ainda não foi informado."
+TEXTO_DIGITE_O_VALOR = "Digite o valor desta ocorrência (R$ 0,00 também é um valor)."
+TEXTO_AVISO_R5 = ("Numa recorrência de valor variável, “Este mês em diante” muda o valor só desta ocorrência e o "
+                  "valor de referência da recorrência; as próximas mantêm o próprio valor ou continuam com "
+                  "“Valor pendente”.")
 TEXTO_AJUDA_VARIAVEL = "Com valor variável, as próximas ocorrências ficam com “Valor pendente”."
 
 
@@ -317,7 +321,9 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
     if nome_antigo != nome_novo:
         partes.append(f"o nome de '{nome_antigo}' para '{nome_novo}'")
     if valor_antigo != valor_novo:
-        partes.append(f"o valor de {formatar_moeda(valor_antigo)} para {formatar_moeda(valor_novo)}")
+        # Sino 6.12 (Etapa 9): valor antigo None = "Valor pendente" (valor informado agora).
+        antigo = TEXTO_VALOR_PENDENTE if valor_antigo is None else formatar_moeda(valor_antigo)
+        partes.append(f"o valor de {antigo} para {formatar_moeda(valor_novo)}")
     if data_antiga != data_nova:
         partes.append(f"o vencimento de {data_antiga.strftime('%d/%m')} para {data_nova.strftime('%d/%m')}")
 
@@ -1114,6 +1120,18 @@ def parse_valor(texto):
     except ValueError:
         return None
     return valor if valor > 0 else None
+
+
+def parse_valor_informado(texto):
+    """Sino 6.12 (Etapa 9): como `parse_valor`, mas aceita R$ 0,00 -- usado só para informar
+    o valor de uma ocorrência pendente (0,00 é um valor conhecido, diferente de pendente)."""
+    if parse_valor(texto) is not None:
+        return parse_valor(texto)
+    numero = (texto or "").strip().replace("R$", "").strip().replace(".", "").replace(",", ".")
+    try:
+        return 0.0 if numero and float(numero) == 0 else None
+    except ValueError:
+        return None
 
 
 def preparar_banco_ou_exibir_erro(page, cores=modulo_cores):
@@ -3521,6 +3539,82 @@ def main(page: ft.Page):
                     **estilo_edicao(ft.Icons.REPEAT),
                 )
 
+            def mostrar_dialogo_comportamento_valor():
+                """Sino 6.12 (Etapa 9): R3 (Fixo -> Variável) e R4 (Variável -> Fixo, com o valor
+                sugerido) a partir desta ocorrência, com prévia; recusas no próprio diálogo."""
+                erro = ft.Text(value="", color=cores.texto_erro, size=12, data="erro_comportamento")
+
+                def plural(n):
+                    return f"{n} {'ocorrência' if n == 1 else 'ocorrências'}"
+
+                def concluir():
+                    page.pop_dialog()
+                    mostrar_tela_principal(tuple(mes_atual))
+
+                try:
+                    previa = (database.previa_tornar_fixa(conta["id"]) if eh_variavel
+                              else database.previa_tornar_variavel(conta["id"]))
+                except database.ValorVariavelRecusadoError as recusa:
+                    mostrar_aviso_pagamentos(str(recusa), titulo="Não é possível mudar")
+                    return
+                if eh_variavel:
+                    campo = ft.TextField(label="Valor fixo", data="valor_fixo_comportamento",
+                                         value=f"{previa['sugestao']:.2f}".replace(".", ","),
+                                         helper="Sugestão: o último valor informado.",
+                                         keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
+                                         prefix=ft.Text("R$ ", size=15, color=cores.texto_secundario),
+                                         **estilo_campo_texto())
+                    explicacao = (f"Esta ocorrência e as próximas com valor pendente "
+                                  f"({plural(len(previa['preencher']))}) receberão este valor. Valores já "
+                                  "informados e ocorrências com pagamentos não mudam. A frequência continua a mesma.")
+                    erro.value = previa["recusa"] or ""
+                    controles = [ft.Text(explicacao, color=cores.texto_principal), campo, erro]
+
+                    def confirmar(e):
+                        valor = parse_valor(campo.value)
+                        if valor is None:
+                            erro.value = database.MENSAGEM_VALOR_INVALIDO
+                            page.update()
+                            return
+                        try:
+                            database.tornar_fixa(conta["id"], valor)
+                        except database.ValorVariavelRecusadoError as recusa:
+                            erro.value = str(recusa)
+                            page.update()
+                            return
+                        concluir()
+                    titulo, rotulo = "Mudar para valor fixo", "Mudar para fixo"
+                else:
+                    explicacao = (f"Esta ocorrência mantém o valor. As próximas sem pagamentos e sem edição "
+                                  f"individual ({plural(len(previa['pendentes']))}) ficarão com “Valor "
+                                  "pendente”")
+                    explicacao += (f"; {plural(len(previa['mantidas']))} com pagamentos ou editadas mantêm o valor."
+                                   if previa["mantidas"] else ".")
+                    controles = [ft.Text(explicacao, color=cores.texto_principal),
+                                 ft.Text("A frequência continua a mesma.", size=12, color=cores.texto_secundario),
+                                 erro]
+
+                    def confirmar(e):
+                        try:
+                            database.tornar_variavel(conta["id"])
+                        except database.ValorVariavelRecusadoError as recusa:
+                            erro.value = str(recusa)
+                            page.update()
+                            return
+                        concluir()
+                    titulo, rotulo = "Mudar para valor variável", "Mudar para variável"
+                page.show_dialog(ft.AlertDialog(
+                    modal=True, bgcolor=cores.fundo_dialogo, data="dialogo_comportamento_valor",
+                    title=ft.Text(titulo, color=cores.texto_principal),
+                    content=ft.Column(tight=True, spacing=12, width=480, controls=controles),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                                      style=ft.ButtonStyle(color=cores.acao_primaria)),
+                        ft.Button(content=rotulo, bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                                  on_click=confirmar),
+                    ],
+                ))
+
             def mostrar_dialogo_parcelar():
                 """Sino 6.12 (Etapa 6): Única -> Parcelada. R1: com qualquer registro de
                 pagamento, só o motivo; senão, quantidade, prévia e confirmação (uma transação)."""
@@ -3882,6 +3976,11 @@ def main(page: ft.Page):
                         botao.style = ft.ButtonStyle(color=cores.botao_desabilitado_texto)
                     controles_status.append(ft.Text(database.MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE, size=13,
                                                     color=cores.texto_secundario, data="motivo_pagamento_bloqueado"))
+                    # Sino 6.12 (Etapa 9): informar o valor em Editar.
+                    controles_status.append(ft.TextButton(
+                        content="Informar valor", icon=ft.Icons.EDIT_OUTLINED, data="informar_valor",
+                        style=ft.ButtonStyle(color=cores.acao_primaria),
+                        on_click=lambda e: mostrar_formulario_edicao()))
                 linha_status = ft.Row(
                     wrap=True, spacing=10, run_spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -4024,6 +4123,14 @@ def main(page: ft.Page):
                                               data="parcelar_conta", style=ft.ButtonStyle(color=cores.acao_primaria),
                                               on_click=lambda e: mostrar_dialogo_parcelar()),
                             ])] if not serie_ativa else []),
+                            # Sino 6.12 (Etapa 9, R3/R4): valor fixo <-> variável, com prévia (uma gravação).
+                            *([ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
+                                ft.TextButton(content="Mudar para valor fixo" if eh_variavel
+                                              else "Mudar para valor variável", icon=ft.Icons.SWAP_HORIZ,
+                                              data="mudar_comportamento_valor",
+                                              style=ft.ButtonStyle(color=cores.acao_primaria),
+                                              on_click=lambda e: mostrar_dialogo_comportamento_valor()),
+                            ])] if serie_ativa and not eh_parcelada else []),
                             # Sino 6.12 (Etapa 7, D6/E5/R12): novo total e/ou quantidade, com prévia.
                             *([ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
                                 ft.TextButton(content="Alterar parcelamento", icon=ft.Icons.TUNE,
@@ -4528,8 +4635,8 @@ def main(page: ft.Page):
                 # Pagamentos parciais: o valor continua editável; só não pode ficar abaixo
                 # da soma dos pagamentos ativos (conferido no Salvar e no banco).
                 recarregar_situacao()
-                # Sino 6.12 (Etapa 8, V8): ocorrência com valor pendente -- "Valor pendente" no
-                # lugar do valor, sem edição (informar o valor fica para a Etapa 9; o banco recusa).
+                # Sino 6.12 (Etapa 8, V8; Etapa 9): ocorrência com valor pendente -- campo vazio com
+                # "Valor pendente"; digitar um valor (inclusive 0,00) é informar o valor.
                 valor_pendente_edit = bool(situacao_pagamento["atual"]
                                            and situacao_pagamento["atual"].get("valor_pendente"))
                 campo_valor_edit = ft.TextField(
@@ -4543,16 +4650,23 @@ def main(page: ft.Page):
                     **estilo_edicao(ft.Icons.PAYMENTS_OUTLINED),
                 )
                 if valor_pendente_edit:
-                    campo_valor_edit.value = TEXTO_VALOR_PENDENTE
-                    campo_valor_edit.prefix = None
-                    campo_valor_edit.read_only = True
-                    campo_valor_edit.color = cores.texto_secundario
-                    campo_valor_edit.helper = TEXTO_INFORMAR_VALOR
+                    campo_valor_edit.value = ""
+                    campo_valor_edit.hint_text = TEXTO_VALOR_PENDENTE
+                    campo_valor_edit.helper = TEXTO_DIGITE_O_VALOR
                     campo_valor_edit.data = "valor_pendente_edicao"
+                # Valor "antes" da edição: None = pendente (qualquer valor digitado é uma alteração).
+                valor_original_edit = None if valor_pendente_edit else conta["valor"]
+
+                def campo_valor_vazio():
+                    return not (campo_valor_edit.value or "").strip()
 
                 def valor_do_campo():
-                    """Valor digitado; com valor pendente, o gravado (o campo não é editável)."""
-                    return conta["valor"] if valor_pendente_edit else parse_valor(campo_valor_edit.value)
+                    """Valor digitado; numa pendente com o campo vazio, None (continua pendente)."""
+                    if valor_pendente_edit and campo_valor_vazio():
+                        return None
+                    if valor_pendente_edit:
+                        return parse_valor_informado(campo_valor_edit.value)
+                    return parse_valor(campo_valor_edit.value)
                 # Somente leitura como antes: a data muda pelo calendário, que agora
                 # abre pelo lápis ou por um clique no próprio campo.
                 campo_data_edit = ft.TextField(
@@ -4642,8 +4756,7 @@ def main(page: ft.Page):
                     return ao_clicar
 
                 campo_nome_edit.suffix_icon = botao_lapis("Editar nome da conta", focar(campo_nome_edit))
-                if not valor_pendente_edit:
-                    campo_valor_edit.suffix_icon = botao_lapis("Editar valor", focar(campo_valor_edit))
+                campo_valor_edit.suffix_icon = botao_lapis("Editar valor", focar(campo_valor_edit))
                 campo_data_edit.suffix_icon = botao_lapis("Editar data de vencimento", abrir_seletor_data)
                 campo_data_edit.on_click = abrir_seletor_data
                 campo_descricao_edit.suffix_icon = botao_lapis("Editar descrição", focar(campo_descricao_edit))
@@ -4666,7 +4779,8 @@ def main(page: ft.Page):
                     )
                     return (
                         nome_atual != conta["nome"]
-                        or valor_atual != conta["valor"]
+                        or valor_atual != valor_original_edit
+                        or (valor_pendente_edit and not campo_valor_vazio())
                         or data_selecionada["valor"] != data_venc_atual
                         or categoria_atual != categoria_id_original
                         or limites.normalizar_descricao(campo_descricao_edit.value)
@@ -4751,8 +4865,9 @@ def main(page: ft.Page):
                         nota_resumo.value = "Prévia considerando o novo valor. Nenhuma alteração foi salva."
                     rotulo_saldo.value = "Saldo devedor previsto" if previsto else "Saldo devedor"
                     valor_saldo.value = "—" if saldo is None else formatar_moeda(pagamentos.reais(saldo))
-                    if valor_pendente_edit:  # Sino 6.12 (Etapa 8): sem saldo enquanto o valor não é informado
+                    if valor_pendente_edit and campo_valor_vazio():  # Sino 6.12: sem saldo enquanto pendente
                         valor_saldo.value = "—"
+                        nota_resumo.visible = False
 
                 atualizar_resumo()
                 # Mês e ano da ocorrência editada (vencimento gravado); o traço e
@@ -4883,7 +4998,7 @@ def main(page: ft.Page):
                         erro_edit.value = "Digite um nome para a conta."
                     elif erro_textos:
                         erro_edit.value = erro_textos
-                    elif valor is None:
+                    elif valor is None and not (valor_pendente_edit and campo_valor_vazio()):
                         erro_edit.value = "Informe um valor válido."
                     elif data_selecionada["valor"] is None:
                         erro_edit.value = "Escolha a data de vencimento."
@@ -4895,13 +5010,13 @@ def main(page: ft.Page):
                         return
 
                     situacao_edit = situacao_pagamento["atual"]
-                    if (valor != conta["valor"] and situacao_edit and situacao_edit["ativos"]
+                    if (valor != valor_original_edit and situacao_edit and situacao_edit["ativos"]
                             and database.centavos_de(valor) < situacao_edit["pago_centavos"]):
                         # Pagamentos parciais: nada é gravado; o formulário fica como está.
                         recusa = database.ValorMenorQuePagoError(situacao_edit["pago_centavos"])
                         mostrar_aviso_pagamentos(str(recusa), titulo=recusa.titulo)
                         return
-                    if (valor != conta["valor"] and conta["status"] == "pago"
+                    if (valor != valor_original_edit and conta["status"] == "pago"
                             and situacao_edit
                             and situacao_edit["ativos"]
                             and database.centavos_de(valor) > situacao_edit["pago_centavos"]):
@@ -4930,7 +5045,7 @@ def main(page: ft.Page):
                     # exibida (e, defensivamente, nem o diálogo de escopo é
                     # aberto -- ver guarda abaixo).
                     mensagem_alteracao = montar_mensagem_alteracao(
-                        conta["nome"], nome, conta["valor"], valor, data_venc_atual, nova_data,
+                        conta["nome"], nome, valor_original_edit, valor, data_venc_atual, nova_data,
                         categoria_nome_antiga=categorias_atuais.get(categoria_id_original),
                         categoria_nome_nova=categorias_atuais.get(categoria_id_novo),
                         recorrencia_acao=rascunho_recorrencia["acao"],
@@ -4956,7 +5071,7 @@ def main(page: ft.Page):
                     # data) nunca é reenviado, para não redefinir a âncora da
                     # série nem sobrescrever ocorrências futuras.
                     campos_alterados = campos_alterados_edicao(
-                        conta["nome"], nome, conta["valor"], valor,
+                        conta["nome"], nome, valor_original_edit, valor,
                         data_venc_atual, nova_data, categoria_id_original, categoria_id_novo,
                         descricao_original, descricao,
                     )
@@ -5200,7 +5315,7 @@ def main(page: ft.Page):
                     # Pagamentos parciais (opção D): em "Este mês em diante", as
                     # ocorrências seguintes com histórico de pagamentos mantêm o valor.
                     protegidas = (database.ocorrencias_protegidas_no_valor(conta["id"])
-                                  if "valor" in campos_alterados else [])
+                                  if "valor" in campos_alterados and not eh_variavel else [])
                     # I3: com um novo vencimento, as seguintes com pagamentos que só
                     # não mudam de mês por causa da proteção (H2). Mudar só o dia não
                     # conta, a selecionada nunca conta, e uma alteração que seria
@@ -5223,6 +5338,8 @@ def main(page: ft.Page):
                             "Em \"Este mês em diante\", algumas ocorrências possuem histórico de "
                             f"pagamentos e manterão seus valores atuais ({ocorrencias(len(protegidas))}). "
                             "As demais serão atualizadas."))
+                    if eh_variavel and "valor" in campos_alterados:  # Sino 6.12 (Etapa 9): R5
+                        avisos_escopo.append(aviso_do_escopo("aviso_valor_variavel", TEXTO_AVISO_R5))
                     if mantidas:
                         avisos_escopo.append(aviso_do_escopo(
                             "pp_aviso_vencimento",

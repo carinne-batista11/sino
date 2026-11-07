@@ -228,12 +228,14 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
         self.assertNotIn(db.MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE, textos)
         self.assertFalse(self.botao("Marcar como paga").disabled)
 
-    def test_editar_pendente_sem_valor_editavel_e_sem_alterar_frequencia(self):
+    def test_editar_pendente_sem_alterar_frequencia(self):
+        # Ajuste deliberado na Etapa 9: o campo Valor da pendente passou a ser editável (vazio,
+        # com "Valor pendente" como dica); salvar só o nome mantém a ocorrência pendente.
         self.clicar(self.linha("Luz"))
         self.clicar(self.botao("Editar"))
         campo = self.campo("Valor")
-        self.assertEqual((campo.value, campo.read_only, campo.helper),
-                         ("Valor pendente", True, main.TEXTO_INFORMAR_VALOR))
+        self.assertEqual((campo.value, campo.read_only, campo.hint_text, campo.helper),
+                         ("", False, "Valor pendente", main.TEXTO_DIGITE_O_VALOR))
         menu = self.campo("Recorrência").suffix_icon
         self.assertEqual([i.content for i in menu.items], ["Encerrar recorrência"])
         nome = self.campo("Nome da conta")
@@ -244,18 +246,20 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
         self.assertEqual(self.consultar("SELECT nome FROM contas WHERE id = ?", (self.ids[1],)), [("Energia",)])
         self.assertIn(self.ids[1], self.pendentes())
 
-    def test_valor_em_diante_recusado_no_editar(self):
+    def test_valor_em_diante_na_variavel_r5(self):
+        # Ajuste deliberado na Etapa 9: antes recusado; agora R5 (só a selecionada e o modelo).
         self.clicar(next(c for c in self.controles(ft.IconButton) if c.data == "mes_anterior"))  # agosto
         self.clicar(self.linha("Luz"))
         self.clicar(self.botao("Editar"))
-        antes = self.consultar("SELECT * FROM contas ORDER BY id")
         campo = self.campo("Valor")
         campo.value = "170,00"
         campo.on_change(Evento(self.pagina, campo))
         self.clicar(self.botao("Salvar alterações"))
+        self.assertIn(main.TEXTO_AVISO_R5, self.textos_do_dialogo())
         self.clicar(self.acao("Este mês em diante"))
-        self.assertIn(db.MENSAGEM_VALOR_COLETIVO_VARIAVEL, self.textos())
-        self.assertEqual(self.consultar("SELECT * FROM contas ORDER BY id"), antes)
+        self.assertEqual(self.consultar("SELECT valor FROM contas WHERE serie_id = ? ORDER BY posicao",
+                                        (self.serie,)), [(170.0,), (0.0,), (0.0,), (0.0,)])
+        self.assertEqual(self.pendentes() & set(self.ids), set(self.ids[1:]))
 
     def test_fixa_mantem_alterar_frequencia(self):
         db.criar_serie_recorrente(self.usuario_id, "Aluguel", 900.0, "2026-09-25", "mensal")

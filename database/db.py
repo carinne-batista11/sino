@@ -5052,16 +5052,21 @@ def _recusar_se_parcelada(conta_id):
 #  Ocorrência pendente não recebe pagamento (nem "Marcar como paga", nem
 #  pagamento parcial): a recusa fica aqui e em `pagamentos.py`, pois a v11 não
 #  tem gatilho em `pp_pagamentos`; o gatilho da v11 impede o inverso (marcar
-#  como pendente uma ocorrência com registros). Informar o valor, R3, R4 e R5
-#  ficam para a Etapa 9: até lá, o valor de uma pendente e o valor por "Este
-#  mês em diante" numa série variável são recusados sem gravar nada.
+#  como pendente uma ocorrência com registros).
+#  Etapa 9: informar o valor (a ocorrência deixa de ser pendente na mesma
+#  gravação; R$ 0,00 é valor conhecido), R5 ("Este mês em diante" numa
+#  variável muda só a selecionada e o valor-modelo), R3 (Fixo -> Variável) e
+#  R4 (Variável -> Fixo), com o alcance da X3.
 # ------------------------------------------------------------------
 MENSAGEM_PRIMEIRO_VALOR_OBRIGATORIO = "Informe o valor da primeira ocorrência."
 MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE = ("Esta conta está com valor pendente. Informe o valor antes de registrar "
                                          "um pagamento.")
-MENSAGEM_VALOR_PENDENTE_NAO_EDITAVEL = "Informar o valor de uma ocorrência com valor pendente ainda não está disponível."
-MENSAGEM_VALOR_COLETIVO_VARIAVEL = ("Numa recorrência de valor variável, o valor só pode ser alterado em "
-                                    "“Somente este mês”.")
+MENSAGEM_VALOR_INVALIDO = "Informe um valor válido."
+MENSAGEM_SO_RECORRENCIA_ATIVA = "Só uma recorrência ativa pode ter o valor fixo ou variável alterado."
+MENSAGEM_JA_VARIAVEL = "Esta recorrência já tem valor variável."
+MENSAGEM_JA_FIXA = "Esta recorrência já tem valor fixo."
+MENSAGEM_PENDENTES_ANTERIORES = ("Há ocorrências anteriores a esta com valor pendente. Informe esses valores ou "
+                                 "faça a mudança a partir da primeira ocorrência pendente. Nada foi alterado.")
 MENSAGEM_VARIAVEL_NAO_MUDA_FREQUENCIA = "Uma recorrência de valor variável não pode mudar de frequência."
 MENSAGEM_TRANSFORMAR_COM_VALOR_PENDENTE = "Esta conta está com valor pendente: informe o valor antes de transformá-la."
 MENSAGEM_PARCELAR_COM_VALOR_PENDENTE = "Esta conta está com valor pendente: informe o valor antes de parcelá-la."
@@ -5122,9 +5127,120 @@ def _marcar_valor_pendente(cursor, ids):
                        (conta_id, agora))
 
 
+def _valor_valido(valor):
+    return valor is not None and not isinstance(valor, bool) and isinstance(valor, (int, float)) and valor >= 0
+
+
 def _exigir_primeiro_valor(valor):
-    if valor is None or isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor < 0:
+    if not _valor_valido(valor):
         raise ValorVariavelRecusadoError(MENSAGEM_PRIMEIRO_VALOR_OBRIGATORIO)
+
+
+def _informar_valor_no_cursor(cursor, conta_id, valor):
+    """Etapa 9: a ocorrência pendente recebe `valor` e deixa de ser pendente (mesma transação)."""
+    cursor.execute("UPDATE contas SET valor = ? WHERE id = ?", (valor, conta_id))
+    cursor.execute(f"DELETE FROM {TABELA_VALOR_PENDENTE} WHERE conta_id = ?", (conta_id,))
+
+
+def _serie_para_comportamento(cursor, conta_id):
+    """(serie_id, posicao) de uma ocorrência de recorrência ATIVA e não parcelada; senão recusa."""
+    linha = cursor.execute("SELECT serie_id, posicao FROM contas WHERE id = ?", (conta_id,)).fetchone()
+    if linha is None or linha[0] is None:
+        raise ValorVariavelRecusadoError(MENSAGEM_SO_RECORRENCIA_ATIVA)
+    serie_id, posicao = linha
+    ativa = cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id,)).fetchone()
+    if ativa is None or ativa[0] != 1:
+        raise ValorVariavelRecusadoError(MENSAGEM_SO_RECORRENCIA_ATIVA)
+    if _serie_parcelada_no_cursor(cursor, serie_id):
+        raise ValorVariavelRecusadoError(MENSAGEM_PARCELADA_NAO_MUDA_DE_TIPO)
+    return serie_id, posicao
+
+
+def _plano_tornar_variavel(cursor, conta_id):
+    """R3/X3: as ocorrências SEGUINTES livres (sem registros de pagamento ou quitação e sem
+    edição individual) ficam pendentes; a selecionada, as anteriores, as protegidas e as
+    editadas mantêm o valor."""
+    serie_id, posicao = _serie_para_comportamento(cursor, conta_id)
+    if _serie_variavel_no_cursor(cursor, serie_id):
+        raise ValorVariavelRecusadoError(MENSAGEM_JA_VARIAVEL)
+    seguintes = cursor.execute("SELECT id, editado_individualmente FROM contas WHERE serie_id = ? AND posicao > ? "
+                               "ORDER BY posicao", (serie_id, posicao)).fetchall()
+    livres = [i for i, editado in seguintes if editado != 1 and not _parcela_protegida(cursor, i)]
+    return {"serie_id": serie_id, "pendentes": livres,
+            "mantidas": [i for i, _ in seguintes if i not in livres]}
+
+
+def previa_tornar_variavel(conta_id):
+    """Só leitura: o que R3 faria (ids que ficariam pendentes e os mantidos); recusa como na gravação."""
+    conexao = conectar()
+    try:
+        plano = _plano_tornar_variavel(conexao.cursor(), conta_id)
+    finally:
+        conexao.close()
+    return {"pendentes": plano["pendentes"], "mantidas": plano["mantidas"]}
+
+
+def tornar_variavel(conta_id):
+    """R3 (X3): Fixo -> Variável a partir da ocorrência selecionada, numa transação.
+    A frequência, os pagamentos e os estornos não mudam. Devolve os ids que ficaram pendentes."""
+    with transacao() as cursor:
+        plano = _plano_tornar_variavel(cursor, conta_id)
+        _registrar_serie_variavel(cursor, plano["serie_id"])
+        _marcar_valor_pendente(cursor, plano["pendentes"])
+    return plano["pendentes"]
+
+
+def _ultimo_valor_conhecido(cursor, serie_id):
+    linha = cursor.execute(
+        f"SELECT valor FROM contas WHERE serie_id = ? AND {_sql_valor_conhecido(cursor)} "
+        "ORDER BY posicao DESC LIMIT 1", (serie_id,)).fetchone()
+    if linha is None:
+        linha = cursor.execute("SELECT valor FROM series_recorrencia WHERE id = ?", (serie_id,)).fetchone()
+    return linha[0]
+
+
+def _plano_tornar_fixa(cursor, conta_id):
+    """R4/X3: a selecionada (se pendente) e as SEGUINTES pendentes recebem o valor fixo; os
+    valores informados, as protegidas e as editadas não mudam. Pendentes ANTERIORES à
+    selecionada: recusa (a série fixa não pode ficar com valor pendente)."""
+    serie_id, posicao = _serie_para_comportamento(cursor, conta_id)
+    if not _serie_variavel_no_cursor(cursor, serie_id):
+        raise ValorVariavelRecusadoError(MENSAGEM_JA_FIXA)
+    pendentes = cursor.execute(
+        f"SELECT c.id, c.posicao FROM contas c JOIN {TABELA_VALOR_PENDENTE} v ON v.conta_id = c.id "
+        "WHERE c.serie_id = ? ORDER BY c.posicao", (serie_id,)).fetchall()
+    return {"serie_id": serie_id, "preencher": [i for i, pos in pendentes if pos >= posicao],
+            "anteriores": [i for i, pos in pendentes if pos < posicao],
+            "sugestao": _ultimo_valor_conhecido(cursor, serie_id)}
+
+
+def previa_tornar_fixa(conta_id):
+    """Só leitura: valor sugerido (o último informado), ids que receberiam o valor e a recusa
+    (texto) se houver pendentes anteriores à selecionada."""
+    conexao = conectar()
+    try:
+        plano = _plano_tornar_fixa(conexao.cursor(), conta_id)
+    finally:
+        conexao.close()
+    return {"sugestao": plano["sugestao"], "preencher": plano["preencher"],
+            "recusa": MENSAGEM_PENDENTES_ANTERIORES if plano["anteriores"] else None}
+
+
+def tornar_fixa(conta_id, valor):
+    """R4 (X3): Variável -> Fixo com o valor informado (obrigatório), numa transação: a série
+    deixa de ser variável, o valor-modelo passa a ser `valor` e as pendentes da selecionada em
+    diante recebem esse valor. Devolve os ids preenchidos."""
+    if not _valor_valido(valor):
+        raise ValorVariavelRecusadoError(MENSAGEM_VALOR_INVALIDO)
+    with transacao() as cursor:
+        plano = _plano_tornar_fixa(cursor, conta_id)
+        if plano["anteriores"]:
+            raise ValorVariavelRecusadoError(MENSAGEM_PENDENTES_ANTERIORES)
+        for oc_id in plano["preencher"]:
+            _informar_valor_no_cursor(cursor, oc_id, valor)
+        cursor.execute(f"DELETE FROM {TABELA_SERIES_VARIAVEIS} WHERE serie_id = ?", (plano["serie_id"],))
+        cursor.execute("UPDATE series_recorrencia SET valor = ? WHERE id = ?", (valor, plano["serie_id"]))
+    return plano["preencher"]
 
 
 def _recusar_se_variavel(conta_id):
@@ -5434,8 +5550,9 @@ def _editar_conta_ocorrencia_no_cursor(cursor, conta_id, nome=None, valor=None, 
     serie_id = linha[0]
     if _serie_parcelada_no_cursor(cursor, serie_id):  # Sino 6.12 (Etapa 7): D5, P4, C7
         _conferir_edicao_de_parcela(cursor, conta_id, serie_id, linha[1], linha[2], valor, data_vencimento)
-    if valor is not None and _valor_pendente_no_cursor(cursor, conta_id):  # Sino 6.12 (Etapa 8)
-        raise ValorVariavelRecusadoError(MENSAGEM_VALOR_PENDENTE_NAO_EDITAVEL)
+    informar = valor is not None and _valor_pendente_no_cursor(cursor, conta_id)  # Sino 6.12 (Etapa 9)
+    if informar and not _valor_valido(valor):
+        raise ValorVariavelRecusadoError(MENSAGEM_VALOR_INVALIDO)
     if valor is not None and valor != linha[1]:
         # Pagamentos parciais: o novo valor não pode ficar abaixo do que já foi pago
         _exigir_valor_cobre_pagamentos(cursor, valor, "id = ?", (conta_id,))
@@ -5468,6 +5585,8 @@ def _editar_conta_ocorrencia_no_cursor(cursor, conta_id, nome=None, valor=None, 
     if campos:
         sql = f"UPDATE contas SET {', '.join(campos)} WHERE id = ?"
         cursor.execute(sql, (*valores, conta_id))
+        if informar:  # Etapa 9: deixa de ser pendente só junto com a gravação do valor
+            cursor.execute(f"DELETE FROM {TABELA_VALOR_PENDENTE} WHERE conta_id = ?", (conta_id,))
         if valor is not None:  # Pagamentos parciais: saldo e status pelos pagamentos ativos
             if pp_diferenca is not None and pp_diferenca["registrar"]:
                 _registrar_diferenca(cursor, conta_id)  # mesma transação da alteração do valor
@@ -5617,6 +5736,11 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     (serie_id, data_referencia, nome_atual, valor_atual, categoria_id_atual, descricao_atual,
      posicao_referencia) = linha
     descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
+    # Sino 6.12 (Etapa 9): numa pendente, qualquer valor (inclusive 0,00) é informado, nunca "igual".
+    selecionada_pendente = _valor_pendente_no_cursor(cursor_leitura, conta_id)
+    if selecionada_pendente and valor is not None and not _valor_valido(valor):
+        conexao_leitura.close()
+        raise ValorVariavelRecusadoError(MENSAGEM_VALOR_INVALIDO)
 
     # Correção v6.0 (Etapa 0): só propaga o que o usuário realmente alterou
     # em relação à ocorrência selecionada. Um campo repetido com o mesmo
@@ -5626,7 +5750,7 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     # que tenham valores próprios (editadas individualmente).
     if nome == nome_atual:
         nome = None
-    if valor == valor_atual:
+    if valor == valor_atual and not selecionada_pendente:
         valor = None
     if data_vencimento == data_referencia:
         data_vencimento = None
@@ -5667,9 +5791,8 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
             conta_id, serie_id, posicao_referencia, nome=nome, valor=valor, categoria_id=categoria_id,
             data_vencimento=data_vencimento, remover_categoria=remover_categoria, descricao=descricao,
             remover_descricao=remover_descricao)
-    if valor is not None and _serie_variavel_no_cursor(cursor_leitura, serie_id):  # Sino 6.12 (Etapa 8)
-        conexao_leitura.close()
-        raise ValorVariavelRecusadoError(MENSAGEM_VALOR_COLETIVO_VARIAVEL)
+    # Sino 6.12 (Etapa 9, R5): numa variável, o valor vai só para a selecionada e para o modelo.
+    variavel = _serie_variavel_no_cursor(cursor_leitura, serie_id)
 
     if valor is not None:  # Pagamentos parciais: a selecionada segue as regras individuais (as protegidas não mudam)
         try:
@@ -5755,7 +5878,14 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
         if campos:
             sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?"
             cursor.execute(sql, (*valores, serie_id, posicao_referencia))
-        if valor is not None:
+        if valor is not None and variavel:
+            # Sino 6.12 (Etapa 9, R5): só a selecionada (que deixa de ser pendente, se era);
+            # pendências e valores futuros já informados não mudam.
+            _informar_valor_no_cursor(cursor, conta_id, valor)
+            if pp_diferenca is not None and pp_diferenca["registrar"]:
+                _registrar_diferenca(cursor, conta_id)
+            _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
+        elif valor is not None:
             # Pagamentos parciais (opção D): o valor novo vai para a selecionada e
             # para as ocorrências seguintes SEM histórico de pagamentos; as que têm
             # qualquer pagamento (parcial, quitação ou só estornado) mantêm o valor,
