@@ -261,13 +261,13 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
                                         (self.serie,)), [(170.0,), (0.0,), (0.0,), (0.0,)])
         self.assertEqual(self.pendentes() & set(self.ids), set(self.ids[1:]))
 
-    def test_fixa_mantem_alterar_frequencia(self):
+    def test_fixa_sem_alterar_frequencia(self):
         db.criar_serie_recorrente(self.usuario_id, "Aluguel", 900.0, "2026-09-25", "mensal")
         self.entrar()
         self.clicar(self.linha("Aluguel"))
         self.clicar(self.botao("Editar"))
         menu = self.campo("Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Alterar frequência", "Encerrar recorrência"])
+        self.assertEqual([i.content for i in menu.items], ["Encerrar recorrência"])     # Etapa 10: R6
 
 
 class TestGraficoComPendentes(BaseVariavelTelas):

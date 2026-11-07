@@ -739,7 +739,7 @@ class TestEtapa4Frequencia(TestePagamentos):
         pagos_antes = self.consultar("SELECT * FROM pp_pagamentos ORDER BY id")
         self.assertEqual([o["id"] for o in db.ocorrencias_futuras_com_pagamentos(ids[0])], [ids[2], ids[3]])
 
-        resultado = db.alterar_frequencia_serie(ids[0], "anual")
+        resultado = db._alterar_frequencia_serie_611(ids[0], "anual")
         self.assertEqual(set(resultado["ocorrencias_preservadas"]), {ids[2], ids[3]})
         self.assertEqual(self.competencias(serie_id), ["2026-09", "2026-11", "2026-12", "2027-09"])
         competencias = self.competencias(serie_id)
@@ -753,7 +753,7 @@ class TestEtapa4Frequencia(TestePagamentos):
     def test_anual_para_mensal_nao_cria_outra_cobranca_no_mes_preservado(self):
         serie_id, ids = self.serie(1200.0, "anual", "2026-09-10")    # set/2026 e set/2027
         self.pagar(ids[1], 100_00, "2026-09-12")                     # setembro/2027, antecipado
-        db.alterar_frequencia_serie(ids[0], "mensal", data_termino="2027-10")
+        db._alterar_frequencia_serie_611(ids[0], "mensal", data_termino="2027-10")
         competencias = self.competencias(serie_id)
         self.assertEqual(competencias.count("2027-09"), 1)
         self.assertIn("2027-10", competencias)
@@ -762,7 +762,7 @@ class TestEtapa4Frequencia(TestePagamentos):
 
     def test_sem_pagamentos_continua_como_antes(self):
         serie_id, ids = self.serie(100.0, termino="2027-02")
-        resultado = db.alterar_frequencia_serie(ids[0], "anual")
+        resultado = db._alterar_frequencia_serie_611(ids[0], "anual")
         self.assertEqual(resultado["ocorrencias_preservadas"], [])
         self.assertEqual(self.competencias(serie_id), ["2026-09", "2027-09"])
 
@@ -772,7 +772,7 @@ class TestEtapa4Frequencia(TestePagamentos):
         antes = self.ocorrencias(serie_id)
         with mock.patch.object(db, "_renumerar_segmento", side_effect=RuntimeError("falha simulada")):
             with self.assertRaises(RuntimeError):
-                db.alterar_frequencia_serie(ids[0], "anual")
+                db._alterar_frequencia_serie_611(ids[0], "anual")
         self.assertEqual(self.ocorrencias(serie_id), antes)
 
 
@@ -850,7 +850,7 @@ class TestEtapa41OpcaoD(TestePagamentos):
     def test_compativel_com_a_mudanca_de_frequencia(self):
         serie_id, ids = self.academia()
         db.editar_conta_serie(ids[1], valor=130.0)
-        resultado = db.alterar_frequencia_serie(ids[1], "anual")
+        resultado = db._alterar_frequencia_serie_611(ids[1], "anual")
         self.assertEqual(set(resultado["ocorrencias_preservadas"]), {ids[2], ids[3], ids[5]})
         competencias = [d[:7] for _, d, *_ in self.ocorrencias(serie_id)]
         self.assertEqual(len(competencias), len(set(competencias)))
@@ -1196,7 +1196,7 @@ class TestSimplificacaoDoHistorico(TestePagamentos):
                 antes = self.financeiro(nov)
                 db.editar_conta_serie(ids[0], valor=80.0)                                     # valor coletivo
                 self.assertEqual(self.valores(serie_id), [80.0, 80.0, 100.0, 80.0, 80.0, 80.0])
-                r = db.alterar_frequencia_serie(ids[0], "anual", data_termino="2027-12")    # mensal -> anual
+                r = db._alterar_frequencia_serie_611(ids[0], "anual", data_termino="2027-12")    # mensal -> anual
                 self.assertIn(nov, r["ocorrencias_preservadas"])
                 self.assertEqual(self.financeiro(nov), antes)
                 db.encerrar_recorrencia(ids[0])                                             # encerrar
@@ -1211,7 +1211,7 @@ class TestSimplificacaoDoHistorico(TestePagamentos):
         self.assertEqual(db.ocorrencias_futuras_com_pagamentos(ids[0]), [])                # sem aviso
         db.editar_conta_serie(ids[0], valor=80.0)
         self.assertEqual(self.valores(serie_id), [80.0] * 6)                               # novembro também
-        r = db.alterar_frequencia_serie(ids[0], "anual", data_termino="2027-12")
+        r = db._alterar_frequencia_serie_611(ids[0], "anual", data_termino="2027-12")
         self.assertIn(nov, r["ocorrencias_substituidas"])                                  # é regerada
         self.assertEqual(self.consultar("SELECT COUNT(*) FROM contas WHERE id = ?", (nov,)), [(0,)])
 
@@ -1229,7 +1229,7 @@ class TestSimplificacaoDoHistorico(TestePagamentos):
                     self.so_estornado(nov, excluir=True)
                 db.editar_conta_ocorrencia(nov, nome="Novembro editado")
                 self.assertFalse(self.protegida(nov))
-                r = db.alterar_frequencia_serie(ids[0], "anual", data_termino="2027-12")
+                r = db._alterar_frequencia_serie_611(ids[0], "anual", data_termino="2027-12")
                 self.assertIn(nov, r["ocorrencias_preservadas"])                          # pela edição
                 db.encerrar_recorrencia(ids[0])
                 self.assertEqual(self.consultar("SELECT nome FROM contas WHERE id = ?", (nov,)),
@@ -1347,7 +1347,7 @@ class TestIntegracao610(TestePagamentos):
         self.invariante()
         self.assertEqual(self.consultar("SELECT valor FROM contas WHERE id IN (?, ?) ORDER BY id",
                                         (ids[1], ids[2])), [(100.0,), (100.0,)])
-        r = db.alterar_frequencia_serie(ids[0], "anual", data_termino="2028-12")
+        r = db._alterar_frequencia_serie_611(ids[0], "anual", data_termino="2028-12")
         self.assertEqual(sorted(r["ocorrencias_preservadas"]), sorted([ids[1], ids[2]]))
         self.invariante()
         db.encerrar_recorrencia(ids[0])
@@ -1507,7 +1507,7 @@ class TestEtapa4VencimentoColetivo(TestePagamentos):
         serie_id = self.mensal()
         jan = self.da(serie_id, "2027-01")
         self.preparar(jan, "ativo")
-        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        db._alterar_frequencia_serie_611(self.da(serie_id, "2026-11"), "anual", data_termino=None)
         self.assertEqual(self.lista(serie_id), ["2026-11-10", "2027-01-10", "2027-11-10"])
         db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-11-20")
         self.assertEqual(self.lista(serie_id), ["2026-11-20", "2027-01-20", "2027-11-20"])  # nov/2027 continua
@@ -1661,7 +1661,7 @@ class TestEtapa4VencimentoColetivo(TestePagamentos):
         """Um mês pago herdado de antes de mensal -> anual ocupa só o mês."""
         serie_id = self.mensal()
         self.preparar(self.da(serie_id, "2027-01"), "ativo")
-        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        db._alterar_frequencia_serie_611(self.da(serie_id, "2026-11"), "anual", data_termino=None)
         db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2026-12-10")
         self.assertEqual(self.lista(serie_id), ["2026-12-10", "2027-01-10", "2027-12-10"])
 
@@ -1732,7 +1732,7 @@ class TestEtapa4VencimentoColetivo(TestePagamentos):
         """Na anual, um mês pago herdado de mensal ocupa só o próprio mês."""
         serie_id = self.mensal()
         self.preparar(self.da(serie_id, "2027-03"), "ativo")
-        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        db._alterar_frequencia_serie_611(self.da(serie_id, "2026-11"), "anual", data_termino=None)
         self.assertTrue(db.editar_conta_serie(self.da(serie_id, "2026-11"), data_vencimento="2027-01-10"))
         self.assertEqual(self.lista(serie_id)[:2], ["2027-01-10", "2027-03-10"])
         self.conferir_serie(serie_id)
@@ -1741,7 +1741,7 @@ class TestEtapa4VencimentoColetivo(TestePagamentos):
         serie_id = self.mensal()
         jan = self.da(serie_id, "2027-01")
         self.preparar(jan, "ativo")
-        db.alterar_frequencia_serie(self.da(serie_id, "2026-11"), "anual", data_termino=None)
+        db._alterar_frequencia_serie_611(self.da(serie_id, "2026-11"), "anual", data_termino=None)
         db.editar_conta_ocorrencia(jan, nome="Editada")                     # D2: fica, e com pagamentos
         self.recusa(self.da(serie_id, "2026-11"), "2027-01-05", "mesmo_mes")
 

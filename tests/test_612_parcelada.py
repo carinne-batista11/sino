@@ -244,7 +244,7 @@ class TestParceladaNaoMudaDeTipo(BaseParcelada):
     def test_alterar_frequencia_encerrar_e_transformar_recusados(self):
         _, ids = db.criar_conta_parcelada(self.usuario_id, "TV", 600.0, 3, "2026-09-20")
         antes = self.estado()
-        with self.assertRaisesRegex(db.ParcelamentoRecusadoError, db.MENSAGEM_PARCELADA_NAO_MUDA_DE_TIPO):
+        with self.assertRaises(db.EstruturaRecusadaError):          # Etapa 10: R6 para todas as séries
             db.alterar_frequencia_serie(ids[1], "anual")
         with self.assertRaisesRegex(db.ParcelamentoRecusadoError, db.MENSAGEM_PARCELADA_NAO_MUDA_DE_TIPO):
             db.encerrar_recorrencia(ids[0])
@@ -255,7 +255,9 @@ class TestParceladaNaoMudaDeTipo(BaseParcelada):
     def test_recorrencias_continuam_com_as_regras_de_sempre(self):
         _, mensais = db.criar_serie_recorrente(self.usuario_id, "Aluguel", 900.0, "2026-09-05", "mensal",
                                                data_termino="2026-12")
-        self.assertIn("ocorrencias_preservadas", db.alterar_frequencia_serie(mensais[1], "anual"))
+        # Ajuste deliberado na Etapa 10: a frequência não muda mais (R6), também nas recorrências.
+        with self.assertRaises(db.EstruturaRecusadaError):
+            db.alterar_frequencia_serie(mensais[1], "anual")
         _, outras = db.criar_serie_recorrente(self.usuario_id, "Água", 80.0, "2026-09-12", "mensal")
         db.encerrar_recorrencia(outras[0])
         self.assertTrue(db.validar_schema_atual()["ok"])

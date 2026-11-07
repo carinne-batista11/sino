@@ -198,7 +198,7 @@ class TestDescricaoNaSerie(BaseDescricao):
         id_fev = self.id_por_data(serie_id, "2027-02-10")
         db.editar_conta_ocorrencia(id_fev, descricao="Só fevereiro")
 
-        resultado = db.alterar_frequencia_serie(id_fev, "mensal", data_termino="2027-12")
+        resultado = db._alterar_frequencia_serie_611(id_fev, "mensal", data_termino="2027-12")
 
         self.assertIn(id_jun, resultado["ocorrencias_preservadas"])
         self.assertEqual(self.descricao(id_jun), "Editada")

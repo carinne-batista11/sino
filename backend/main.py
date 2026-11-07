@@ -3485,13 +3485,13 @@ def main(page: ft.Page):
                 # que o sistema aja como se já existisse uma série no banco.
                 if acao_pendente == "encerrar":
                     ativa_exibida = False
-                elif acao_pendente in ("transformar", "alterar_frequencia"):
+                elif acao_pendente == "transformar":
                     ativa_exibida = True
                 else:
                     ativa_exibida = serie_ativa
 
                 if ativa_exibida:
-                    if acao_pendente in ("transformar", "alterar_frequencia"):
+                    if acao_pendente == "transformar":
                         frequencia_exibida = rascunho_recorrencia["frequencia"]
                         termino_exibido = rascunho_recorrencia["data_termino"]
                     else:
@@ -3500,12 +3500,11 @@ def main(page: ft.Page):
                     variavel_exibida = (rascunho_recorrencia["variavel"] if acao_pendente == "transformar"
                                         else eh_variavel)
                     texto_recorrencia = frase_recorrencia(frequencia_exibida, termino_exibido, variavel_exibida)
-                    acoes_recorrencia = [
-                        item_recorrencia("Alterar frequência", lambda e: mostrar_dialogo_alterar_frequencia()),
+                    # Sino 6.12 (Etapa 10, R6): sem "Alterar frequência" -- a frequência não muda.
+                    # Uma transformação pendente só pode ser desfeita (e escolhida de novo).
+                    acoes_recorrencia = [] if acao_pendente == "transformar" else [
                         item_recorrencia("Encerrar recorrência", lambda e: mostrar_dialogo_encerrar_recorrencia()),
                     ]
-                    if variavel_exibida:  # Sino 6.12 (Etapa 8): R6 -- a variável não muda de frequência
-                        acoes_recorrencia = acoes_recorrencia[1:]
                 else:
                     texto_recorrencia = TEXTO_NAO_RECORRENTE
                     acoes_recorrencia = [
@@ -3514,6 +3513,10 @@ def main(page: ft.Page):
                     ]
                     if situacao_pagamento["atual"] and situacao_pagamento["atual"].get("valor_pendente"):
                         acoes_recorrencia = []  # Sino 6.12 (Etapa 8): a primeira ocorrência precisa ter valor
+                    if acao_pendente == "encerrar":
+                        # Sino 6.12 (Etapa 10, X1/X2): encerrar e transformar são duas ações
+                        # explícitas -- "Transformar" só depois que o encerramento estiver salvo.
+                        acoes_recorrencia = []
 
                 if acao_pendente is not None:
                     acoes_recorrencia.append(
@@ -4364,158 +4367,6 @@ def main(page: ft.Page):
                 )
                 page.show_dialog(dialogo)
 
-            def mostrar_dialogo_alterar_frequencia():
-                # RF27 (5.5) + D5: só para conta recorrente -- botão condicionado em
-                # mostrar_visualizacao(). Não pré-seleciona a frequência atual
-                # (database/db.py não expõe um getter para isso); o usuário escolhe
-                # explicitamente a nova frequência.
-                #
-                # D5 (decisão de produto): o término anterior nunca é preservado
-                # automaticamente -- o usuário escolhe de novo até quando a série
-                # (já na nova frequência) continua, mesmo padrão de "Transformar em
-                # recorrente". "Sem data de término" começa DESMARCADO aqui (só
-                # nesta tela nova; "Transformar em recorrente" não foi alterado).
-                nova_frequencia = {"valor": "mensal"}
-                linha_frequencia_alt = construir_seletor_frequencia(nova_frequencia)
-
-                def aviso_ocorrencias_com_pagamentos():
-                    # Pagamentos parciais: ocorrências seguintes com pagamentos são
-                    # preservadas como estão; avisa antes de confirmar.
-                    preservadas = database.ocorrencias_futuras_com_pagamentos(conta["id"])
-                    if not preservadas:
-                        return []
-                    itens = []
-                    for oc in preservadas:
-                        d = date.fromisoformat(oc["data_vencimento"])
-                        situacao_oc = ("paga" if oc["status"] == "pago" else
-                                       f"{formatar_moeda(pagamentos.reais(oc['pago']))} pagos" if oc["pago"]
-                                       else "pagamentos estornados")
-                        itens.append(f"{MESES_PT[d.month - 1].lower()}/{d.year} ({situacao_oc})")
-                    return [ft.Container(
-                        data="pp_aviso_frequencia",
-                        bgcolor=cores.aviso_fundo, border_radius=10, padding=12,
-                        content=ft.Text(
-                            "Estas ocorrências têm pagamentos registrados e serão mantidas como estão: "
-                            + ", ".join(itens) + ". A nova frequência não cria outra cobrança nesses meses.",
-                            size=13, color=cores.aviso_texto),
-                    )]
-
-                sem_termino_alt = ft.Switch(value=False, active_color=cores.acao_primaria)
-                ano_atual_alt = date.today().year
-                campo_mes_termino_alt = ft.Dropdown(
-                    label="Mês", color=cores.texto_principal, expand=True,
-                    value=str(date.today().month),
-                    options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
-                    **estilo_lista(),
-                )
-                campo_ano_termino_alt = ft.Dropdown(
-                    label="Ano", color=cores.texto_principal, expand=True,
-                    value=str(ano_atual_alt),
-                    options=[ft.dropdown.Option(key=str(a), text=str(a))
-                             for a in range(ano_atual_alt, ano_atual_alt + 11)],
-                    **estilo_lista(),
-                )
-                linha_termino_alt = ft.Row(
-                    spacing=8, controls=[campo_mes_termino_alt, campo_ano_termino_alt], visible=True,
-                )
-                erro_freq = ft.Text(value="", color=cores.texto_erro, size=12)
-
-                def ao_mudar_sem_termino_alt(e):
-                    linha_termino_alt.visible = not sem_termino_alt.value
-                    page.update()
-
-                sem_termino_alt.on_change = ao_mudar_sem_termino_alt
-
-                def confirmar_alteracao(e):
-                    data_termino = None
-                    if not sem_termino_alt.value:
-                        mes_termino = int(campo_mes_termino_alt.value)
-                        ano_termino = int(campo_ano_termino_alt.value)
-                        # Vencimento pendente (RF07, já existente): mesma razão
-                        # de confirmar_transformacao acima.
-                        data_venc_atual = vencimento_pendente["valor"]
-                        if (ano_termino, mes_termino) < (data_venc_atual.year, data_venc_atual.month):
-                            erro_freq.value = "O término não pode ser anterior à data desta ocorrência."
-                            page.update()
-                            return
-                        data_termino = f"{ano_termino:04d}-{mes_termino:02d}"
-
-                    # Recorrência como rascunho: nenhuma chamada a
-                    # database.alterar_frequencia_serie aqui -- só grava a
-                    # decisão pendente (D5 preservado: término sempre uma
-                    # escolha nova, nunca reaproveitado, exatamente como já
-                    # acontecia -- só o momento da chamada real muda).
-                    #
-                    # "Mudar de ideia": este botão também é o usado para
-                    # EDITAR uma transformação ainda pendente (prévia como se
-                    # já fosse ativa -- ver construir_conteudo_recorrencia).
-                    # Se já havia "transformar" pendente, a decisão final
-                    # continua sendo criar uma série nova -- só os parâmetros
-                    # mudam; nunca vira "alterar_frequencia" (que pressupõe
-                    # uma série já existente de verdade).
-                    if rascunho_recorrencia["acao"] != "transformar":
-                        rascunho_recorrencia["acao"] = "alterar_frequencia"
-                    rascunho_recorrencia["frequencia"] = nova_frequencia["valor"]
-                    rascunho_recorrencia["data_termino"] = data_termino
-
-                    # Normalização -- só faz sentido quando a decisão pendente
-                    # é ajustar uma série que JÁ existe de verdade
-                    # (info_serie): se a escolha final bate exatamente com a
-                    # configuração real e atual dela, não há alteração de
-                    # verdade -- evita deixar "Salvar" verde à toa e evita uma
-                    # operação estrutural desnecessária no Salvar. Nunca se
-                    # aplica a "transformar" (série nova, mesmo que os
-                    # parâmetros coincidam por acaso com uma série antiga que
-                    # está sendo substituída -- ver aplicar_recorrencia_pendente).
-                    if (
-                        rascunho_recorrencia["acao"] == "alterar_frequencia"
-                        and info_serie is not None
-                        and rascunho_recorrencia["frequencia"] == info_serie["frequencia"]
-                        and rascunho_recorrencia["data_termino"] == info_serie["data_termino"]
-                    ):
-                        rascunho_recorrencia["acao"] = None
-                        rascunho_recorrencia["frequencia"] = None
-                        rascunho_recorrencia["data_termino"] = None
-
-                    page.pop_dialog()
-                    atualizar_bloco_recorrencia()
-                    gatilho_estado_salvar["chamar"]()
-
-                dialogo = ft.AlertDialog(
-                    modal=True,
-                    title=ft.Text("Alterar frequência", color=cores.texto_principal),
-                    content=ft.Column(
-                        tight=True,
-                        spacing=12,
-                        controls=[
-                            ft.Text(
-                                "A partir desta ocorrência, a conta passa a se repetir com a "
-                                "nova frequência escolhida.",
-                                color=cores.texto_principal,
-                            ),
-                            linha_frequencia_alt,
-                            ft.Row(
-                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                                controls=[
-                                    ft.Text("Sem data de término", size=13, color=cores.texto_principal),
-                                    sem_termino_alt,
-                                ],
-                            ),
-                            linha_termino_alt,
-                            *aviso_ocorrencias_com_pagamentos(),
-                            erro_freq,
-                        ],
-                    ),
-                    actions=[
-                        ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
-                                      style=ft.ButtonStyle(color=cores.acao_primaria)),
-                        ft.Button(content="Confirmar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
-                                  on_click=confirmar_alteracao),
-                    ],
-                    bgcolor=cores.fundo_dialogo,
-                )
-                page.show_dialog(dialogo)
-
             def mostrar_dialogo_encerrar_recorrencia():
                 # RF29 revisado (5.8, D7): contextual à ocorrência sendo editada
                 # (conta["data_vencimento"]), nunca à data atual do sistema --
@@ -4962,19 +4813,16 @@ def main(page: ft.Page):
                             # criamos a nova -- as duas operações estruturais
                             # de sempre, só que em sequência, para entregar o
                             # resultado que o usuário via como UMA decisão só.
+                            # Sino 6.12 (Etapa 10, X1/X2): nunca encerrar e transformar na mesma
+                            # gravação (permitiria Mensal <-> Anual); série ativa não é transformada.
                             if serie_ativa:
-                                database.encerrar_recorrencia(conta["id"])
+                                return False
                             novo_serie_id, _ = database.transformar_em_recorrente(
                                 conta["id"], rascunho_recorrencia["frequencia"],
                                 data_termino=rascunho_recorrencia["data_termino"],
                                 variavel=rascunho_recorrencia["variavel"],  # Sino 6.12 (Etapa 8, R2)
                             )
                             conta["serie_id"] = novo_serie_id
-                        elif acao == "alterar_frequencia":
-                            database.alterar_frequencia_serie(
-                                conta["id"], rascunho_recorrencia["frequencia"],
-                                data_termino=rascunho_recorrencia["data_termino"],
-                            )
                         elif acao == "encerrar":
                             database.encerrar_recorrencia(conta["id"])
                     except ValueError:

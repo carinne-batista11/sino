@@ -730,24 +730,6 @@ class TestEtapa4Interface(TesteInterfacePagamentos):
         self.assertEqual(self.dialogo().title.value, "Alteração salva")
         self.assertEqual(pagamentos.obter_situacao(self.conta)["saldo_centavos"], 350_00)
 
-    def test_aviso_na_mudanca_de_frequencia(self):
-        serie_id, ids = db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal",
-                                                  data_termino="2027-02")
-        pagamentos.registrar_pagamento_parcial(ids[2], 40_00)
-        db.marcar_conta_como_paga(ids[3])
-        self.abrir_detalhes("Academia")
-        self.clicar(self.botao("Editar"))
-        self.clicar(self.acao_da_recorrencia("Alterar frequência"))
-        aviso = next(c for c in percorrer(self.dialogo().content)
-                     if isinstance(c, ft.Container) and c.data == "pp_aviso_frequencia")
-        self.assertEqual(aviso.content.value,
-                         "Estas ocorrências têm pagamentos registrados e serão mantidas como estão: "
-                         "novembro/2026 (R$ 40,00 pagos), dezembro/2026 (paga). A nova frequência não cria "
-                         "outra cobrança nesses meses.")
-        self.clicar(self.acao_do_dialogo("Cancelar"))
-        self.assertEqual(len(self.ocorrencias(serie_id)), 6)
-
-
 class TestRolagemDetalhesEditar(TesteInterfacePagamentos):
     """Correção da rolagem: Detalhes e Editar dividiam uma coluna rolável e a
     troca só do conteúdo mantinha a posição (Detalhes rolado até "Editar" abria
@@ -1859,18 +1841,20 @@ class TestEditarDuasColunas(TesteInterfacePagamentos):
         db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal", data_termino="2027-10")
         self.editar("Academia")
         self.assertEqual(self.campo("Recorrência").value, main.frase_recorrencia("mensal", "2027-10"))
-        self.assertEqual(self.itens(), ["Alterar frequência", "Encerrar recorrência"])
+        # Etapa 10 (ajuste deliberado): sem "Alterar frequência" (R6); com o encerramento pendente,
+        # "Transformar" só depois de salvar (X1/X2: duas ações explícitas).
+        self.assertEqual(self.itens(), ["Encerrar recorrência"])
         self.assertIsNone(self.campo("Recorrência").helper)
         self.clicar(self.acao_da_recorrencia("Encerrar recorrência"))
         self.assertEqual(self.dialogo().title.value, "Encerrar recorrência")
         self.clicar(self.acao_do_dialogo("Encerrar recorrência"))
         self.assertEqual(self.campo("Recorrência").value, main.TEXTO_NAO_RECORRENTE)   # prévia do rascunho
         self.assertEqual(self.campo("Recorrência").helper, "Alteração pendente: será aplicada ao salvar.")
-        self.assertEqual(self.itens(), ["Transformar em recorrente", "Desfazer esta alteração"])
+        self.assertEqual(self.itens(), ["Desfazer esta alteração"])
         self.assertFalse(self.botao("Salvar alterações").disabled)
         self.assertEqual(self.consultar("SELECT ativa FROM series_recorrencia"), [(1,)])  # nada gravado
         self.clicar(self.acao_da_recorrencia("Desfazer esta alteração"))
-        self.assertEqual(self.itens(), ["Alterar frequência", "Encerrar recorrência"])
+        self.assertEqual(self.itens(), ["Encerrar recorrência"])
         self.assertTrue(self.botao("Salvar alterações").disabled)
 
     # --------------------------------------------------------------- teclado
@@ -2117,11 +2101,3 @@ class TestEtapa5EditarIntegrado(TesteInterfacePagamentos):
         self.assertEqual(self.dialogo().title.value, "Alteração salva")
         self.assertEqual(self.consultar("SELECT data_vencimento FROM contas WHERE id = ?", (ids[2],)),
                          [("2026-11-10",)])                                           # H2: novembro fica
-
-    def test_menu_da_recorrencia_leva_ao_aviso_de_pagamentos_na_frequencia(self):
-        _, ids = db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal")
-        pagamentos.registrar_pagamento_parcial(ids[2], 40_00, "2026-09-05")
-        self.editar("Academia")
-        self.clicar(self.acao_da_recorrencia("Alterar frequência"))
-        self.assertTrue(any(isinstance(c, ft.Container) and c.data == "pp_aviso_frequencia"
-                            for c in percorrer(self.dialogo().content)))

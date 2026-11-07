@@ -219,9 +219,9 @@ class TestTransformacao(BaseVariavel):
     def test_r6_variavel_nao_muda_de_frequencia(self):
         _, ids = db.criar_serie_recorrente(self.usuario_id, "Luz", 150.0, "2026-09-20", "mensal", variavel=True)
         antes = self.estado()
-        with self.assertRaises(db.ValorVariavelRecusadoError) as recusa:
+        with self.assertRaises(db.EstruturaRecusadaError) as recusa:     # Etapa 10: recusa geral da R6
             db.alterar_frequencia_serie(ids[2], "anual")
-        self.assertEqual(str(recusa.exception), db.MENSAGEM_VARIAVEL_NAO_MUDA_FREQUENCIA)
+        self.assertEqual(str(recusa.exception), db.MENSAGEM_FREQUENCIA_NAO_MUDA)
         self.assertEqual(self.estado(), antes)
 
     def test_pendente_avulsa_nao_e_transformada_nem_parcelada(self):

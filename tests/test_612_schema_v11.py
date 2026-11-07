@@ -378,7 +378,7 @@ class TestExclusoesLimpamOsComplementos(BaseV11):
         # Ajuste deliberado na Etapa 8: desde a Etapa 8 uma série variável não muda de frequência
         # (R6; proposta técnica 9) -- a recusa acontece antes de gravar, sem órfãos.
         antes = {t: self.consultar(f"SELECT * FROM {t} ORDER BY 1") for t in V11 + ("contas", "series_recorrencia")}
-        with self.assertRaises(db.ValorVariavelRecusadoError):
+        with self.assertRaises(db.EstruturaRecusadaError):           # Etapa 10: recusa geral da R6
             db.alterar_frequencia_serie(self.mensais[0], "anual", data_termino="2028-08")
         self.assertEqual({t: self.consultar(f"SELECT * FROM {t} ORDER BY 1") for t in antes}, antes)
         self.assertEqual(self.consultar("PRAGMA foreign_key_check"), [])

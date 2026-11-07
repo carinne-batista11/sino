@@ -117,7 +117,7 @@ class TestJaneiroMovidoParaDepoisDeFevereiro(BasePosicao):
         self.assertEqual(self.linha(self.jan), self.janeiro_antes)
 
     def test_alterar_frequencia_a_partir_de_fevereiro_nao_trata_janeiro_como_futura(self):
-        resultado = db.alterar_frequencia_serie(self.fev, "mensal", data_termino="2027-03")
+        resultado = db._alterar_frequencia_serie_611(self.fev, "mensal", data_termino="2027-03")
         self.assertNotIn(self.jan, resultado["ocorrencias_preservadas"])
         self.assertEqual(self.linha(self.jan), self.janeiro_antes)
         self.assert_invariantes(self.serie_id)
@@ -195,7 +195,7 @@ class TestReancoragemEmOcorrenciaMovidaParaAntesDoHistorico(BasePosicao):
         self.anteriores = [self.linha(c) for c in self.ids[:3]]
 
     def test_mensal_nao_gera_vagas_por_cima_do_historico(self):
-        db.alterar_frequencia_serie(self.abr, "mensal")
+        db._alterar_frequencia_serie_611(self.abr, "mensal")
 
         self.assertEqual([self.linha(c) for c in self.ids[:3]], self.anteriores)
         self.assertEqual(self.linha(self.abr)[:4], (self.abr, 4, "2027-04-10", "2026-11-05"))
@@ -221,7 +221,7 @@ class TestReancoragemEmOcorrenciaMovidaParaAntesDoHistorico(BasePosicao):
         self.assertEqual([c for c, _, _, _ in self.posicoes(self.serie_id)], self.ids[:4])
 
     def test_anual_continua_depois_da_vaga(self):
-        db.alterar_frequencia_serie(self.abr, "anual")
+        db._alterar_frequencia_serie_611(self.abr, "anual")
         self.assertEqual([self.linha(c) for c in self.ids[:3]], self.anteriores)
         self.assertEqual([p for _, _, p, _ in self.posicoes(self.serie_id)[4:]], ["2027-11-05"])
         db.gerar_ocorrencias_sob_demanda(self.serie_id, "2030-12")
@@ -233,7 +233,7 @@ class TestReancoragemEmOcorrenciaMovidaParaAntesDoHistorico(BasePosicao):
         serie_id, ids = db.criar_serie_recorrente(
             self.usuario_id, "Plano", 50.0, "2026-01-10", "mensal", data_termino="2026-12",
         )
-        db.alterar_frequencia_serie(ids[3], "anual", data_termino="2028-12")
+        db._alterar_frequencia_serie_611(ids[3], "anual", data_termino="2028-12")
         self.assertEqual([p for _, _, p, _ in self.posicoes(serie_id)],
                          ["2026-01-10", "2026-02-10", "2026-03-10", "2026-04-10", "2027-04-10", "2028-04-10"])
 
@@ -246,7 +246,7 @@ class TestPreservadasNasMudancasDeFrequencia(BasePosicao):
         agosto = ids[7]
         db.editar_conta_ocorrencia(agosto, valor=999.0)
 
-        db.alterar_frequencia_serie(ids[1], "mensal", data_termino="2027-12")
+        db._alterar_frequencia_serie_611(ids[1], "mensal", data_termino="2027-12")
 
         self.assert_sem_vaga_duplicada(serie_id)
         self.assertEqual(len(self.posicoes(serie_id)), 12)
@@ -260,7 +260,7 @@ class TestPreservadasNasMudancasDeFrequencia(BasePosicao):
         fev_2028 = ids[1]
         db.editar_conta_ocorrencia(fev_2028, valor=777.0)
 
-        db.alterar_frequencia_serie(ids[0], "mensal", data_termino="2028-04")
+        db._alterar_frequencia_serie_611(ids[0], "mensal", data_termino="2028-04")
 
         fevereiros = [c for c, _, p, _ in self.posicoes(serie_id) if p.startswith("2028-02")]
         self.assertEqual(fevereiros, [fev_2028])
@@ -274,7 +274,7 @@ class TestPreservadasNasMudancasDeFrequencia(BasePosicao):
         db.editar_conta_ocorrencia(agosto, valor=999.0)
         db.editar_conta_ocorrencia(outubro, data_vencimento="2027-11-20")
 
-        db.alterar_frequencia_serie(ids[1], "anual")
+        db._alterar_frequencia_serie_611(ids[1], "anual")
         db.gerar_ocorrencias_sob_demanda(serie_id, "2030-12")
 
         self.assertEqual(self.posicoes(serie_id), [
@@ -296,7 +296,7 @@ class TestPreservadasNasMudancasDeFrequencia(BasePosicao):
         db.editar_conta_ocorrencia(fev_2028, valor=777.0)
         db.editar_conta_ocorrencia(fev_2029, data_vencimento="2029-03-20")
 
-        db.alterar_frequencia_serie(ids[0], "mensal", data_termino="2029-06")
+        db._alterar_frequencia_serie_611(ids[0], "mensal", data_termino="2029-06")
 
         competencias = self.competencias_previstas(serie_id)
         self.assertEqual((competencias["2028-02"], competencias["2029-02"]), (1, 1))
@@ -314,7 +314,7 @@ class TestPreservadasNasMudancasDeFrequencia(BasePosicao):
         fev_2030 = ids[3]
         db.editar_conta_ocorrencia(fev_2030, valor=888.0)
 
-        db.alterar_frequencia_serie(ids[0], "mensal", data_termino="2028-06")
+        db._alterar_frequencia_serie_611(ids[0], "mensal", data_termino="2028-06")
 
         ultimas = self.posicoes(serie_id)[-2:]
         self.assertEqual([p for _, _, p, _ in ultimas], ["2028-06-10", "2030-02-10"])
@@ -329,7 +329,7 @@ class TestPreservadasNasMudancasDeFrequencia(BasePosicao):
         dezembro_2029 = self.id_por_data(serie_id, "2029-12-10")
         db.editar_conta_ocorrencia(dezembro_2029, valor=51.0)
 
-        db.alterar_frequencia_serie(ids[1], "mensal")
+        db._alterar_frequencia_serie_611(ids[1], "mensal")
         self.assertEqual(self.serie(serie_id)["horizonte_gerado_ate"], "2028-02-10")
 
         db.gerar_ocorrencias_sob_demanda(serie_id, "2029-12")
@@ -349,7 +349,7 @@ class TestReorganizacaoDeDatasComPreservadasForaDaGrade(BasePosicao):
         )
         agosto = ids[7]
         db.editar_conta_ocorrencia(agosto, valor=999.0)
-        db.alterar_frequencia_serie(ids[1], "anual", data_termino="2029-12")
+        db._alterar_frequencia_serie_611(ids[1], "anual", data_termino="2029-12")
 
         # antes da Etapa 2b: False ("ultrapassaria o término")
         self.assertTrue(db.editar_conta_serie(ids[1], data_vencimento="2027-02-15"))
@@ -369,7 +369,7 @@ class TestReorganizacaoDeDatasComPreservadasForaDaGrade(BasePosicao):
         db.gerar_ocorrencias_sob_demanda(serie_id, "2028-12")
         agosto_2028 = self.id_por_data(serie_id, "2028-08-10")
         db.editar_conta_ocorrencia(agosto_2028, valor=999.0)
-        db.alterar_frequencia_serie(ids[1], "anual")  # grade: fev/2028; agosto/2028 fica fora
+        db._alterar_frequencia_serie_611(ids[1], "anual")  # grade: fev/2028; agosto/2028 fica fora
 
         self.assertTrue(db.editar_conta_serie(ids[1], data_vencimento="2027-08-15"))
 
@@ -395,7 +395,7 @@ class TestTransformacaoERollback(BasePosicao):
 
         with mock.patch.object(db, "_renumerar_segmento", side_effect=RuntimeError("falha simulada")):
             with self.assertRaisesRegex(RuntimeError, "falha simulada"):
-                db.alterar_frequencia_serie(ids[1], "anual")
+                db._alterar_frequencia_serie_611(ids[1], "anual")
 
         self.assertEqual((self.posicoes(serie_id), self.serie(serie_id),
                           self.extra_serie(serie_id, "posicao_ancora")), antes)
@@ -405,7 +405,7 @@ class TestTransformacaoERollback(BasePosicao):
         serie_id, ids = db.criar_serie_recorrente(self.usuario_id, "Clube", 100.0, "2027-01-10", "mensal")
         db.gerar_ocorrencias_sob_demanda(serie_id, "2029-06")
         db.editar_conta_ocorrencia(self.id_por_data(serie_id, "2029-06-10"), valor=1.0)
-        db.alterar_frequencia_serie(ids[0], "mensal")  # preservada distante no fim do segmento
+        db._alterar_frequencia_serie_611(ids[0], "mensal")  # preservada distante no fim do segmento
         db.gerar_ocorrencias_sob_demanda(serie_id, "2029-12")  # novas vagas antes e depois dela
         self.assert_invariantes(serie_id)
         self.assert_sem_vaga_duplicada(serie_id)
@@ -419,7 +419,7 @@ class TestHorizonteNaExclusao(BasePosicao):
         serie_id, ids = db.criar_serie_recorrente(self.usuario_id, "Luz", 50.0, "2027-01-10", "mensal")
         db.gerar_ocorrencias_sob_demanda(serie_id, "2029-12")
         db.editar_conta_ocorrencia(self.id_por_data(serie_id, "2029-12-10"), valor=51.0)
-        db.alterar_frequencia_serie(ids[1], "mensal")  # grade até 2028-02; dez/2029 preservada
+        db._alterar_frequencia_serie_611(ids[1], "mensal")  # grade até 2028-02; dez/2029 preservada
 
         db.excluir_conta(self.id_por_data(serie_id, "2027-05-10"))
 
@@ -435,7 +435,7 @@ class TestHorizonteNaExclusao(BasePosicao):
         db.gerar_ocorrencias_sob_demanda(serie_id, "2029-12")
         distante = self.id_por_data(serie_id, "2029-12-10")
         db.editar_conta_ocorrencia(distante, valor=51.0)
-        db.alterar_frequencia_serie(ids[1], "mensal")
+        db._alterar_frequencia_serie_611(ids[1], "mensal")
 
         db.excluir_conta(distante)
 
@@ -449,7 +449,7 @@ class TestReorganizacaoComBlocoAntigo(BasePosicao):
 
     def test_mudanca_de_data_antes_da_ancora_resequencia_as_nao_editadas(self):
         serie_id, ids = db.criar_serie_recorrente(self.usuario_id, "Plano", 50.0, "2027-01-10", "mensal")
-        db.alterar_frequencia_serie(ids[5], "anual")  # âncora em jun/2027
+        db._alterar_frequencia_serie_611(ids[5], "anual")  # âncora em jun/2027
         jan, fev, mar = (self.linha(c) for c in ids[:3])
 
         self.assertTrue(db.editar_conta_serie(ids[2], data_vencimento="2027-03-15"))
@@ -468,7 +468,7 @@ class TestReorganizacaoComBlocoAntigo(BasePosicao):
     def test_editada_do_bloco_antigo_fora_da_grade_continua_preservada(self):
         serie_id, ids = db.criar_serie_recorrente(self.usuario_id, "Plano", 50.0, "2027-01-10", "mensal")
         db.editar_conta_ocorrencia(ids[3], valor=99.0)  # abril editado
-        db.alterar_frequencia_serie(ids[5], "anual")
+        db._alterar_frequencia_serie_611(ids[5], "anual")
 
         self.assertTrue(db.editar_conta_serie(ids[2], data_vencimento="2027-03-15"))
 

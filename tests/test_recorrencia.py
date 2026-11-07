@@ -232,7 +232,7 @@ class TestAlterarFrequencia(TesteComBancoTemporario):
         db.editar_conta_ocorrencia(self.id_junho, valor=77.0)
 
     def test_mensal_para_anual_a_partir_da_selecionada(self):
-        resultado = db.alterar_frequencia_serie(self.id_abril, "anual", data_termino="2028-12")
+        resultado = db._alterar_frequencia_serie_611(self.id_abril, "anual", data_termino="2028-12")
 
         self.assertEqual(resultado["ocorrencias_preservadas"], [self.id_junho])
         self.assertEqual(
@@ -252,7 +252,7 @@ class TestAlterarFrequencia(TesteComBancoTemporario):
         self.assertEqual(serie["horizonte_gerado_ate"], "2028-04-10")
 
     def test_sem_termino_torna_serie_aberta(self):
-        db.alterar_frequencia_serie(self.id_abril, "anual")
+        db._alterar_frequencia_serie_611(self.id_abril, "anual")
         serie = self.serie(self.serie_id)
         self.assertIsNone(serie["data_termino"])
         self.assertIn("2027-04-10", self.datas(self.serie_id))
@@ -260,13 +260,13 @@ class TestAlterarFrequencia(TesteComBancoTemporario):
     def test_rejeicoes(self):
         conta_avulsa = db.criar_conta_unica(self.usuario_id, "X", 1.0, "2026-05-05")
         with self.assertRaises(ValueError):
-            db.alterar_frequencia_serie(conta_avulsa, "anual")
+            db._alterar_frequencia_serie_611(conta_avulsa, "anual")
         with self.assertRaises(ValueError):
-            db.alterar_frequencia_serie(self.id_abril, "semanal")
+            db._alterar_frequencia_serie_611(self.id_abril, "semanal")
         db.encerrar_recorrencia(self.id_abril)
         datas_antes = self.datas(self.serie_id)
         with self.assertRaises(ValueError):
-            db.alterar_frequencia_serie(self.id_abril, "anual")
+            db._alterar_frequencia_serie_611(self.id_abril, "anual")
         self.assertEqual(self.datas(self.serie_id), datas_antes)
 
 

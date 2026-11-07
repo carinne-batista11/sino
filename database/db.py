@@ -4256,11 +4256,8 @@ def _transformar_em_recorrente_no_cursor(cursor, conta_id, frequencia, data_term
         cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id_atual,))
         linha_serie_atual = cursor.fetchone()
         serie_atual_ativa = linha_serie_atual is not None and linha_serie_atual[0] == 1
-        if serie_atual_ativa:
-            raise ValueError(
-                f"conta id={conta_id} já pertence a uma série ativa (serie_id={serie_id_atual}) -- "
-                "RF28 só se aplica a conta avulsa ou com recorrência encerrada"
-            )
+        if serie_atual_ativa:  # X1 (Sino 6.12, Etapa 10: mensagem para a tela)
+            raise EstruturaRecusadaError(MENSAGEM_TRANSFORMAR_SO_UNICA)
     if _valor_pendente_no_cursor(cursor, conta_id):  # Sino 6.12 (Etapa 8)
         raise ValorVariavelRecusadoError(MENSAGEM_TRANSFORMAR_COM_VALOR_PENDENTE)
 
@@ -5942,8 +5939,40 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     return True
 
 
+# ------------------------------------------------------------------
+#  Sino 6.12 (Etapa 10): restrições estruturais (R6, X1, X2).
+#
+#  R6: a frequência de uma recorrência não muda (Mensal <-> Anual), para fixas e
+#  variáveis -- `alterar_frequencia_serie` recusa sempre, antes de qualquer
+#  leitura ou gravação. O caminho aceito é o da X2, em duas ações explícitas:
+#  "Encerrar recorrência" e, depois, "Transformar" uma ocorrência que ficou
+#  avulsa. O corpo da 6.11 continua em `_alterar_frequencia_serie_611`, SEM
+#  nenhum caminho do app: os testes o usam só para montar séries que mudaram de
+#  frequência na 6.11 (dados legados que podem existir em bancos migrados).
+#  X1: "Transformar" só em conta Única ou em ocorrência de série encerrada.
+# ------------------------------------------------------------------
+MENSAGEM_FREQUENCIA_NAO_MUDA = ("A frequência de uma recorrência não pode ser alterada. Para usar outra "
+                                "frequência, encerre esta recorrência e depois transforme uma ocorrência que "
+                                "ficou avulsa.")
+MENSAGEM_TRANSFORMAR_SO_UNICA = ("Só uma conta Única ou uma ocorrência de recorrência encerrada pode ser "
+                                 "transformada.")
+
+
+class EstruturaRecusadaError(ValueError):
+    """Sino 6.12 (Etapa 10): mudança estrutural não permitida (nada é gravado)."""
+
+
 def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
+    """R6 (Sino 6.12, Etapa 10): retirada. Sempre recusada (`EstruturaRecusadaError`),
+    sem ler nem gravar nada -- fixas, variáveis e parceladas mantêm a frequência."""
+    raise EstruturaRecusadaError(MENSAGEM_FREQUENCIA_NAO_MUDA)
+
+
+def _alterar_frequencia_serie_611(conta_id, nova_frequencia, data_termino=None):
     """
+    Sino 6.12 (Etapa 10): corpo da 6.11, sem caminho no app (só para montar dados
+    legados nos testes). Texto original abaixo.
+
     RF27 (5.5): altera a frequência de uma série a partir da ocorrência
     selecionada, que passa a ser a nova âncora.
 

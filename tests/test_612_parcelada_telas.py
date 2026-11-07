@@ -196,7 +196,7 @@ class TestDetalhesEEditar(BaseTelas):
         self.abrir_detalhes("Aluguel")
         self.clicar(next(c for c in self.controles(ft.Button) if c.content == "Editar"))
         menu = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Alterar frequência", "Encerrar recorrência"])
+        self.assertEqual([i.content for i in menu.items], ["Encerrar recorrência"])     # Etapa 10: R6
 
 
 if __name__ == "__main__":

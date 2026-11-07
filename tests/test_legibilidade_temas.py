@@ -236,7 +236,6 @@ class TesteDeLegibilidade(TesteDeSessao):
             if nome == "Avulsa":
                 self.abrir_e_registrar_dialogo(pagina, "Transformar em recorrente", "Editar/Transformar", paleta)
             if nome == "Internet":
-                self.abrir_e_registrar_dialogo(pagina, "Alterar frequência", "Editar/Alterar frequência", paleta)
                 self.abrir_e_registrar_dialogo(pagina, "Encerrar recorrência", "Editar/Encerrar", paleta)
             valor = next(c for c in self.todos(pagina) if isinstance(c, ft.TextField) and c.label == "Valor")
             valor.value = "123,00"
