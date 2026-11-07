@@ -702,6 +702,25 @@ def texto_parcela(parcela):
     return f"Parcela {posicao} de {total}" if total is not None else f"Parcela {posicao}"
 
 
+def texto_ocorrencia(posicao, total):
+    """Sino 6.12 (D1): recorrência mensal/anual -> "Ocorrência X de Y"; sem término, "Ocorrência X"."""
+    return f"Ocorrência {posicao} de {total}" if total is not None else f"Ocorrência {posicao}"
+
+
+def texto_identificacao(identificacao):
+    """Sino 6.12 (D1): "Parcela X de Y" (parcelamento) ou "Ocorrência X de Y" (recorrência),
+    a partir de `database.obter_identificacao`."""
+    if identificacao["tipo"] == "parcela":
+        return texto_parcela((identificacao["posicao"], identificacao["total"]))
+    return texto_ocorrencia(identificacao["posicao"], identificacao["total"])
+
+
+def rotulo_identificacao(identificacao):
+    """Rótulo do campo nos Detalhes: "Ocorrência" numa recorrência; "Parcela" num
+    parcelamento e numa conta Única (que mostra "Não há parcelas")."""
+    return "Ocorrência" if identificacao is not None and identificacao["tipo"] == "ocorrencia" else "Parcela"
+
+
 MESES_ABREVIADOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
 
@@ -3670,14 +3689,17 @@ def main(page: ft.Page):
                 # Etapa 10 (8.4): sempre os seis campos, nesta ordem; sem
                 # informação, o campo continua com o texto de ausência.
                 parcela_texto = None
+                identificacao_serie = None
                 if serie_ativa:
-                    parcela = database.obter_parcela(conta["serie_id"], conta["id"])
-                    if parcela:
-                        parcela_texto = texto_parcela(parcela)
+                    # Sino 6.12 (D1): "Parcela X de Y" só em parcelamento; recorrência = "Ocorrência X de Y".
+                    identificacao_serie = database.obter_identificacao(conta["serie_id"], conta["id"])
+                    if identificacao_serie:
+                        parcela_texto = texto_identificacao(identificacao_serie)
                 celulas += [
                     celula(ft.Icons.FOLDER_OUTLINED, "Categoria", categoria["nome"],
                            cor_valor=cores.texto_sem_categoria if categoria["sem_categoria"] else cores.texto_principal),
-                    celula(ft.Icons.LAYERS_OUTLINED, "Parcela", parcela_texto or TEXTO_SEM_PARCELAS,
+                    celula(ft.Icons.LAYERS_OUTLINED, rotulo_identificacao(identificacao_serie),
+                           parcela_texto or TEXTO_SEM_PARCELAS,
                            cor_valor=cores.texto_principal if parcela_texto else cores.texto_secundario),
                     celula(ft.Icons.REPEAT, "Recorrência",
                            texto_recorrencia_detalhes(serie_ativa, info_serie), largura_total=True),
@@ -5026,15 +5048,10 @@ def main(page: ft.Page):
             if conta.get("pago_parcialmente"):  # Pagamentos parciais: informação complementar
                 partes_subtitulo.append("Pago parcialmente")
             if conta.get("serie_id") is not None:
-                parcela = database.obter_parcela(conta["serie_id"], conta["id"])
-                if parcela:
-                    posicao, total_ocorrencias = parcela
-                    texto_parcela = (
-                        f"Parcela {posicao} de {total_ocorrencias}"
-                        if total_ocorrencias is not None
-                        else f"Parcela {posicao}"
-                    )
-                    partes_subtitulo.append(texto_parcela)
+                # Sino 6.12 (D1): "Parcela X de Y" só em parcelamento; recorrência = "Ocorrência X de Y".
+                identificacao_serie = database.obter_identificacao(conta["serie_id"], conta["id"])
+                if identificacao_serie:
+                    partes_subtitulo.append(texto_identificacao(identificacao_serie))
             subtitulo = " · ".join(partes_subtitulo)
 
             # v7.0 5.52 (M11): nome sempre inteiro (sem reticências nem limite

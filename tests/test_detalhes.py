@@ -244,18 +244,20 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.assertEqual(larguras, [{"xs": 12, "lg": 6}] * 6 + [{"xs": 12}] * 2)
 
     def test_serie_ativa_mostra_parcela(self):
+        # Sino 6.12 (D1): recorrência é identificada como "Ocorrência X de Y", nunca como parcela.
         db.criar_serie_recorrente(self.usuario_id, "Curso", 200.0, "2026-09-20", "mensal", data_termino="2026-12")
         db.criar_serie_recorrente(self.usuario_id, "Internet", 100.0, "2026-09-22", "mensal")
         self.entrar()
         self.abrir_detalhes("Curso")
         campos = dict(self.campos())
-        self.assertEqual(campos["Parcela"], "Parcela 1 de 4")
+        self.assertNotIn("Parcela", campos)
+        self.assertEqual(campos["Ocorrência"], "Ocorrência 1 de 4")
         self.assertEqual(campos["Recorrência"], "Esta conta se repete mensalmente até dezembro de 2026.")
         self.clicar(self.botao("Voltar"))
         # Sem término: posição sem total (5.19) e "sem prazo definido", nunca "Não há parcelas".
         self.abrir_detalhes("Internet")
         campos = dict(self.campos())
-        self.assertEqual(campos["Parcela"], "Parcela 1")
+        self.assertEqual(campos["Ocorrência"], "Ocorrência 1")
         self.assertEqual(campos["Recorrência"], "Esta conta se repete mensalmente sem prazo definido para término.")
 
     # ---------------------------------------------------------------- rótulos (Etapa 10)

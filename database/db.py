@@ -4552,6 +4552,38 @@ def obter_parcela(serie_id, conta_id):
     return posicao, total
 
 
+def serie_parcelada(serie_id):
+    """Sino 6.12 (D1): a série é um parcelamento (linha em `parcelamentos`)? Só
+    leitura; False para série inexistente, `None` ou banco sem a tabela (anterior à v11)."""
+    if serie_id is None:
+        return False
+    conexao = conectar()
+    try:
+        cursor = conexao.cursor()
+        if not _tabela_existe(cursor, TABELA_PARCELAMENTOS):
+            return False
+        return cursor.execute(f"SELECT 1 FROM {TABELA_PARCELAMENTOS} WHERE serie_id = ?",
+                              (serie_id,)).fetchone() is not None
+    finally:
+        conexao.close()
+
+
+def obter_identificacao(serie_id, conta_id):
+    """
+    Sino 6.12 (D1): como identificar a ocorrência `conta_id` da série -- "Parcela X
+    de Y" num parcelamento, "Ocorrência X de Y" (ou "Ocorrência X", sem término)
+    numa recorrência mensal ou anual. Posição e total são os de `obter_parcela`
+    (posição lógica; total só com término). Só leitura. Retorna
+    {"tipo": "parcela" | "ocorrencia", "posicao": X, "total": Y ou None}, ou
+    `None` se a conta não pertence à série (ou `serie_id` é None).
+    """
+    posicao_total = obter_parcela(serie_id, conta_id)
+    if posicao_total is None:
+        return None
+    posicao, total = posicao_total
+    return {"tipo": "parcela" if serie_parcelada(serie_id) else "ocorrencia", "posicao": posicao, "total": total}
+
+
 def obter_info_serie(serie_id):
     """
     Dados de uma série para exibição (frase contextual de recorrência,
@@ -4826,7 +4858,7 @@ def _editar_conta_ocorrencia_no_cursor(cursor, conta_id, nome=None, valor=None, 
 
 
 MENSAGEM_VENCIMENTO_ANTES_DA_PARCELA_ANTERIOR = (
-    "Para alterar esta conta e as próximas, escolha um mês posterior ao da parcela anterior."
+    "Para alterar esta conta e as próximas, escolha um mês posterior ao da ocorrência anterior."
 )
 
 

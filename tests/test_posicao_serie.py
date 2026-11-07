@@ -494,7 +494,7 @@ class TestD5MesPosteriorAoDaParcelaAnterior(BasePosicao):
         with self.assertRaises(db.VencimentoAntesDaParcelaAnteriorError) as contexto:
             db.editar_conta_serie(conta_id, **campos)
         self.assertEqual(str(contexto.exception),
-                         "Para alterar esta conta e as próximas, escolha um mês posterior ao da parcela anterior.")
+                         "Para alterar esta conta e as próximas, escolha um mês posterior ao da ocorrência anterior.")
         self.assertEqual(self.estado(), antes)
 
     def test_mes_igual_ao_da_parcela_anterior_e_recusado(self):
