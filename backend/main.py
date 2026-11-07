@@ -696,6 +696,25 @@ def texto_recorrencia_detalhes(serie_ativa, info_serie):
     return TEXTO_NAO_RECORRENTE
 
 
+def frase_parcelamento(total, data_termino):
+    """Sino 6.12 (Etapa 6): frase de "Recorrência" de uma conta parcelada (Detalhes e Editar)."""
+    ano, mes = map(int, data_termino.split("-"))
+    return f"Esta conta é parcelada em {total} parcelas mensais, até {MESES_PT[mes - 1].lower()} de {ano}."
+
+
+def linhas_da_previa_de_parcelas(previa):
+    """Sino 6.12 (Etapa 6): uma linha por parcela da prévia (`database.previa_parcelamento`)."""
+    linhas = []
+    for parcela in previa:
+        ano, mes, dia = parcela["vencimento"].split("-")
+        linhas.append(f"Parcela {parcela['posicao']} de {parcela['quantidade']} · {dia}/{mes}/{ano} · "
+                      f"{formatar_moeda(parcela['valor'])}")
+    return linhas
+
+
+OPCOES_DE_PARCELAS = [str(n) for n in range(database.MINIMO_PARCELAS, database.MAXIMO_PARCELAS + 1)]
+
+
 def texto_parcela(parcela):
     """(posição, total) -> "Parcela X de Y"; total None -> "Parcela X"."""
     posicao, total = parcela
@@ -3293,6 +3312,10 @@ def main(page: ft.Page):
                 database.obter_info_serie(conta["serie_id"])
                 if conta.get("serie_id") is not None else None
             )
+            # Sino 6.12 (Etapa 6): conta parcelada -- frase própria e sem as ações de recorrência.
+            identificacao_parcelada = (database.obter_identificacao(conta["serie_id"], conta["id"])
+                                       if serie_ativa else None)
+            eh_parcelada = bool(identificacao_parcelada and identificacao_parcelada["tipo"] == "parcela")
 
             # Sino 6.10 (visual de Editar, duas colunas): todos os campos com o
             # mesmo raio, bordas e fonte; ícone de identificação à esquerda (só
@@ -3375,6 +3398,14 @@ def main(page: ft.Page):
                 gatilho_estado_salvar["chamar"]()
 
             def construir_conteudo_recorrencia():
+                if eh_parcelada:
+                    # Sino 6.12: parcelada não muda de tipo -- sem "Alterar frequência" nem "Encerrar".
+                    return ft.TextField(
+                        label="Recorrência", data="pp_recorrencia_edicao", read_only=True, can_request_focus=False,
+                        value=frase_parcelamento(identificacao_parcelada["total"], info_serie["data_termino"]),
+                        multiline=True, min_lines=1, max_lines=3, color=cores.texto_principal,
+                        **estilo_edicao(ft.Icons.REPEAT),
+                    )
                 acao_pendente = rascunho_recorrencia["acao"]
                 # Enquanto há uma decisão pendente, o bloco mostra a PRÉVIA
                 # dessa decisão (nunca o estado real ainda salvo) -- inclusive
@@ -3432,6 +3463,81 @@ def main(page: ft.Page):
                     ),
                     **estilo_edicao(ft.Icons.REPEAT),
                 )
+
+            def mostrar_dialogo_parcelar():
+                """Sino 6.12 (Etapa 6): Única -> Parcelada. R1: com qualquer registro de
+                pagamento, só o motivo; senão, quantidade, prévia e confirmação (uma transação)."""
+                def fechar(e=None):
+                    page.pop_dialog()
+                    page.update()
+
+                try:
+                    valor, vencimento = database.conferir_unica_para_parcelar(conta["id"])
+                except database.ParcelamentoRecusadoError as recusa:
+                    page.show_dialog(ft.AlertDialog(
+                        modal=True, bgcolor=cores.fundo_dialogo, data="dialogo_parcelar_recusado",
+                        title=ft.Text("Não é possível parcelar", color=cores.texto_principal),
+                        content=ft.Text(str(recusa), color=cores.texto_principal),
+                        actions=[ft.Button(content="Entendi", bgcolor=cores.acao_primaria,
+                                           color=cores.texto_sobre_acao, on_click=fechar)],
+                    ))
+                    page.update()
+                    return
+
+                escolha = {"quantidade": OPCOES_DE_PARCELAS[0]}
+                lista_previa = ft.Column(spacing=6, height=300, scroll=ft.ScrollMode.AUTO)
+                erro_parcelar = ft.Text(value="", color=cores.texto_erro, size=12)
+
+                def atualizar_previa():
+                    try:
+                        previa = database.previa_parcelamento(valor, int(escolha["quantidade"]), vencimento)
+                        lista_previa.controls = [ft.Text(linha, size=14, color=cores.texto_principal)
+                                                 for linha in linhas_da_previa_de_parcelas(previa)]
+                        lista_previa.height = min(300, 26 * len(previa))
+                        erro_parcelar.value = ""
+                    except database.ParcelamentoRecusadoError as recusa:
+                        lista_previa.controls = []
+                        erro_parcelar.value = str(recusa)
+
+                def ao_mudar_quantidade(e):
+                    escolha["quantidade"] = campo_quantidade.value
+                    atualizar_previa()
+                    page.update()
+
+                campo_quantidade = ft.Dropdown(
+                    label="Quantidade de parcelas", color=cores.texto_principal, value=escolha["quantidade"],
+                    options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS],
+                    data="quantidade_parcelas_parcelar", **estilo_lista(),
+                )
+                campo_quantidade.on_select = ao_mudar_quantidade
+
+                def confirmar(e):
+                    try:
+                        database.transformar_unica_em_parcelada(conta["id"], int(escolha["quantidade"]))
+                    except database.ParcelamentoRecusadoError as recusa:
+                        erro_parcelar.value = str(recusa)
+                        page.update()
+                        return
+                    page.pop_dialog()
+                    mostrar_tela_principal(tuple(mes_atual))
+
+                atualizar_previa()
+                page.show_dialog(ft.AlertDialog(
+                    modal=True, bgcolor=cores.fundo_dialogo, data="dialogo_parcelar",
+                    title=ft.Text("Parcelar esta conta", color=cores.texto_principal),
+                    content=ft.Column(tight=True, spacing=12, width=548, controls=[
+                        ft.Text(f"O valor de {formatar_moeda(valor)} será dividido em parcelas mensais; "
+                                "esta conta passa a ser a primeira.", color=cores.texto_principal),
+                        campo_quantidade, lista_previa, erro_parcelar,
+                    ]),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=fechar,
+                                      style=ft.ButtonStyle(color=cores.acao_primaria)),
+                        ft.Button(content="Parcelar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                                  on_click=confirmar),
+                    ],
+                ))
+                page.update()
 
             def item_recorrencia(rotulo, ao_clicar):
                 return ft.PopupMenuItem(content=rotulo, on_click=ao_clicar,
@@ -3702,7 +3808,9 @@ def main(page: ft.Page):
                            parcela_texto or TEXTO_SEM_PARCELAS,
                            cor_valor=cores.texto_principal if parcela_texto else cores.texto_secundario),
                     celula(ft.Icons.REPEAT, "Recorrência",
-                           texto_recorrencia_detalhes(serie_ativa, info_serie), largura_total=True),
+                           frase_parcelamento(identificacao_parcelada["total"], info_serie["data_termino"])
+                           if eh_parcelada else texto_recorrencia_detalhes(serie_ativa, info_serie),
+                           largura_total=True),
                     # 5.22: completa, com as quebras de linha; linha inteira.
                     celula(ft.Icons.NOTES, "Descrição", conta.get("descricao") or TEXTO_SEM_DESCRICAO,
                            cor_valor=cores.texto_principal if conta.get("descricao") else cores.texto_secundario,
@@ -3745,6 +3853,12 @@ def main(page: ft.Page):
                             historico,
                             ft.Divider(color=cores.divisor),
                             botoes_rodape,
+                            # Sino 6.12 (Etapa 6, P6/R1): Única -> Parcelada, com prévia.
+                            *([ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
+                                ft.TextButton(content="Parcelar esta conta", icon=ft.Icons.CALL_SPLIT,
+                                              data="parcelar_conta", style=ft.ButtonStyle(color=cores.acao_primaria),
+                                              on_click=lambda e: mostrar_dialogo_parcelar()),
+                            ])] if not serie_ativa else []),
                         ],
                     ),
                 )
@@ -7566,7 +7680,8 @@ def main(page: ft.Page):
         # `recorrencia`, que é de onde o Salvar lê (como a 6.10 lia dos chips e
         # do cartão de término). Nada é gravado no banco antes do Salvar.
         hoje = date.today()
-        recorrencia = {"tipo": "unica", "sem_termino": False, "mes": str(hoje.month), "ano": str(hoje.year)}
+        recorrencia = {"tipo": "unica", "sem_termino": False, "mes": str(hoje.month), "ano": str(hoje.year),
+                       "parcelas": OPCOES_DE_PARCELAS[0]}  # Sino 6.12: quantidade da Parcelada
         # Antes da primeira confirmação, o campo mostra só a orientação
         # "Escolha o tipo da conta" -- sem obrigar a escolher: o Salvar usa
         # "Única", como sempre. Depois, mostra o resumo da escolha confirmada.
@@ -7577,6 +7692,8 @@ def main(page: ft.Page):
             # Texto curto. Com "Única", o término não vale (como no Salvar).
             if recorrencia["tipo"] == "unica":
                 return "Única"
+            if recorrencia["tipo"] == "parcelada":  # Sino 6.12
+                return f"Parcelada em {recorrencia['parcelas']} parcelas"
             frequencia = "Mensal" if recorrencia["tipo"] == "mensal" else "Anual"
             if recorrencia["sem_termino"]:
                 return f"{frequencia}, sem término"
@@ -7606,6 +7723,8 @@ def main(page: ft.Page):
             if estado_recorrencia["confirmada"]:
                 campo_recorrencia.value = texto_da_recorrencia()
                 campo_recorrencia.color = cores.texto_principal
+            # Sino 6.12 (D2): na Parcelada, o valor informado é o total.
+            campo_valor.label = "Valor total" if recorrencia["tipo"] == "parcelada" else "Valor"
 
         async def focar_depois(controle):
             await asyncio.sleep(0.05)
@@ -7636,6 +7755,12 @@ def main(page: ft.Page):
                 **estilo_lista(),
             )
             linha_termino = ft.Row(spacing=8, controls=[campo_mes_termino, campo_ano_termino])
+            # Sino 6.12 (D2/D4): quantidade de parcelas da Parcelada (2 a 36).
+            campo_parcelas = ft.Dropdown(
+                label="Quantidade de parcelas", color=cores.texto_principal, value=rascunho["parcelas"],
+                options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS],
+                data="quantidade_parcelas_nova_conta", **estilo_lista(),
+            )
             linha_sem_termino = ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 controls=[ft.Text("Sem data de término", size=13, color=cores.texto_principal), sem_termino],
@@ -7655,10 +7780,14 @@ def main(page: ft.Page):
                     padding=ft.Padding(4, 12, 4, 12),
                 )
 
+            # Sino 6.12: quatro opções; a largura acompanha o tamanho de cada rótulo, para que
+            # "Parcelada" não quebre a palavra em janelas estreitas (380 px).
+            pesos_tipo = {"unica": 5, "parcelada": 9, "mensal": 6, "anual": 5}
             linha_tipo = ft.Row(spacing=8, controls=[
-                ft.Button(content=rotulo, expand=True, height=40, data=f"tipo_recorrencia_{valor}",
+                ft.Button(content=rotulo, expand=pesos_tipo[valor], height=40, data=f"tipo_recorrencia_{valor}",
                           on_click=lambda e, v=valor: selecionar_tipo(v))
-                for valor, rotulo in (("unica", "Única"), ("mensal", "Mensal"), ("anual", "Anual"))
+                for valor, rotulo in (("unica", "Única"), ("parcelada", "Parcelada"), ("mensal", "Mensal"),
+                                      ("anual", "Anual"))
             ])
 
             def atualizar():
@@ -7667,8 +7796,10 @@ def main(page: ft.Page):
                 # Mês e Ano só com ele desligado.
                 for botao in linha_tipo.controls:
                     botao.style = estilo_chip(botao.data == f"tipo_recorrencia_{rascunho['tipo']}")
-                linha_sem_termino.visible = rascunho["tipo"] != "unica"
-                linha_termino.visible = rascunho["tipo"] != "unica" and not rascunho["sem_termino"]
+                recorrente = rascunho["tipo"] in ("mensal", "anual")
+                linha_sem_termino.visible = recorrente
+                linha_termino.visible = recorrente and not rascunho["sem_termino"]
+                campo_parcelas.visible = rascunho["tipo"] == "parcelada"  # Sino 6.12
 
             def selecionar_tipo(valor):
                 rascunho["tipo"] = valor
@@ -7686,9 +7817,13 @@ def main(page: ft.Page):
             def ao_mudar_ano(e):
                 rascunho["ano"] = campo_ano_termino.value
 
+            def ao_mudar_parcelas(e):
+                rascunho["parcelas"] = campo_parcelas.value
+
             sem_termino.on_change = ao_mudar_sem_termino
             campo_mes_termino.on_select = ao_mudar_mes
             campo_ano_termino.on_select = ao_mudar_ano
+            campo_parcelas.on_select = ao_mudar_parcelas
 
             def fechar():
                 page.pop_dialog()
@@ -7724,6 +7859,7 @@ def main(page: ft.Page):
                         linha_tipo,
                         linha_sem_termino,
                         linha_termino,
+                        campo_parcelas,
                         ft.Text(value="", color=cores.texto_erro, size=12),
                     ],
                 ),
@@ -7768,7 +7904,7 @@ def main(page: ft.Page):
                 erro.value = "Informe um valor válido."
             elif data_selecionada["valor"] is None:
                 erro.value = "Escolha a data de vencimento."
-            elif tipo != "unica" and not recorrencia["sem_termino"]:
+            elif tipo in ("mensal", "anual") and not recorrencia["sem_termino"]:
                 mes_termino = int(recorrencia["mes"])
                 ano_termino = int(recorrencia["ano"])
                 data_venc = data_selecionada["valor"]
@@ -7782,6 +7918,12 @@ def main(page: ft.Page):
 
             if erro.value:
                 page.update()
+                return
+
+            if tipo == "parcelada":
+                # Sino 6.12 (Etapa 6): prévia dos valores e vencimentos antes de salvar.
+                mostrar_previa_do_parcelamento(nome, valor, int(recorrencia["parcelas"]),
+                                               data_selecionada["valor"].isoformat(), categoria_id, descricao)
                 return
 
             try:
@@ -7802,6 +7944,51 @@ def main(page: ft.Page):
                 page.update()
                 return
             mostrar_tela_principal()
+
+        def mostrar_previa_do_parcelamento(nome, valor_total, quantidade, data_primeira, categoria_id, descricao):
+            """Sino 6.12 (Etapa 6): prévia das parcelas; só o Confirmar grava (uma transação)."""
+            try:
+                previa = database.previa_parcelamento(valor_total, quantidade, data_primeira)
+            except database.ParcelamentoRecusadoError as recusa:
+                erro.value = str(recusa)
+                page.update()
+                return
+            erro.value = ""
+            erro_previa = ft.Text(value="", color=cores.texto_erro, size=12)
+
+            def confirmar(e):
+                try:
+                    database.criar_conta_parcelada(usuario_atual["id"], nome, valor_total, quantidade, data_primeira,
+                                                   categoria_id=categoria_id, descricao=descricao)
+                except (database.ParcelamentoRecusadoError, limites.LimiteDeCaracteresError) as recusa:
+                    erro_previa.value = str(recusa)
+                    page.update()
+                    return
+                page.pop_dialog()
+                mostrar_tela_principal()
+
+            def cancelar(e):
+                page.pop_dialog()
+                page.update()
+
+            page.show_dialog(ft.AlertDialog(
+                modal=True, bgcolor=cores.fundo_dialogo, data="dialogo_previa_parcelamento",
+                title=ft.Text("Confirmar parcelamento", color=cores.texto_principal),
+                content=ft.Column(tight=True, spacing=12, width=548, controls=[
+                    ft.Text(f"{nome}: {formatar_moeda(valor_total)} em {quantidade} parcelas mensais.",
+                            color=cores.texto_principal),
+                    ft.Column(spacing=6, height=min(300, 26 * quantidade), scroll=ft.ScrollMode.AUTO,
+                              controls=[ft.Text(linha, size=14, color=cores.texto_principal)
+                                        for linha in linhas_da_previa_de_parcelas(previa)]),
+                    erro_previa,
+                ]),
+                actions=[
+                    ft.TextButton(content="Cancelar", on_click=cancelar, style=ft.ButtonStyle(color=cores.acao_primaria)),
+                    ft.Button(content="Salvar conta", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
+                              on_click=confirmar),
+                ],
+            ))
+            page.update()
 
         cabecalho = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,

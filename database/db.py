@@ -4584,6 +4584,170 @@ def obter_identificacao(serie_id, conta_id):
     return {"tipo": "parcela" if serie_parcelada(serie_id) else "ocorrencia", "posicao": posicao, "total": total}
 
 
+# ------------------------------------------------------------------
+#  Sino 6.12 (Etapa 6): contas Parceladas (D2-D4, D10, D13, D14, P6, R1).
+#
+#  Parcelada = série MENSAL com término + linha em `parcelamentos` (quantidade e
+#  total original em centavos). O valor total é dividido em centavos, com a
+#  diferença na PRIMEIRA parcela (D3); 2 a 36 parcelas (D4); vencimentos pelo
+#  mesmo cálculo das recorrências mensais (dias 29-31 sem arrasto). Tudo numa
+#  única transação (D14). Parceladas não mudam de tipo: "Alterar frequência" e
+#  "Encerrar recorrência" as recusam (regra estrutural da 6.12).
+# ------------------------------------------------------------------
+MINIMO_PARCELAS = 2
+MAXIMO_PARCELAS = 36
+MENSAGEM_QUANTIDADE_DE_PARCELAS = f"Informe de {MINIMO_PARCELAS} a {MAXIMO_PARCELAS} parcelas."
+MENSAGEM_VALOR_TOTAL_INVALIDO = "Informe um valor total válido."
+MENSAGEM_VALOR_PEQUENO_PARA_PARCELAS = "O valor total é pequeno demais para essa quantidade de parcelas."
+MENSAGEM_UNICA_COM_PAGAMENTOS = ("Esta conta tem registros de pagamento (inclusive desfeitos) e não pode ser "
+                                 "parcelada.")
+MENSAGEM_NAO_E_UNICA = "Só uma conta Única pode ser parcelada."
+MENSAGEM_PARCELADA_NAO_MUDA_DE_TIPO = "Uma conta parcelada não pode mudar de tipo."
+
+
+class ParcelamentoRecusadoError(ValueError):
+    """Operação de parcelamento recusada antes de qualquer gravação (mensagem para a tela)."""
+
+
+def dividir_em_parcelas(total_centavos, quantidade):
+    """D3: valores (centavos) das parcelas -- todas iguais, com a diferença de
+    centavos na PRIMEIRA. A soma é sempre exatamente `total_centavos`."""
+    base, resto = divmod(total_centavos, quantidade)
+    return [base + resto] + [base] * (quantidade - 1)
+
+
+def _validar_parcelamento(valor_total, quantidade):
+    """Total em centavos, se `valor_total` e `quantidade` forem aceitos (D2, D4, P6)."""
+    if isinstance(quantidade, bool) or not isinstance(quantidade, int) or not (
+            MINIMO_PARCELAS <= quantidade <= MAXIMO_PARCELAS):
+        raise ParcelamentoRecusadoError(MENSAGEM_QUANTIDADE_DE_PARCELAS)
+    if isinstance(valor_total, bool) or not isinstance(valor_total, (int, float)) or not valor_total > 0:
+        raise ParcelamentoRecusadoError(MENSAGEM_VALOR_TOTAL_INVALIDO)
+    total_centavos = centavos_de(valor_total)
+    if total_centavos < quantidade:
+        raise ParcelamentoRecusadoError(MENSAGEM_VALOR_PEQUENO_PARA_PARCELAS)
+    return total_centavos
+
+
+def _termino_do_parcelamento(data_primeira, quantidade):
+    """Competência ("AAAA-MM") da última parcela."""
+    ano, mes = map(int, data_primeira[:7].split("-"))
+    indice = ano * 12 + (mes - 1) + quantidade - 1
+    return f"{indice // 12:04d}-{indice % 12 + 1:02d}"
+
+
+def previa_parcelamento(valor_total, quantidade, data_primeira):
+    """
+    Prévia (só cálculo, nada é gravado) das parcelas de `valor_total` em
+    `quantidade` vezes, a primeira em `data_primeira` ("AAAA-MM-DD"):
+    [{"posicao", "quantidade", "vencimento", "valor_centavos", "valor"}]. As mesmas
+    regras e recusas (ParcelamentoRecusadoError) da gravação.
+    """
+    total_centavos = _validar_parcelamento(valor_total, quantidade)
+    datas = _gerar_datas_ocorrencias("mensal", data_primeira, _termino_do_parcelamento(data_primeira, quantidade))
+    assert len(datas) == quantidade, (datas, quantidade)
+    return [{"posicao": posicao, "quantidade": quantidade, "vencimento": vencimento,
+             "valor_centavos": centavos, "valor": centavos / 100}
+            for posicao, (vencimento, centavos) in enumerate(
+                zip(datas, dividir_em_parcelas(total_centavos, quantidade)), start=1)]
+
+
+def _registrar_parcelamento(cursor, serie_id, ids, quantidade, total_centavos):
+    """Valores das parcelas (diferença na 1ª, D3), valor-modelo da série e a linha
+    de `parcelamentos` -- no cursor da mesma transação que criou a série."""
+    assert len(ids) == quantidade, (ids, quantidade)
+    valores = dividir_em_parcelas(total_centavos, quantidade)
+    for conta_id, centavos in zip(ids, valores):
+        cursor.execute("UPDATE contas SET valor = ? WHERE id = ?", (centavos / 100, conta_id))
+    cursor.execute("UPDATE series_recorrencia SET valor = ? WHERE id = ?", (valores[-1] / 100, serie_id))
+    cursor.execute(
+        f"INSERT INTO {TABELA_PARCELAMENTOS} (serie_id, quantidade_original, valor_total_original_centavos, "
+        "criado_em) VALUES (?, ?, ?, ?)",
+        (serie_id, quantidade, total_centavos, datetime.now().isoformat(timespec="seconds")),
+    )
+
+
+def criar_conta_parcelada(usuario_id, nome, valor_total, quantidade, data_primeira, categoria_id=None,
+                          descricao=None):
+    """
+    Cria uma conta Parcelada: `quantidade` parcelas mensais (2 a 36) do
+    `valor_total`, a primeira em `data_primeira`. Uma única transação: a série,
+    todas as parcelas, os valores (diferença na 1ª) e o registro do parcelamento
+    -- ou nada. Recusas antes de gravar: ParcelamentoRecusadoError (quantidade,
+    valor) e LimiteDeCaracteresError (nome/descrição). Retorna (serie_id, [ids]).
+    """
+    total_centavos = _validar_parcelamento(valor_total, quantidade)
+    descricao = normalizar_descricao(descricao)
+    _validar_textos_conta(nome, descricao)
+    termino = _termino_do_parcelamento(data_primeira, quantidade)
+    with transacao() as cursor:
+        serie_id, ids = _criar_serie_recorrente_no_cursor(
+            cursor, usuario_id, nome, dividir_em_parcelas(total_centavos, quantidade)[-1] / 100, data_primeira,
+            "mensal", data_termino=termino, categoria_id=categoria_id, descricao=descricao)
+        _registrar_parcelamento(cursor, serie_id, ids, quantidade, total_centavos)
+    return serie_id, ids
+
+
+def _conferir_unica_para_parcelar(cursor, conta_id):
+    """(valor, vencimento) da conta, se ela pode ser parcelada; senão
+    ParcelamentoRecusadoError. Única = sem série ou de série encerrada (R7/X2).
+    R1: nenhum registro de pagamento -- ativo, estornado ou quitação sem registro."""
+    linha = cursor.execute(
+        "SELECT serie_id, valor, data_vencimento, status, data_pagamento FROM contas WHERE id = ?", (conta_id,),
+    ).fetchone()
+    if linha is None:
+        raise ParcelamentoRecusadoError("Conta não encontrada.")
+    serie_id, valor, vencimento, status, data_pagamento = linha
+    if serie_id is not None:
+        ativa = cursor.execute("SELECT ativa FROM series_recorrencia WHERE id = ?", (serie_id,)).fetchone()
+        if ativa is not None and ativa[0] == 1:
+            raise ParcelamentoRecusadoError(MENSAGEM_NAO_E_UNICA)
+    if status == "pago" or data_pagamento is not None or _contas_com_pagamentos(cursor, "id = ?", (conta_id,)):
+        raise ParcelamentoRecusadoError(MENSAGEM_UNICA_COM_PAGAMENTOS)
+    return valor, vencimento
+
+
+def conferir_unica_para_parcelar(conta_id):
+    """Só leitura: (valor, vencimento) se a conta pode ser parcelada (R1, Única);
+    senão ParcelamentoRecusadoError com o motivo."""
+    conexao = conectar()
+    try:
+        return _conferir_unica_para_parcelar(conexao.cursor(), conta_id)
+    finally:
+        conexao.close()
+
+
+def transformar_unica_em_parcelada(conta_id, quantidade):
+    """
+    Única -> Parcelada (P6, R1): a própria conta vira a parcela 1, no mesmo
+    vencimento; o valor dela é o total. As demais parcelas são criadas nos meses
+    seguintes. Recusada (nada gravado) se a conta não for Única (série ativa), se
+    tiver qualquer registro de pagamento -- inclusive estornado ou quitação sem
+    registro -- ou se o valor em centavos for menor que a quantidade. Uma única
+    transação. Retorna (serie_id, [ids das parcelas, a primeira = conta_id]).
+    """
+    with transacao() as cursor:
+        valor, vencimento = _conferir_unica_para_parcelar(cursor, conta_id)
+        total_centavos = _validar_parcelamento(valor, quantidade)
+        serie_id, ids_novos = _transformar_em_recorrente_no_cursor(
+            cursor, conta_id, "mensal", data_termino=_termino_do_parcelamento(vencimento, quantidade))
+        ids = [conta_id] + ids_novos
+        _registrar_parcelamento(cursor, serie_id, ids, quantidade, total_centavos)
+    return serie_id, ids
+
+
+def _recusar_se_parcelada(conta_id):
+    """Regra estrutural da 6.12: operações que mudariam o tipo de uma conta
+    parcelada são recusadas antes de qualquer gravação."""
+    conexao = conectar()
+    try:
+        linha = conexao.execute("SELECT serie_id FROM contas WHERE id = ?", (conta_id,)).fetchone()
+    finally:
+        conexao.close()
+    if linha is not None and serie_parcelada(linha[0]):
+        raise ParcelamentoRecusadoError(MENSAGEM_PARCELADA_NAO_MUDA_DE_TIPO)
+
+
 def obter_info_serie(serie_id):
     """
     Dados de uma série para exibição (frase contextual de recorrência,
@@ -5251,6 +5415,7 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
     acontece antes de qualquer UPDATE/DELETE/INSERT -- nada é tocado numa
     tentativa contra série inativa.
     """
+    _recusar_se_parcelada(conta_id)  # Sino 6.12: parcelada não muda de tipo
     if nova_frequencia not in ("mensal", "anual"):
         raise ValueError(f"frequencia inválida: {nova_frequencia!r} (use 'mensal' ou 'anual')")
 
@@ -5673,6 +5838,7 @@ def encerrar_recorrencia(conta_id):
     não pertencer a nenhuma série (conta avulsa), ou a série já estiver
     encerrada.
     """
+    _recusar_se_parcelada(conta_id)  # Sino 6.12: parcelada não muda de tipo (não vira avulsas)
     conexao = sqlite3.connect(NOME_DO_BANCO)
     conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
     conexao.execute("PRAGMA foreign_keys = ON;")

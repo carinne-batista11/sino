@@ -416,11 +416,11 @@ class TestMesmoPadraoDeEditar(Base):
             .on_click(Evento(self.pagina, None))
 
         a, b = self.assinatura(editar), self.assinatura(novo)
-        # Diferenças intencionais: 3 opções (Única|Mensal|Anual) em vez de 2,
-        # botões focáveis em vez de contêineres, rótulo "Confirmar" e nenhuma
-        # mensagem de erro no diálogo (o término é conferido no Salvar).
+        # Diferenças intencionais: 4 opções (Única|Parcelada|Mensal|Anual -- Parcelada desde
+        # a Sino 6.12) em vez de 2, botões focáveis em vez de contêineres, rótulo "Confirmar"
+        # e nenhuma mensagem de erro no diálogo (o término é conferido no Salvar).
         self.assertEqual(a["linha_tipo"][:2], b["linha_tipo"][:2])
-        self.assertEqual(len(b["linha_tipo"][2]), 3)
+        self.assertEqual(len(b["linha_tipo"][2]), 4)
         self.assertTrue(all(b["linha_tipo"][2]) and all(a["linha_tipo"][2]))
         for chave in ("modal", "fundo", "titulo", "coluna", "texto", "linha_chave", "linha_termino"):
             with self.subTest(chave):
@@ -429,8 +429,11 @@ class TestMesmoPadraoDeEditar(Base):
         self.assertEqual((a["confirmar"][0], a["confirmar"][1:]), (b["confirmar"][0], b["confirmar"][1:]))
         self.assertEqual(b["confirmar"], (ft.Button, CLARO["acao_primaria"], CLARO["texto_sobre_acao"]))
         self.assertEqual(len(editar.content.controls), 5)                    # 5ª: mensagem de erro
-        self.assertEqual(len(novo.content.controls), 5)                      # 5ª: mesma linha, sempre vazia
-        reserva_editar, reserva_novo = editar.content.controls[4], novo.content.controls[4]
+        # Sino 6.12: a 5ª linha passa a ser a quantidade de parcelas (só visível na Parcelada);
+        # a linha reservada, sempre vazia, continua sendo a última.
+        self.assertEqual(len(novo.content.controls), 6)
+        self.assertEqual(novo.content.controls[4].data, "quantidade_parcelas_nova_conta")
+        reserva_editar, reserva_novo = editar.content.controls[4], novo.content.controls[5]
         self.assertEqual((type(reserva_editar), reserva_editar.size, reserva_editar.value, reserva_editar.color),
                          (type(reserva_novo), reserva_novo.size, reserva_novo.value, reserva_novo.color))
         self.assertEqual(novo.content.width, 548)
