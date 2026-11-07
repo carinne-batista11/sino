@@ -192,6 +192,17 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+TEXTO_VALOR_PENDENTE = "Valor pendente"
+
+
+def texto_do_valor(conta):
+    """Sino 6.12 (Etapa 3): o valor de uma conta como texto -- "Valor pendente"
+    quando ainda não foi informado (nunca "R$ 0,00"); um valor conhecido, mesmo
+    0,00, sai formatado em reais. Ainda sem uso nas telas (Etapas 8 e 11)."""
+    valor = database.valor_conhecido(conta)
+    return TEXTO_VALOR_PENDENTE if valor is None else formatar_moeda(valor)
+
+
 def frase_vencimento_futuro(dias_delta):
     """RF11 (5.17): linguagem natural para uma conta pendente/a vencer -- só
     apresentação, não recalcula nem reinterpreta dias_delta."""
@@ -586,7 +597,7 @@ def resumo_do_mes(contas):
     desmarcar uma conta como paga só move o valor entre pago e pendente.
     Atrasadas contam como pendentes (e no mês do vencimento).
     """
-    total = sum(c["valor"] for c in contas)
+    total = database.soma_dos_valores_conhecidos(contas)  # Sino 6.12: pendentes ficam de fora
     # Pagamentos parciais: o pago inclui os pagamentos parciais das contas em aberto.
     pago = sum(c["valor"] if c["status"] == "pago" else c.get("total_pago", 0) for c in contas)
     return total, pago, total - pago

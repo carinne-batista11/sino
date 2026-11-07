@@ -69,6 +69,48 @@ def _sql_total_pago_centavos(cursor, coluna_id="contas.id"):
             f"WHERE p.conta_id = {coluna_id} AND p.estornado_em IS NULL)")
 
 
+# ------------------------------------------------------------------
+#  Sino 6.12 (Etapa 3): valor CONHECIDO × valor PENDENTE.
+#
+#  Uma ocorrência de recorrência variável pode ter o valor ainda não informado
+#  ("Valor pendente", R8/R9): ela fica registrada na tabela complementar
+#  `ocorrencias_valor_pendente` (criada pela migração v11) e o seu `contas.valor`
+#  é só um marcador interno -- NUNCA é exibido nem somado como valor. Valor
+#  pendente não é R$ 0,00: uma conta com valor conhecido de 0,00 continua
+#  sendo um valor conhecido. Todo total passa por estas funções; sem a tabela
+#  (ou sem linhas nela) o resultado é idêntico ao da Sino 6.11.
+# ------------------------------------------------------------------
+TABELA_VALOR_PENDENTE = "ocorrencias_valor_pendente"
+
+
+def _sql_valor_conhecido(cursor, coluna_id="contas.id"):
+    """Condição SQL verdadeira para as contas com valor CONHECIDO ("1" sem a tabela)."""
+    if not _tabela_existe(cursor, TABELA_VALOR_PENDENTE):
+        return "1"
+    return f"{coluna_id} NOT IN (SELECT conta_id FROM {TABELA_VALOR_PENDENTE})"
+
+
+def _sql_soma_conhecida(cursor, coluna_valor="valor", coluna_id="contas.id"):
+    """Expressão SQL que soma só os valores conhecidos (pendentes contam 0 na soma, não como valor)."""
+    return f"SUM(CASE WHEN {_sql_valor_conhecido(cursor, coluna_id)} THEN {coluna_valor} ELSE 0 END)"
+
+
+def valor_conhecido(conta):
+    """Valor de uma conta (dicionário das listas) ou `None` quando o valor está pendente.
+    0.0 conhecido continua 0.0 -- nunca é confundido com pendente."""
+    return None if conta.get("valor_pendente") else conta["valor"]
+
+
+def soma_dos_valores_conhecidos(contas):
+    """Soma só dos valores conhecidos de uma lista de contas (os pendentes ficam de fora)."""
+    return sum(v for v in (valor_conhecido(c) for c in contas) if v is not None)
+
+
+def quantidade_com_valor_pendente(contas):
+    """Quantas contas da lista estão com o valor pendente (indicação separada dos totais)."""
+    return sum(1 for c in contas if valor_conhecido(c) is None)
+
+
 def _contas_com_pagamentos(cursor, condicao, parametros, so_ativos=False):
     """Ids das contas (filtradas por `condicao` sobre `contas`) que têm pagamentos
     registrados -- inclusive estornados, salvo `so_ativos=True` (só pagamentos ativos)."""
@@ -4104,9 +4146,10 @@ def resumo_do_periodo(usuario_id, inicio, fim):
         # Pagamentos parciais: o pago inclui os pagamentos parciais das contas em aberto;
         # o total (despesas) nunca é reduzido por eles.
         parcial = _sql_total_pago_centavos(conexao.cursor())
+        soma = _sql_soma_conhecida(conexao.cursor())  # Sino 6.12: só valores conhecidos
         total, pago = conexao.execute(
             f"""
-            SELECT COALESCE(SUM(valor), 0),
+            SELECT COALESCE({soma}, 0),
                    COALESCE(SUM(CASE WHEN status = 'pago' THEN valor ELSE {parcial} / 100.0 END), 0)
             FROM contas WHERE usuario_id = ? AND data_vencimento BETWEEN ? AND ?
             """,
@@ -4123,8 +4166,8 @@ def totais_por_mes(usuario_id, primeiro_ano_mes, ultimo_ano_mes):
     try:
         linhas = _somas(
             conexao.cursor(),
-            """
-            SELECT substr(data_vencimento, 1, 7), SUM(valor) FROM contas
+            f"""
+            SELECT substr(data_vencimento, 1, 7), {_sql_soma_conhecida(conexao.cursor())} FROM contas
             WHERE usuario_id = ? AND substr(data_vencimento, 1, 7) BETWEEN ? AND ?
             GROUP BY 1
             """,
@@ -4141,7 +4184,8 @@ def totais_por_ano(usuario_id):
     try:
         linhas = _somas(
             conexao.cursor(),
-            "SELECT substr(data_vencimento, 1, 4), SUM(valor) FROM contas WHERE usuario_id = ? GROUP BY 1 ORDER BY 1",
+            f"SELECT substr(data_vencimento, 1, 4), {_sql_soma_conhecida(conexao.cursor())} FROM contas "
+            "WHERE usuario_id = ? GROUP BY 1 ORDER BY 1",
             (usuario_id,),
         )
     finally:
@@ -4180,8 +4224,8 @@ def gastos_por_categoria(usuario_id, inicio, fim):
     try:
         linhas = _somas(
             conexao.cursor(),
-            """
-            SELECT c.categoria_id, cat.nome, cat.icone, cat.cor, SUM(c.valor)
+            f"""
+            SELECT c.categoria_id, cat.nome, cat.icone, cat.cor, {_sql_soma_conhecida(conexao.cursor(), "c.valor", "c.id")}
             FROM contas c LEFT JOIN categorias cat ON cat.id = c.categoria_id
             WHERE c.usuario_id = ? AND c.data_vencimento BETWEEN ? AND ?
             GROUP BY c.categoria_id
