@@ -110,7 +110,7 @@ class TesteMigracaoV7(AuxiliaresBancoV6):
         db.migrar_schema_v7(self.caminho_v5)
         for tabela in ("usuarios", "categorias", "series_recorrencia", "contas"):
             self.assertEqual(self.colunas(self.caminho_v5, tabela), self.colunas(self.caminho_banco, tabela))
-        self.assert_schema_v10(self.caminho_banco)
+        self.assert_schema_v11(self.caminho_banco)  # Sino 6.12: o banco novo nasce no schema atual (v11)
 
     def test_operacoes_funcionam_sobre_o_banco_migrado(self):
         self.criar_v6()

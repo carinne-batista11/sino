@@ -100,17 +100,22 @@ class AuxiliaresV10(AuxiliaresBancoV6):
         self.assert_sem_transacao_nem_lock(self.caminho_v5)
         return contexto.exception
 
-    def assert_schema_v10(self, caminho):
-        self.assertEqual(self.versao(caminho), 10)
+    def assert_schema_v10(self, caminho, versao=10):
+        self.assertEqual(self.versao(caminho), versao)
         self.assertEqual(self.estado_tabela(caminho), "valida")
-        resultado = self.verificar(caminho)
+        resultado = self.verificar(caminho, versao_esperada=versao)
         self.assertTrue(resultado["ok"], resultado)
+
+    def assert_schema_atual(self, caminho):
+        """Sino 6.12: o fim de preparar_banco/criar_tabelas é o schema atual (v11), que contém a v10."""
+        self.assert_schema_v10(caminho, versao=db.VERSAO_SCHEMA_ATUAL)
+        self.assertTrue(db.validar_schema_atual(caminho)["ok"])
 
 
 class TestBancoNovoV10(AuxiliaresV10):
     def test_banco_novo_nasce_v10_com_a_tabela_e_o_indice(self):
         caminho = self.caminho_banco                      # criado por criar_tabelas() no setUp
-        self.assertEqual(self.versao(caminho), 10)
+        self.assertEqual(self.versao(caminho), db.VERSAO_SCHEMA_ATUAL)  # v11 desde a Sino 6.12
         self.assertEqual(self.sql(caminho, "PRAGMA table_info(pp_pagamentos)"),
                          [tuple(c) for c in db.COLUNAS_PAGAMENTOS])
         self.assertEqual([tuple(f[2:5]) for f in self.sql(caminho, "PRAGMA foreign_key_list(pp_pagamentos)")],
@@ -127,12 +132,13 @@ class TestBancoNovoV10(AuxiliaresV10):
             self.assertEqual(resultado["situacao"], "criado")
             self.assertIsNone(resultado["migracao_v10"])
             self.assertEqual(db.preparar_banco()["situacao"], "atual")   # de novo: nada a fazer
-        self.assert_schema_v10(caminho)
+        self.assert_schema_atual(caminho)
         self.assertEqual(self.backups(), [])
 
     def test_validacao_positiva_e_negativa(self):
         caminho = self.caminho_banco
-        self.assertTrue(self.verificar(caminho)["ok"])
+        # Sino 6.12: o banco novo é v11; as checagens da v10 valem com a user_version atual.
+        self.assertTrue(self.verificar(caminho, versao_esperada=db.VERSAO_SCHEMA_ATUAL)["ok"])
         self.sql(caminho, "DROP INDEX idx_pp_pagamentos_conta")
         resultado = self.verificar(caminho)
         self.assertFalse(resultado["ok"])
@@ -206,7 +212,7 @@ class TestMigracaoV10(AuxiliaresV10):
                     resultado = db.preparar_banco()
                 self.assertEqual(resultado["situacao"], "migrado")
                 self.assertTrue(resultado["migracao_v10"]["executado"])
-                self.assert_schema_v10(self.caminho_v5)
+                self.assert_schema_atual(self.caminho_v5)
                 self.assertEqual(self.dados_v5(self.caminho_v5), dados_v5)
 
     def test_execucao_repetida_nao_altera_nada(self):
@@ -215,8 +221,13 @@ class TestMigracaoV10(AuxiliaresV10):
         sha, backups = self.sha256(self.caminho_v5), self.backups()
         self.assertEqual(db.migrar_schema_v10(self.caminho_v5),
                          {"executado": False, "motivo": "já migrado", "backup": None})
+        self.assertEqual((self.sha256(self.caminho_v5), self.backups()), (sha, backups))
+        # Sino 6.12: preparar_banco leva o v10 à v11 uma vez; depois, nada mais muda.
         with mock.patch.object(db, "NOME_DO_BANCO", self.caminho_v5):
+            self.assertEqual(db.preparar_banco()["situacao"], "migrado")
+            sha, backups = self.sha256(self.caminho_v5), self.backups()
             self.assertEqual(db.preparar_banco()["situacao"], "atual")
+            self.assertEqual(db.migrar_schema_v10(self.caminho_v5)["motivo"], "já migrado")
         self.assertEqual((self.sha256(self.caminho_v5), self.backups()), (sha, backups))
 
     def test_migracoes_anteriores_reconhecem_o_banco_v10(self):
@@ -239,7 +250,7 @@ class TestMigracaoV10(AuxiliaresV10):
     def test_versao_futura_e_recusada(self):
         self.criar_v9()
         self.sql(self.caminho_v5, f"PRAGMA user_version = {VERSAO_FUTURA}")
-        self.assertEqual(VERSAO_FUTURA, 11)
+        self.assertEqual(VERSAO_FUTURA, db.VERSAO_SCHEMA_ATUAL + 1)  # 12 desde a Sino 6.12
         self.assert_recusado_v10(db.VersaoDeBancoNaoSuportadaError, str(VERSAO_FUTURA))
         with mock.patch.object(db, "NOME_DO_BANCO", self.caminho_v5):
             with self.assertRaises(db.VersaoDeBancoNaoSuportadaError):
@@ -381,7 +392,7 @@ class TestMigracaoV10(AuxiliaresV10):
             self.assertEqual(self.versao(self.caminho_v5), 9)
             resultado = db.preparar_banco()
         self.assertEqual(resultado["situacao"], "migrado")
-        self.assert_schema_v10(self.caminho_v5)
+        self.assert_schema_atual(self.caminho_v5)
 
 
 class TestRestricoesDaTabelaDePagamentos(AuxiliaresV10):

@@ -77,6 +77,8 @@ class TestSomasNoBanco(TesteComBancoTemporario):
                        db.gastos_por_categoria(self.usuario_id, "2026-09-01", "2026-12-31")))
 
     def test_sem_a_tabela_condicao_neutra(self):
+        # Banco anterior à v11 (sem a tabela; desde a Etapa 4 o banco novo já a tem).
+        self.executar("DROP TABLE ocorrencias_valor_pendente")
         conexao = db.conectar()
         try:
             self.assertEqual(db._sql_valor_conhecido(conexao.cursor()), "1")
@@ -93,16 +95,17 @@ class TestSomasNoBanco(TesteComBancoTemporario):
         self.assertEqual(self.totais()[3], [(0, 95.0), (self.casa, 3780.35)])
 
     def test_tabela_vazia_nao_muda_nada(self):
-        antes = self.totais()
-        self.executar("CREATE TABLE ocorrencias_valor_pendente (conta_id INTEGER PRIMARY KEY)")
-        self.assertEqual(self.totais(), antes)
+        # Desde a Etapa 4 o banco novo já nasce com a tabela (vazia); sem ela, os totais são os mesmos.
+        com_tabela_vazia = self.totais()
+        self.executar("DROP TABLE ocorrencias_valor_pendente")
+        self.assertEqual(self.totais(), com_tabela_vazia)
 
     def test_pendente_fica_fora_de_todos_os_totais(self):
-        # Simulação da Etapa 3: a tabela ainda não é criada pela migração (Etapa 4). Um valor
+        # Linha inserida direto no banco (as funções que marcam pendentes vêm na Etapa 8). Um valor
         # diferente de zero na linha pendente prova que ele não entra em nenhuma soma.
-        self.executar("CREATE TABLE ocorrencias_valor_pendente (conta_id INTEGER PRIMARY KEY)")
         self.executar("UPDATE contas SET valor = 999 WHERE id = ?", (self.luz,))
-        self.executar("INSERT INTO ocorrencias_valor_pendente (conta_id) VALUES (?)", (self.luz,))
+        self.executar("INSERT INTO ocorrencias_valor_pendente (conta_id, definido_em) VALUES (?, '2026-09-01')",
+                      (self.luz,))
         (total, _), meses, anos, categorias = self.totais()
         self.assertEqual(total, 3695.0)
         self.assertEqual(meses["2026-09"], 1295.0)

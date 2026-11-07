@@ -414,8 +414,8 @@ class TestMigracaoV9(AuxiliaresBancoV6):
         db.migrar_schema_v9(self.caminho_v5)
         consulta = "SELECT type, name, sql FROM sqlite_master WHERE tbl_name = 'aceites_documentos' ORDER BY name"
         self.assertEqual(self.sql(self.caminho_v5, consulta), self.sql(self.caminho_banco, consulta))
-        # O banco novo nasce no schema atual (v10), que contém a tabela da v9.
-        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], db.VERSAO_SCHEMA_V10)
+        # O banco novo nasce no schema atual (v11 desde a Sino 6.12), que contém a tabela da v9.
+        self.assertEqual(self.sql(self.caminho_banco, "PRAGMA user_version")[0][0], db.VERSAO_SCHEMA_ATUAL)
 
     def test_v7_e_recusado_sem_alteracao(self):
         self.criar_v5()

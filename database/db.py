@@ -240,6 +240,29 @@ def _apagar_pagamentos(cursor, condicao, parametros):
                        parametros)
 
 
+def _apagar_complementos_de_contas(cursor, condicao, parametros):
+    """Sino 6.12 (v11): apaga as marcas de valor pendente das contas filtradas por
+    `condicao` (sobre `contas`), antes de apagar as próprias contas, na mesma
+    transação. Sem a tabela (banco anterior à v11), nada a fazer."""
+    if _tabela_existe(cursor, TABELA_VALOR_PENDENTE):
+        cursor.execute(
+            f"DELETE FROM {TABELA_VALOR_PENDENTE} WHERE conta_id IN (SELECT id FROM contas WHERE {condicao})",
+            parametros,
+        )
+
+
+def _apagar_complementos_de_series(cursor, condicao, parametros):
+    """Sino 6.12 (v11): apaga parcelamento e marca de série variável das séries
+    filtradas por `condicao` (sobre `series_recorrencia`), antes de apagar as
+    séries, na mesma transação."""
+    for tabela in (TABELA_PARCELAMENTOS, TABELA_SERIES_VARIAVEIS):
+        if _tabela_existe(cursor, tabela):
+            cursor.execute(
+                f"DELETE FROM {tabela} WHERE serie_id IN (SELECT id FROM series_recorrencia WHERE {condicao})",
+                parametros,
+            )
+
+
 def ocorrencias_futuras_com_pagamentos(conta_id):
     """Etapa 4: ocorrências POSTERIORES à selecionada (posição lógica) que têm
     pagamentos registrados e serão preservadas numa mudança de frequência:
@@ -286,10 +309,11 @@ def centavos_de(valor):
 
 def criar_tabelas():
     """
-    Cria o schema atual (v10: ERS v6.0, 9.2, a posição lógica das ocorrências
+    Cria o schema atual (v11: ERS v6.0, 9.2, a posição lógica das ocorrências
     da Etapa 2b, o registro de autorizações usadas da Etapa 8, o registro
-    dos aceites por versão da ERS v7.0, M12, e os pagamentos parciais da
-    Sino 6.10) em um banco novo. Em um banco que já existe,
+    dos aceites por versão da ERS v7.0, M12, os pagamentos parciais da
+    Sino 6.10 e, desde a Sino 6.12, parcelamentos, séries de valor variável e
+    valores pendentes) em um banco novo. Em um banco que já existe,
     `CREATE TABLE IF NOT EXISTS` não acrescenta colunas; por isso os índices
     de e-mail e de posição e o `user_version` só são gravados quando
     `usuarios` nasce nesta chamada. Um banco v5/v6 existente permanece
@@ -436,6 +460,7 @@ def _criar_tabelas_v6(cursor, banco_novo):
         _criar_tabela_autorizacoes(cursor)
         _criar_tabela_aceites(cursor)
         _criar_tabela_pagamentos(cursor)
+        _criar_tabelas_v11(cursor)
         cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_ATUAL};")
 
 
@@ -846,7 +871,8 @@ COLUNAS_ACEITES = (
 # schema nesta migração: nenhuma conta é convertida (uma conta paga sem
 # registros continua sendo a quitação de sempre).
 VERSAO_SCHEMA_V10 = 10
-VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V10
+VERSAO_SCHEMA_V11 = 11  # Sino 6.12: parcelamentos, séries variáveis e valores pendentes
+VERSAO_SCHEMA_ATUAL = VERSAO_SCHEMA_V11
 TABELA_PAGAMENTOS = "pp_pagamentos"
 TIPOS_PAGAMENTO = ("parcial", "saldo", "integral")
 DDL_PAGAMENTOS = """
@@ -875,7 +901,7 @@ COLUNAS_PAGAMENTOS = (
 # user_version que esta versão do app sabe tratar: 0 (bancos anteriores ao
 # controle de versão, validados estruturalmente como v5), 6, 7, 8, 9 e 10.
 VERSOES_SUPORTADAS = (0, VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9,
-                      VERSAO_SCHEMA_V10)
+                      VERSAO_SCHEMA_V10, VERSAO_SCHEMA_V11)
 
 
 class ColisaoDeEmailError(RuntimeError):
@@ -973,6 +999,23 @@ class SchemaV10IncompativelError(RuntimeError):
         self.problemas = problemas
         super().__init__(
             "Migração v10 abortada: schema incompatível ("
+            + "; ".join(problemas)
+            + "). Nenhuma alteração foi feita."
+        )
+
+
+class SchemaV11IncompativelError(RuntimeError):
+    """
+    Sino 6.12: o banco não está no estado que a migração v11 aceita: anterior à
+    v10, uma das tabelas da v11 já existente (com qualquer definição) num banco
+    v10, ou ausente/incompatível/com dados inválidos num banco já declarado v11.
+    Nada é alterado e nenhum backup é criado.
+    """
+
+    def __init__(self, problemas):
+        self.problemas = problemas
+        super().__init__(
+            "Migração v11 abortada: schema incompatível ("
             + "; ".join(problemas)
             + "). Nenhuma alteração foi feita."
         )
@@ -1129,7 +1172,7 @@ def _verificar_schema_v6(cursor):
         all(resultado[f"{tabela}.{coluna}"] == "valida" for tabela, coluna, _, _ in COLUNAS_V6)
         and resultado["indice_email_ci"] == "valido"
         and resultado["user_version"] in (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8,
-                                          VERSAO_SCHEMA_V9, VERSAO_SCHEMA_V10)
+                                          VERSAO_SCHEMA_V9, VERSAO_SCHEMA_V10, VERSAO_SCHEMA_V11)
         and resultado["integridade"] == ["ok"]
         and not resultado["violacoes_fk"]
     )
@@ -1306,7 +1349,7 @@ class BancoNaoPreparadoError(RuntimeError):
             versoes_aceitas = (validacao.get("versao_esperada", VERSAO_SCHEMA_V7),)
         else:
             versoes_aceitas = (VERSAO_SCHEMA_V6, VERSAO_SCHEMA_V7, VERSAO_SCHEMA_V8, VERSAO_SCHEMA_V9,
-                               VERSAO_SCHEMA_V10)
+                               VERSAO_SCHEMA_V10, VERSAO_SCHEMA_V11)
         if validacao.get("user_version") not in versoes_aceitas:
             falhas.append("user_version")
         if v8 and validacao.get("tabela_autorizacoes") != "valida":
@@ -1532,7 +1575,9 @@ def _verificar_schema_v9(cursor, versao_esperada=VERSAO_SCHEMA_V9):
 
 def validar_schema_atual(caminho_banco=None):
     """
-    Checagens do schema atual (v10): tudo o que `validar_migracao_v6()`
+    Checagens do schema atual (v11 desde a Sino 6.12: tudo da v10 abaixo, mais
+    as três tabelas da v11 exatas, o gatilho e os dados dentro das regras -- ver
+    `_verificar_schema_v11`): tudo o que `validar_migracao_v6()`
     verifica, mais as colunas e o índice da posição lógica, nenhuma
     ocorrência de série sem posição/vaga, nenhuma coluna fora do schema
     conhecido, as tabelas `autorizacoes_usadas`, `aceites_documentos` e
@@ -1544,7 +1589,7 @@ def validar_schema_atual(caminho_banco=None):
         raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
     conexao = sqlite3.connect(caminho_banco)
     try:
-        return _verificar_schema_v10(conexao.cursor())
+        return _verificar_schema_v11(conexao.cursor())
     finally:
         conexao.close()
 
@@ -2131,6 +2176,225 @@ def migrar_schema_v10(caminho_banco=None):
     return {"executado": True, "backup": caminho_backup, "tabela_reaproveitada": estado == "valida"}
 
 
+# ------------------------------------------------------------------
+#  Sino 6.12 -- schema v11 (Etapa 4): parcelamentos, séries de valor variável
+#  e ocorrências com valor pendente. Migração ADITIVA: três tabelas novas e um
+#  gatilho na tabela de pendentes; nenhuma tabela, coluna ou linha existente
+#  muda. Sem linha nas tabelas novas, toda recorrência continua Fixa (R9/R10).
+#  As referências seguem o padrão de `pp_pagamentos`: sem exclusão em cascata;
+#  quem exclui contas ou séries apaga antes os complementos, na mesma transação
+#  (_apagar_complementos_de_contas/_de_series), e a validação acusa órfãos.
+#  Nenhum gatilho em `pp_pagamentos` (a validação v10 exige a tabela exata): a
+#  recusa de pagar uma ocorrência pendente fica no código e na validação.
+# ------------------------------------------------------------------
+TABELA_PARCELAMENTOS = "parcelamentos"
+TABELA_SERIES_VARIAVEIS = "series_valor_variavel"
+GATILHO_PENDENTE_SEM_PAGAMENTOS = "trg_valor_pendente_sem_pagamentos"
+MENSAGEM_PENDENTE_COM_PAGAMENTOS = "Uma ocorrência com registros de pagamento não pode ficar com valor pendente."
+DDL_V11 = {
+    TABELA_PARCELAMENTOS: """
+CREATE TABLE parcelamentos (
+    serie_id INTEGER PRIMARY KEY REFERENCES series_recorrencia(id),
+    quantidade_original INTEGER NOT NULL CHECK (quantidade_original BETWEEN 2 AND 36),
+    valor_total_original_centavos INTEGER NOT NULL CHECK (valor_total_original_centavos > 0),
+    criado_em TEXT NOT NULL
+)
+""",
+    TABELA_SERIES_VARIAVEIS: """
+CREATE TABLE series_valor_variavel (
+    serie_id INTEGER PRIMARY KEY REFERENCES series_recorrencia(id),
+    definido_em TEXT NOT NULL
+)
+""",
+    TABELA_VALOR_PENDENTE: """
+CREATE TABLE ocorrencias_valor_pendente (
+    conta_id INTEGER PRIMARY KEY REFERENCES contas(id),
+    definido_em TEXT NOT NULL
+)
+""",
+}
+DDL_GATILHO_PENDENTE = f"""
+CREATE TRIGGER {GATILHO_PENDENTE_SEM_PAGAMENTOS} BEFORE INSERT ON ocorrencias_valor_pendente
+WHEN EXISTS (SELECT 1 FROM pp_pagamentos WHERE conta_id = NEW.conta_id)
+BEGIN SELECT RAISE(ABORT, '{MENSAGEM_PENDENTE_COM_PAGAMENTOS}'); END
+"""
+# Objetos esperados por tabela da v11: {(tipo, nome): ddl}.
+OBJETOS_V11 = {
+    TABELA_PARCELAMENTOS: {("table", TABELA_PARCELAMENTOS): DDL_V11[TABELA_PARCELAMENTOS]},
+    TABELA_SERIES_VARIAVEIS: {("table", TABELA_SERIES_VARIAVEIS): DDL_V11[TABELA_SERIES_VARIAVEIS]},
+    TABELA_VALOR_PENDENTE: {("table", TABELA_VALOR_PENDENTE): DDL_V11[TABELA_VALOR_PENDENTE],
+                            ("trigger", GATILHO_PENDENTE_SEM_PAGAMENTOS): DDL_GATILHO_PENDENTE},
+}
+# Chaves estrangeiras esperadas: (tabela referida, coluna, coluna referida).
+CHAVES_V11 = {
+    TABELA_PARCELAMENTOS: [("series_recorrencia", "serie_id", "id")],
+    TABELA_SERIES_VARIAVEIS: [("series_recorrencia", "serie_id", "id")],
+    TABELA_VALOR_PENDENTE: [("contas", "conta_id", "id")],
+}
+
+
+def _criar_tabelas_v11(cursor):
+    for ddl in DDL_V11.values():
+        cursor.execute(ddl)
+    cursor.execute(DDL_GATILHO_PENDENTE)
+
+
+def _estado_tabela_v11(cursor, tabela):
+    """'ausente', 'valida' ou 'incompativel': DDL exato (sem diferença de
+    espaçamento), só os objetos esperados (sem índices ou gatilhos a mais) e as
+    chaves estrangeiras esperadas."""
+    cursor.execute("SELECT type, name, sql FROM sqlite_master WHERE tbl_name = ? OR name = ?", (tabela, tabela))
+    objetos = cursor.fetchall()
+    if not objetos:
+        return "ausente"
+    encontrados = {(tipo, nome): _normalizar_ddl(sql or "") for tipo, nome, sql in objetos}
+    esperados = {chave: _normalizar_ddl(ddl) for chave, ddl in OBJETOS_V11[tabela].items()}
+    if encontrados != esperados:
+        return "incompativel"
+    cursor.execute(f"PRAGMA foreign_key_list({tabela})")
+    if [tuple(linha[2:5]) for linha in cursor.fetchall()] != CHAVES_V11[tabela]:
+        return "incompativel"
+    return "valida"
+
+
+def _estados_v11(cursor):
+    return {tabela: _estado_tabela_v11(cursor, tabela) for tabela in DDL_V11}
+
+
+def _dados_v11_invalidos(cursor):
+    """Linhas que contrariam as regras da v11 (as referências inexistentes aparecem
+    em `PRAGMA foreign_key_check`): tipos e formatos; parcelamento só em série
+    mensal com término; série não pode ser parcelada e variável ao mesmo tempo;
+    ocorrência pendente só em série variável, com o marcador interno 0, sem
+    quitação e sem registros de pagamento."""
+    consultas = (
+        f"""SELECT COUNT(*) FROM {TABELA_PARCELAMENTOS}
+            WHERE typeof(serie_id) != 'integer' OR typeof(quantidade_original) != 'integer'
+               OR typeof(valor_total_original_centavos) != 'integer'
+               OR typeof(criado_em) != 'text' OR length(criado_em) < 10""",
+        f"""SELECT COUNT(*) FROM {TABELA_PARCELAMENTOS} p JOIN series_recorrencia s ON s.id = p.serie_id
+            WHERE s.frequencia != 'mensal' OR s.data_termino IS NULL""",
+        f"""SELECT COUNT(*) FROM {TABELA_SERIES_VARIAVEIS}
+            WHERE typeof(serie_id) != 'integer' OR typeof(definido_em) != 'text' OR length(definido_em) < 10
+               OR serie_id IN (SELECT serie_id FROM {TABELA_PARCELAMENTOS})""",
+        f"""SELECT COUNT(*) FROM {TABELA_VALOR_PENDENTE} v LEFT JOIN contas c ON c.id = v.conta_id
+            WHERE typeof(v.conta_id) != 'integer' OR typeof(v.definido_em) != 'text' OR length(v.definido_em) < 10
+               OR c.id IS NULL OR c.serie_id IS NULL
+               OR c.serie_id NOT IN (SELECT serie_id FROM {TABELA_SERIES_VARIAVEIS})
+               OR c.valor != 0 OR c.status != 'pendente' OR c.data_pagamento IS NOT NULL
+               OR EXISTS (SELECT 1 FROM {TABELA_PAGAMENTOS} p WHERE p.conta_id = v.conta_id)""",
+    )
+    return sum(cursor.execute(sql).fetchone()[0] for sql in consultas)
+
+
+def _verificar_schema_v11(cursor, versao_esperada=VERSAO_SCHEMA_V11):
+    """Checagens da v10 (com user_version `versao_esperada`) + as três tabelas da
+    v11 exatas, o gatilho e os dados dentro das regras."""
+    resultado = _verificar_schema_v10(cursor, versao_esperada=versao_esperada)
+    resultado["tabelas_v11"] = _estados_v11(cursor)
+    validas = all(estado == "valida" for estado in resultado["tabelas_v11"].values())
+    # As regras dos dados da v11 consultam `pp_pagamentos`: só com ela válida (senão, banco inválido sem erro).
+    consultaveis = validas and resultado["tabela_pagamentos"] == "valida"
+    resultado["dados_v11_invalidos"] = _dados_v11_invalidos(cursor) if consultaveis else None
+    resultado["ok"] = resultado["ok"] and validas and resultado["dados_v11_invalidos"] == 0
+    return resultado
+
+
+def _dados_v10(cursor):
+    """Dados v9 + registros de pagamento (preservados pela migração v11)."""
+    dados = _dados_v9(cursor)
+    cursor.execute(f"SELECT * FROM {TABELA_PAGAMENTOS} ORDER BY id")
+    dados[TABELA_PAGAMENTOS] = cursor.fetchall()
+    return dados
+
+
+def migrar_schema_v11(caminho_banco=None):
+    """
+    Migração v10 -> v11 (Sino 6.12). Aditiva: cria `parcelamentos`,
+    `series_valor_variavel`, `ocorrencias_valor_pendente` e o gatilho que impede
+    marcar como pendente uma ocorrência com registros de pagamento. Nenhuma
+    conta, série ou pagamento muda; todas as recorrências continuam Fixas.
+
+    Mesmo roteiro da v10, tudo dentro de `BEGIN IMMEDIATE`. Antes de qualquer
+    escrita e sem backup:
+      * `user_version` não suportada (VersaoDeBancoNaoSuportadaError) ou anterior
+        à 10 (SchemaV11IncompativelError -- a v10 vem antes);
+      * banco v11: as três tabelas exatas e com dados válidos; senão
+        SchemaV11IncompativelError. Íntegro: {"executado": False, "motivo": "já migrado"};
+      * banco v10: qualquer tabela da v11 já existente (com qualquer definição) é
+        recusada -- solução mais simples, sem reaproveitar nem apagar nada;
+      * banco v10 que não passa na própria validação: BancoNaoPreparadoError.
+    Depois: backup com integrity_check, criação, `user_version = 11`, validação
+    (schema v11, contagens e dados v10 idênticos) e COMMIT. Qualquer falha
+    reverte tudo; o backup, se já criado, permanece no disco.
+
+    Retorna {"executado": True, "backup": caminho}.
+    """
+    caminho_banco = caminho_banco or NOME_DO_BANCO
+    if not os.path.exists(caminho_banco):
+        raise FileNotFoundError(f"Banco não encontrado: {caminho_banco}")
+
+    conexao = sqlite3.connect(caminho_banco)
+    caminho_backup = None
+    try:
+        conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+        cursor = conexao.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+
+        versao = _exigir_versao_suportada(cursor)
+        if versao < VERSAO_SCHEMA_V10:
+            raise SchemaV11IncompativelError(
+                [f"user_version {versao}: o banco precisa passar pela migração v10 antes da v11"]
+            )
+        estados = _estados_v11(cursor)
+
+        if versao >= VERSAO_SCHEMA_V11:
+            problemas = [f"{tabela} {estado}" for tabela, estado in estados.items() if estado != "valida"]
+            if problemas:
+                raise SchemaV11IncompativelError([f"banco v{versao} com " + ", ".join(problemas)])
+            invalidos = _dados_v11_invalidos(cursor)
+            if invalidos:
+                raise SchemaV11IncompativelError([f"{invalidos} registro(s) da v11 fora das regras"])
+            verificacao = _verificar_schema_v11(cursor, versao_esperada=versao)
+            if not verificacao["ok"]:
+                raise BancoNaoPreparadoError(verificacao)
+            cursor.execute("ROLLBACK;")
+            return {"executado": False, "motivo": "já migrado", "backup": None}
+
+        existentes = [tabela for tabela, estado in estados.items() if estado != "ausente"]
+        if existentes:
+            raise SchemaV11IncompativelError([f"banco v{versao} já tem {', '.join(existentes)}"])
+        validacao_v10 = _verificar_schema_v10(cursor)
+        if not validacao_v10["ok"]:
+            raise BancoNaoPreparadoError(validacao_v10)
+
+        caminho_backup = criar_backup(caminho_banco, rotulo="v11")
+        if not _verificar_integridade_backup(caminho_backup):
+            raise RuntimeError(
+                f"Backup pré-migração v11 falhou no integrity_check ({caminho_backup}); migração abortada."
+            )
+
+        contagens_antes = _contagens(cursor)
+        dados_antes = _dados_v10(cursor)
+
+        _criar_tabelas_v11(cursor)
+        cursor.execute(f"PRAGMA user_version = {VERSAO_SCHEMA_V11};")
+
+        verificacao = _verificar_schema_v11(cursor)
+        if (not verificacao["ok"] or _contagens(cursor) != contagens_antes
+                or _dados_v10(cursor) != dados_antes):
+            raise RuntimeError("Validação pós-migração v11 falhou; alterações revertidas.")
+
+        cursor.execute("COMMIT;")
+    except BaseException:
+        _reverter_transacao(conexao)
+        raise
+    finally:
+        conexao.close()
+
+    return {"executado": True, "backup": caminho_backup}
+
+
 def _banco_existente_vazio(caminho_banco):
     """
     Só leitura. Recusa `user_version` não suportada (VersaoDeBancoNaoSuportadaError)
@@ -2176,13 +2440,13 @@ def preparar_banco():
              "migracao_v10": dict | None}.
     """
     caminho_banco = NOME_DO_BANCO
-    migracao_v6 = migracao_v7 = migracao_v8 = migracao_v9 = migracao_v10 = None
+    migracao_v6 = migracao_v7 = migracao_v8 = migracao_v9 = migracao_v10 = migracao_v11 = None
     if not os.path.exists(caminho_banco) or _banco_existente_vazio(caminho_banco):
         criar_tabelas()
         situacao = "criado"
     elif validar_schema_atual(caminho_banco)["ok"]:
         return {"situacao": "atual", "migracao": None, "migracao_v7": None, "migracao_v8": None,
-                "migracao_v9": None, "migracao_v10": None}
+                "migracao_v9": None, "migracao_v10": None, "migracao_v11": None}
     else:
         if not validar_migracao_v6(caminho_banco)["ok"]:
             migracao_v6 = migrar_schema_v6(caminho_banco)
@@ -2190,15 +2454,17 @@ def preparar_banco():
         migracao_v8 = migrar_schema_v8(caminho_banco)
         migracao_v9 = migrar_schema_v9(caminho_banco)
         migracao_v10 = migrar_schema_v10(caminho_banco)
+        migracao_v11 = migrar_schema_v11(caminho_banco)
         executou = any(m is not None and m["executado"]
-                       for m in (migracao_v6, migracao_v7, migracao_v8, migracao_v9, migracao_v10))
+                       for m in (migracao_v6, migracao_v7, migracao_v8, migracao_v9, migracao_v10, migracao_v11))
         situacao = "migrado" if executou else "atual"
 
     validacao = validar_schema_atual(caminho_banco)
     if not validacao["ok"]:
         raise BancoNaoPreparadoError(validacao)
     return {"situacao": situacao, "migracao": migracao_v6, "migracao_v7": migracao_v7,
-            "migracao_v8": migracao_v8, "migracao_v9": migracao_v9, "migracao_v10": migracao_v10}
+            "migracao_v8": migracao_v8, "migracao_v9": migracao_v9, "migracao_v10": migracao_v10,
+            "migracao_v11": migracao_v11}
 
 
 # RNF05: PBKDF2-HMAC-SHA256 (stdlib, sem dependência nova) com salt aleatório
@@ -3115,6 +3381,9 @@ def excluir_usuario(pendencia):
             raise SenhaAlteradaDuranteOperacaoError()
         # Pagamentos parciais: pagamentos e marcas de histórico das contas do usuário
         _apagar_pagamentos(cursor, "usuario_id = ?", (pendencia.usuario_id,))
+        # Sino 6.12 (v11): complementos das contas e séries do usuário, antes delas.
+        _apagar_complementos_de_contas(cursor, "usuario_id = ?", (pendencia.usuario_id,))
+        _apagar_complementos_de_series(cursor, "usuario_id = ?", (pendencia.usuario_id,))
         removidos = {}
         for tabela, chave in _TABELAS_DO_USUARIO:
             cursor.execute(f"DELETE FROM {tabela} WHERE usuario_id = ?", (pendencia.usuario_id,))
@@ -5009,6 +5278,7 @@ def alterar_frequencia_serie(conta_id, nova_frequencia, data_termino=None):
 
             if substituiveis:
                 placeholders = ",".join("?" * len(substituiveis))
+                _apagar_complementos_de_contas(cursor, f"id IN ({placeholders})", substituiveis)
                 cursor.execute(f"DELETE FROM contas WHERE id IN ({placeholders})", substituiveis)
 
             # Uma editada preservada ocupa a própria vaga: a nova grade não
@@ -5195,11 +5465,13 @@ def excluir_conta(conta_id):
         try:
             cursor.execute("BEGIN;")
             _apagar_pagamentos(cursor, "id = ?", (conta_id,))  # Pagamentos parciais: junto com a conta
+            _apagar_complementos_de_contas(cursor, "id = ?", (conta_id,))  # Sino 6.12 (v11)
             cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
 
             if serie_id is not None:
                 cursor.execute("SELECT 1 FROM contas WHERE serie_id = ? LIMIT 1", (serie_id,))
                 if cursor.fetchone() is None:
+                    _apagar_complementos_de_series(cursor, "id = ?", (serie_id,))  # Sino 6.12 (v11)
                     cursor.execute("DELETE FROM series_recorrencia WHERE id = ?", (serie_id,))
 
             cursor.execute("COMMIT;")
@@ -5272,6 +5544,7 @@ def excluir_conta_serie(conta_id):
 
             if serie_id is None:
                 _apagar_pagamentos(cursor, "id = ?", (conta_id,))  # Pagamentos parciais: junto com a conta
+                _apagar_complementos_de_contas(cursor, "id = ?", (conta_id,))  # Sino 6.12 (v11)
                 cursor.execute("DELETE FROM contas WHERE id = ?", (conta_id,))
             else:
                 cursor.execute(
@@ -5284,6 +5557,8 @@ def excluir_conta_serie(conta_id):
                 # da selecionada é preservada.
                 _apagar_pagamentos(cursor, "serie_id = ? AND posicao >= ?",
                                    (serie_id, posicao_referencia))
+                _apagar_complementos_de_contas(cursor, "serie_id = ? AND posicao >= ?",
+                                               (serie_id, posicao_referencia))  # Sino 6.12 (v11)
                 cursor.execute(
                     "DELETE FROM contas WHERE serie_id = ? AND posicao >= ?",
                     (serie_id, posicao_referencia),
@@ -5293,6 +5568,7 @@ def excluir_conta_serie(conta_id):
                 )
                 novo_horizonte = cursor.fetchone()[0]
                 if novo_horizonte is None:
+                    _apagar_complementos_de_series(cursor, "id = ?", (serie_id,))  # Sino 6.12 (v11)
                     cursor.execute("DELETE FROM series_recorrencia WHERE id = ?", (serie_id,))
                 else:
                     # Série era sem término: fecha-a no mês/ano da última ocorrência
@@ -5390,19 +5666,20 @@ def encerrar_recorrencia(conta_id):
         try:
             cursor.execute("BEGIN;")
 
-            cursor.execute(
+            removiveis = (
                 f"""
-                DELETE FROM contas
-                WHERE serie_id = ?
+                serie_id = ?
                   AND posicao > ?
                   AND data_vencimento > ?
                   AND status != 'pago'
                   AND data_pagamento IS NULL
                   AND editado_individualmente = 0
                   AND id NOT IN ({_sql_contas_com_pagamentos(cursor)})
-                """,
-                (serie_id, posicao_referencia, corte),
+                """
             )
+            # Sino 6.12 (v11): marcas de valor pendente das removidas, antes delas.
+            _apagar_complementos_de_contas(cursor, removiveis, (serie_id, posicao_referencia, corte))
+            cursor.execute(f"DELETE FROM contas WHERE {removiveis}", (serie_id, posicao_referencia, corte))
             ocorrencias_removidas = cursor.rowcount
 
             cursor.execute("SELECT MAX(data_prevista) FROM contas WHERE serie_id = ?", (serie_id,))

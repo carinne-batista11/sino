@@ -166,15 +166,26 @@ class AuxiliaresBancoV6(TesteComBancoTemporario):
         finally:
             conexao.close()
 
-    def assert_schema_v10(self, caminho):
-        """Schema atual: tudo da v9 + pp_pagamentos (Sino 6.10), user_version 10."""
-        self.assert_schema_v9(caminho, versao=10)
+    def assert_schema_v10(self, caminho, versao=10):
+        """Tudo da v9 + pp_pagamentos (Sino 6.10), com a user_version indicada."""
+        self.assert_schema_v9(caminho, versao=versao)
         conexao = sqlite3.connect(caminho)
         try:
             self.assertEqual(db._estado_tabela_pagamentos(conexao.cursor()), "valida")
         finally:
             conexao.close()
 
+
+    def assert_schema_v11(self, caminho):
+        """Schema atual (Sino 6.12): tudo da v10 + parcelamentos, séries de valor
+        variável e valores pendentes (com o gatilho), user_version 11."""
+        self.assert_schema_v10(caminho, versao=11)
+        conexao = sqlite3.connect(caminho)
+        try:
+            self.assertEqual(db._estados_v11(conexao.cursor()),
+                             {tabela: "valida" for tabela in db.DDL_V11})
+        finally:
+            conexao.close()
     def validar_schema_v8(self, caminho):
         """Validação da v8 como versão final (antes da migração v9)."""
         conexao = sqlite3.connect(caminho)
@@ -284,8 +295,8 @@ class TesteMigracaoV6(AuxiliaresBancoV6):
     #  Banco novo e criar_tabelas()
     # ------------------------------------------------------------------
     def test_banco_novo_ja_nasce_v10_e_migracao_v6_nao_faz_nada(self):
-        # Sino 6.10: criar_tabelas() cria o schema atual (v10), que contém a v6 a v9.
-        self.assert_schema_v10(self.caminho_banco)
+        # Sino 6.10: criar_tabelas() cria o schema atual -- v11 desde a Sino 6.12 --, que contém a v6 a v10.
+        self.assert_schema_v11(self.caminho_banco)
         self.assertTrue(db.validar_migracao_v6(self.caminho_banco)["ok"])
         self.assertTrue(db.validar_schema_atual(self.caminho_banco)["ok"])
 
