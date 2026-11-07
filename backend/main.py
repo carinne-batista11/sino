@@ -193,8 +193,9 @@ def formatar_moeda(valor):
 
 
 TEXTO_VALOR_PENDENTE = "Valor pendente"
+OPACIDADE_DESATIVADO = 0.38  # Sino 6.12 (Etapa 11): controle desativado distinguível em qualquer tema
 TEXTO_INFORMAR_VALOR = "O valor desta ocorrência ainda não foi informado."
-TEXTO_DIGITE_O_VALOR = "Digite o valor desta ocorrência (R$ 0,00 também é um valor)."
+TEXTO_DIGITE_O_VALOR = "R$ 0,00 também é um valor."
 TEXTO_AVISO_R5 = ("Numa recorrência de valor variável, “Este mês em diante” muda o valor só desta ocorrência e o "
                   "valor de referência da recorrência; as próximas mantêm o próprio valor ou continuam com "
                   "“Valor pendente”.")
@@ -3288,10 +3289,14 @@ def main(page: ft.Page):
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
                         ft.Row(
+                            # Sino 6.12 (Etapa 11): em janela estreita o título quebra linha e "Ver essas
+                            # contas" continua visível à direita (é o caminho para as atrasadas, inclusive
+                            # as com valor pendente); em janela larga, igual à 6.11.
+                            expand=True,
                             controls=[
                                 ft.Icon(ft.Icons.ERROR_OUTLINE, size=18, color=cores.alerta_atraso_texto),
                                 ft.Container(width=8),
-                                ft.Text("Você possui contas em atraso!", size=13,
+                                ft.Text("Você possui contas em atraso!", size=13, expand=True,
                                          weight=ft.FontWeight.BOLD, color=cores.alerta_atraso_texto),
                             ],
                         ),
@@ -3825,7 +3830,8 @@ def main(page: ft.Page):
                         ))
                 corpo["area"].controls = [conteudo]
 
-            def construir_seletor_frequencia(estado, opcoes=(("mensal", "Mensal"), ("anual", "Anual")), data=None):
+            def construir_seletor_frequencia(estado, opcoes=(("mensal", "Mensal"), ("anual", "Anual")), data=None,
+                                             ao_mudar=None):
                 # RF27/RF28: chips Mensal/Anual reutilizáveis nos diálogos de
                 # transformar em recorrente e alterar frequência -- mesmo estilo
                 # visual dos chips de tipo da tela Nova conta. Sino 6.12 (Etapa 8):
@@ -3853,6 +3859,8 @@ def main(page: ft.Page):
                 def selecionar(valor):
                     estado["valor"] = valor
                     montar()
+                    if ao_mudar is not None:
+                        ao_mudar(valor)
                     page.update()
 
                 montar()
@@ -4268,9 +4276,13 @@ def main(page: ft.Page):
                 linha_frequencia_transf = construir_seletor_frequencia(frequencia_transf)
                 # Sino 6.12 (Etapa 8, R2): valor Fixo (padrão, como na 6.11) ou Variável.
                 comportamento_transf = {"valor": "fixo"}
+                # Etapa 11: a ajuda só aparece com "Valor variável" (como em Nova conta).
+                ajuda_variavel_transf = ft.Text(TEXTO_AJUDA_VARIAVEL, size=12, color=cores.texto_secundario,
+                                                visible=False, data="ajuda_variavel_transformar")
                 linha_comportamento_transf = construir_seletor_frequencia(
                     comportamento_transf, (("fixo", "Valor fixo"), ("variavel", "Valor variável")),
-                    data="comportamento_transformar")
+                    data="comportamento_transformar",
+                    ao_mudar=lambda v: setattr(ajuda_variavel_transf, "visible", v == "variavel"))
 
                 # "Sem data de término" começa DESATIVADO -- mesmo padrão já usado em
                 # "Nova conta" e em "Alterar frequência" (D5): o término fica visível e
@@ -4354,7 +4366,7 @@ def main(page: ft.Page):
                             linha_termino_transf,
                             # Sino 6.12 (Etapa 8, R2): Valor fixo | Valor variável.
                             linha_comportamento_transf,
-                            ft.Text(TEXTO_AJUDA_VARIAVEL, size=12, color=cores.texto_secundario),
+                            ajuda_variavel_transf,
                             erro_transf,
                         ],
                     ),
@@ -5456,6 +5468,9 @@ def main(page: ft.Page):
                             ft.Icons.CHECK_CIRCLE_OUTLINE, f"Marcar {conta_no_nome}, como paga: indisponível, "
                             "valor pendente", cores.botao_desabilitado_texto, 22)
                         icone_pagamento.icon_color = cores.botao_desabilitado_texto
+                        # Etapa 11: no tema claro a cor do desativado é a mesma do ativo; a opacidade
+                        # reduzida (padrão do Material para desativado) diferencia os dois estados.
+                        icone_pagamento.opacity = OPACIDADE_DESATIVADO
                         icone_pagamento.tooltip = database.MENSAGEM_PAGAMENTO_COM_VALOR_PENDENTE
                         icone_pagamento.data = "pagamento_bloqueado_valor_pendente"
                 controles_linha.append(icone_pagamento)
@@ -5543,6 +5558,7 @@ def main(page: ft.Page):
                         ft.Icon(ft.Icons.WARNING_AMBER, size=18, color=cores.aviso_icone),
                         ft.Container(width=8),
                         ft.Column(
+                            expand=True,  # Sino 6.12 (Etapa 11): quebra linha em vez de cortar o texto
                             controls=[
                                 ft.Text(frase_resumo_proximas(len(proximas)), size=13,
                                          weight=ft.FontWeight.BOLD, color=cores.aviso_texto),
