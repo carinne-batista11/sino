@@ -19,12 +19,12 @@ O Sino é um aplicativo desktop para registrar e acompanhar as contas do dia a d
 
 A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está **concluída para portfólio e demonstração local** (04/10/2026). As mudanças estão resumidas nas [notas da versão](docs/notas-da-versao.md). A **Sino 6.1** (06/10/2026), primeira entrega da [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md), acrescenta versões e registro do aceite dos Termos de Uso e da Política de Privacidade. A **Sino 6.2** (07/10/2026) restringe o serviço de códigos a uma lista de destinatários permitidos (naquela entrega, o serviço ainda não estava publicado). A **Sino 6.3** (E4; versão registrada em 16/10/2026) passa a usar o serviço de códigos publicado em **produção restrita**, com envio real de e-mails só para os endereços autorizados pela autora.
 
-- **Contas únicas, mensais ou anuais**, com ou sem data de término. Os vencimentos respeitam o calendário: uma conta do dia 31 vence em 28/02 e volta para 31/03.
+- **Contas únicas, mensais ou anuais**, com ou sem data de término. Os vencimentos respeitam o calendário: uma conta do dia 31 vence em 28/02 e volta para 31/03. *Na Sino 6.12 (preparada para integração, ainda não publicada):* também **contas parceladas** (2 a 36 parcelas) e recorrências de **valor fixo ou variável**.
 - **Edição e exclusão com escopo**: em contas recorrentes, você escolhe entre "Somente este mês" e "Este mês em diante", inclusive para categoria e descrição.
-- **Recorrência flexível**: transforme uma conta avulsa em recorrente, altere a frequência ou encerre a recorrência sem perder o histórico.
+- **Recorrência flexível**: transforme uma conta avulsa em recorrente, altere a frequência ou encerre a recorrência sem perder o histórico. *Na Sino 6.12 (ainda não publicada):* só a conta Única muda de tipo; "Alterar frequência" sai (Mensal ↔ Anual bloqueado), e para outra frequência basta encerrar a série e transformar uma ocorrência que ficou avulsa.
 - **Pagamentos** com data efetiva e status de atraso calculado automaticamente. *Na Sino 6.10 (publicada no GitHub em 30/10/2026):* pagamentos **parciais**, com total pago, saldo devedor, histórico e estorno sem apagar nada.
 - **Tela Principal** com o total do mês, todas as contas do mês, atalho para editar e aviso de contas em atraso; tela **"Ver status"** com filtros.
-- **Detalhes da conta** com emoji e cor da categoria, status ao lado do pagamento e sempre os mesmos campos: valor, vencimento, categoria, parcela ("Parcela 3 de 12"), recorrência e descrição.
+- **Detalhes da conta** com emoji e cor da categoria, status ao lado do pagamento e sempre os mesmos campos: valor, vencimento, categoria, parcela ("Parcela 3 de 12"), recorrência e descrição. *Na Sino 6.12 (ainda não publicada):* "Parcela X de Y" só nas parceladas e "Ocorrência X de Y" nas recorrências.
 - **Gráfico** mensal e anual: total do período, total pago, evolução dos gastos, distribuição por categoria e comparação com o período anterior.
 - **Categorias** com emoji e cor própria: 11 prontas para usar e até 30 por usuário.
 - **Ajustes**: nome, e-mail, senha, tema **Claro ou Escuro**, Termos de Uso e Política de Privacidade, sair e **excluir a conta**.
@@ -37,7 +37,7 @@ A [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md) é o plano em andamento, divid
 
 - **E1–E4 concluídas:** licença (E1), versões e aceite dos Termos e da Política (E2, Sino 6.1), restrição de destinatários (E3, Sino 6.2) e envio real em produção restrita (E4, Sino 6.3). A E4 foi encerrada com ressalvas: a meta original de desempenho do serviço de códigos não foi atendida (risco aceito só para o uso restrito), e a revisão jurídica dos Termos e da Política continua pendente.
 - **E5 (M5) concluída:** contador do nome do usuário oculto no Cadastro e em Editar nome (Sino 6.4, publicada em 16/10/2026).
-- **E6 (M4) concluída:** descrição das contas com até 1000 caracteres percebidos, em campo de 2 a 8 linhas (Sino 6.5, publicada em 16/10/2026).
+- **E6 (M4) concluída:** descrição das contas com até 1000 caracteres percebidos, em campo de 2 a 8 linhas (Sino 6.5, publicada em 16/10/2026). *Na Sino 6.12 (ainda não publicada), o limite passa a 250.*
 - **E7 (M2) concluída:** orientação "Registre suas primeiras contas e tenha tudo sob controle." em Início para quem ainda não tem contas (Sino 6.6, publicada em 16/10/2026).
 - **E8 (M6) e E11 (M3) concluídas:** calendários em português, com o dia de hoje legível, e seletor de mês e ano em Início (Sino 6.7, publicada em 16/10/2026).
 - **E9 (M1) e E10 (M11) concluídas:** espaços e caracteres invisíveis no e-mail e nas senhas, e linhas de conta legíveis em janelas estreitas (Sino 6.8, publicada em 16/10/2026, commit `cc2395c`).
@@ -46,6 +46,24 @@ A [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md) é o plano em andamento, divid
 - **Sino 6.9.1** ~~(candidata, ainda não publicada)~~ *(publicada no GitHub em 24/10/2026; [notas da versão](docs/notas-da-versao.md))*: nomes acessíveis nos botões só de ícone, como as setas de mês, de ano e do Gráfico, "Voltar", "Escolher data" e as ações das categorias; nas linhas de contas de Início, o editar e o marcar como paga ou pendente passam a ser lidos com o nome e o vencimento da conta. Aparência da interface sem mudança. Desempenho com 1.000 contas medido também na janela real ([desempenho](docs/desempenho-v6.md)); o pior caso continua acima de 2 s. Suíte com 1.302 testes aprovados. Outras pendências de acessibilidade continuam abertas, e o leitor de tela real não foi testado.
 - **Sino 6.10** ~~(implementada e validada com ressalvas; ainda não publicada)~~ *(implementada e validada com ressalvas; publicada no GitHub em 30/10/2026; [notas da versão](docs/notas-da-versao.md))*: **pagamentos parciais**, fora das entregas E1–E18 por decisão da autora (regra 5.54 da ERS v7.0). Registro de pagamentos em partes, estorno rastreável, Editar conta reorganizado e proteção das ocorrências pagas nas recorrências. O banco passa da versão 9 para a 10 na primeira abertura, com backup; a Sino 6.9.1 não abre o banco atualizado sem restaurar esse backup. Nova versão da Política de Privacidade (30/10/2026, relevante: novo aceite no próximo login). Suíte com 1.595 testes aprovados; validação manual parcial; leitor de tela não testado.
 - **Sino 6.11** ~~(em preparação; ainda não publicada)~~ *(publicada no GitHub em 02/11/2026; [notas da versão](docs/notas-da-versao.md))*: nova tela **Nova conta**, no padrão visual de Editar conta, com a recorrência escolhida no diálogo centralizado "Configurar recorrência" (Única, Mensal ou Anual, com ou sem término) e o resumo no próprio campo. Sem regra nova e sem mudança no banco (continua na versão 10). Fora das entregas E1–E18 (P46 da ERS v7.0).
+- **Sino 6.12** *(validada tecnicamente e preparada para integração em 08/11/2026; **ainda não publicada**, sem etiqueta e sem data de publicação)*.
+  - **O que traz:**
+    - tipos de conta Única, **Parcelada** (2 a 36 parcelas, com prévia, edição de parcelas e "Alterar parcelamento"), Recorrente mensal e anual;
+    - recorrências de **valor fixo ou variável**, com "Valor pendente", que não é R$ 0,00 nem entra nos totais e bloqueia pagamentos até o valor ser informado;
+    - conversão Fixo ↔ Variável;
+    - transformação só a partir da conta Única;
+    - pagamentos e estornos preservados em todas as operações;
+    - descrição de até 250 caracteres.
+  - **Banco de dados:** passa da versão **10** para a **11** (só acrescenta estruturas, com backup antes). A Sino 6.11 não abre o banco atualizado sem restaurar a versão 10.
+  - **Testes:**
+    - 1.894 testes automáticos aprovados;
+    - ensaios de migração aprovados (38/38 e 27/27, este com pagamentos e estornos);
+    - validação automatizada da interface e da acessibilidade;
+    - validação manual da autora 24/24.
+  - **Ressalvas:**
+    - o leitor de tela não foi testado;
+    - a responsividade em 320 px e outros ajustes visuais ficam para a Sino 6.13.
+  - **Documentação:** regras no [anexo da 6.12](docs/sino-6.12-regras.md) e nas [notas da versão](docs/notas-da-versao.md). Fora das entregas E1–E18 (5.55 da ERS v7.0).
 - **E14–E15 pendentes:** preparação e piloto da disponibilização para outras pessoas.
 - **E16–E18 pendentes:** comprovantes em imagem e backup completo.
 - **Faturas (M13):** proposta ainda candidata, sem aprovação.
@@ -171,7 +189,7 @@ Com o ambiente virtual `.venv` ativado e as dependências instaladas (veja "Como
 python3 -m unittest discover tests
 ```
 
-A suíte (879 testes na entrega da v6.0; 1070 na Sino 6.3; 1.595 na Sino 6.10; 1.615 na Sino 6.11) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
+A suíte (879 testes na entrega da v6.0; 1070 na Sino 6.3; 1.595 na Sino 6.10; 1.615 na Sino 6.11; 1.894 na Sino 6.12, preparada para integração e ainda não publicada) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
 
 Os testes do serviço de códigos (`servidor/`; 151 testes na v6.0, 260 na Sino 6.3) usam Node.js 24 e rodam localmente, sem conta em serviços externos:
 

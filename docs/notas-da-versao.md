@@ -5,6 +5,69 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.12 — tipos de conta, parcelamentos e valores variáveis (preparada para integração)
+
+**Validada tecnicamente e preparada para integração em 08/11/2026. Ainda não publicada:**
+- não está na `main`, não tem etiqueta e não tem data de publicação;
+- o banco pessoal da autora ainda não foi migrado.
+
+A versão fica fora das entregas E1–E18 do planejamento. Regras completas no anexo [sino-6.12-regras.md](sino-6.12-regras.md) e na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seções 5.55 e 9.3. Os Termos de Uso e a Política de Privacidade não mudam.
+
+**Funcionalidades**
+
+- **Quatro tipos de conta:** Única, **Parcelada**, Recorrente mensal e Recorrente anual, escolhidos no diálogo "Configurar recorrência" da Nova conta.
+  - Nas parceladas aparece "Parcela X de Y"; nas recorrências, "Ocorrência X de Y".
+- **Contas parceladas:**
+  - **Criação:** você informa o valor total e de 2 a 36 parcelas mensais, com prévia de valores e vencimentos antes de salvar. A diferença de centavos fica na primeira parcela.
+  - **Edição de uma parcela:** o valor de uma parcela pode ser mudado individualmente.
+  - **"Alterar parcelamento"** (Editar conta, campo Recorrência) muda o total ou a quantidade. Só as parcelas livres são recalculadas; as que têm pagamentos (inclusive desfeitos) e as editadas ficam como estão.
+  - **Recusas:** quando a mudança não é possível, ela é recusada por inteiro, com o motivo, e o botão "Aplicar" fica cinza.
+- **Recorrências de valor fixo ou variável:**
+  - **Valor variável:** as próximas ocorrências aparecem com **"Valor pendente"**. Esse valor não é R$ 0,00, não entra nos totais e no Gráfico (que indicam quantas estão pendentes) e não pode ser pago até ser informado com "Informar valor".
+  - **Valor fixo:** continua sendo o padrão, e todas as recorrências que já existem continuam fixas.
+- **Conversão entre valor fixo e variável** ("Alterar tipo de valor", em Editar conta):
+  - os valores já informados, as ocorrências com pagamentos e as editadas são preservados;
+  - "Mudar para fixo" fica bloqueado, com o motivo, enquanto houver ocorrências anteriores com valor pendente.
+- **Transformações:** só a conta Única muda de tipo.
+  - Ela pode virar parcelada, se não tiver nenhum registro de pagamento, ou recorrente, mantendo todo o histórico de pagamentos.
+  - Mensal ↔ Anual não é mais permitido, e "Alterar frequência" saiu. Para usar outra frequência, encerre a recorrência e transforme uma ocorrência que ficou avulsa.
+- **Pagamentos e estornos** funcionam como na Sino 6.10 e são preservados em todas as operações novas.
+- **Descrição:** até **250 caracteres** (antes 1.000). Descrições antigas maiores continuam inteiras e só precisam ser reduzidas se forem editadas.
+
+**Banco de dados**
+
+- **Migração:** o banco passa da versão **10** para a **11**. Ela só acrescenta três tabelas e uma regra de proteção; nenhum dado existente muda.
+- **Proteções:**
+  - backup automático antes da migração;
+  - transação única com desfazimento total em caso de falha;
+  - uma segunda execução não muda nada.
+- **Sem volta direta:** a **Sino 6.11 não abre um banco na versão 11**. Para voltar a ela, é preciso restaurar o banco da versão 10, que não terá o que foi registrado depois.
+
+**Testes e validação**
+
+- **Testes automáticos:** 1.894 aprovados, sem falhas, erros ou testes ignorados, em bancos temporários e sem acesso à rede.
+- **Ensaios de migração:**
+  - 38/38 numa cópia do banco pessoal;
+  - 27/27 num banco fictício com pagamentos integrais, parciais, de saldo e estornados.
+- **Validação técnica automatizada:** 87/87 na camada de dados, 185/185 na interface (temas Claro e Escuro, de 320 a 1000 px) e 119/119 em acessibilidade e legibilidade.
+- **Validação manual da autora:** 24/24 verificações aprovadas em 08/11/2026, com mouse e teclado reais, em banco fictício.
+
+**Ressalvas e pendências**
+
+- **Leitor de tela:** Orca e AT-SPI não foram testados.
+- **Ajustes visuais para a Sino 6.13:**
+  - "Valor pendente" quebrando em Início;
+  - telas de 320 px (Ajustes, botões da Nova conta, filtros, Gráfico);
+  - padronização dos botões indisponíveis.
+- **Também para a 6.13:**
+  - o valor informado com "Este mês em diante" numa série variável pode voltar a ficar pendente numa conversão posterior (D7);
+  - uma frase do diálogo "Mudar para valor fixo" sugere uma alteração quando a conversão está bloqueada (D8).
+- **Ainda em análise, sem mudança nesta versão:**
+  - duas contas no mesmo mês depois de encerrar e transformar;
+  - nome vazio e valor negativo recusados só no formulário;
+  - o Enter não envia o login;
+  - a categoria "Cartão de crédito" aparece sem lixeira.
+
 ## Sino 6.11 — nova tela Nova conta (02/11/2026)
 
 **Publicada no GitHub em 02/11/2026** (etiqueta `sino-6.11`). Implementada e validada; avaliação manual da versão integrada aprovada pela autora. Implantação encerrada em 02/11/2026. Evolução da interface, fora das entregas E1–E18 do planejamento ([ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 8 e decisão P46). Sem regra nova e sem mudança no banco de dados.
