@@ -1,5 +1,7 @@
 # Sino 6.12 — encerramento da versão experimental (07/11/2026)
 
+> *Atualização (08/11/2026):* este registro do encerramento experimental fica preservado como estava. As regras vigentes da 6.12 estão no anexo [sino-6.12-regras.md](sino-6.12-regras.md), com a situação da integração e da validação. Alguns itens abaixo foram superados depois, entre eles "Notas da versão sem seção da 6.12", a validação manual pendente e as regras "nas notas do ambiente experimental".
+
 **Situação:** etapa funcional experimental **concluída**. Commit local e etiqueta `sino-6.12-experimental` existem
 **só no clone experimental** (`/var/tmp/sino-612-20261106/app`, branch `experimental-6.12`, sem remoto).
 **Não publicada** e **não integrada** à `main`. O banco pessoal **não** foi migrado. Este encerramento **não**

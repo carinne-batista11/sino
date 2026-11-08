@@ -281,6 +281,34 @@ Fora das melhorias M1–M14 e das entregas E1–E18: decisão da autora de 28/10
 * **Data de pagamento de conta legada (5.10):** a função `editar_data_pagamento` foi **preservada** (testes oficiais), mas não tem mais acesso pela interface desde a D4. Caminho indireto existente, que **não** é uma solução escolhida: Detalhes → "Desmarcar como paga" → "Registrar pagamento parcial" com o valor total e a data desejada (a conta deixa de ser legada, fica pendente entre os dois passos e ganha um registro "integral"). Alternativas mantidas **adiadas** pela autora em 30/10/2026 (D8-C), nenhuma aprovada para implementação; o comportamento das contas legadas não muda: **A1** documentar só o caminho indireto; **A2** lápis na data de pagamento dos Detalhes só para conta legada, usando a função existente; **A3** converter a conta legada num registro "integral" ao corrigir a data (altera dados legados, contra "nenhuma conta é convertida" da v10).
 * Leitor de tela real (Orca) **não testado** na 6.10 (RNF14).
 
+## 5.55 Tipos de conta, parcelamentos e valores variáveis [v7 novo, Sino 6.12; completa 5.1, 5.5, 5.8, 5.54; exceções C4/P1 à 5.54 e R5 à 5.1]
+
+Também fora das melhorias M1–M14 e das entregas E1–E18, por decisão da autora (06 a 08/11/2026). Desenvolvida num ambiente experimental isolado e integrada na branch `integracao/sino-6.12`. As regras completas estão no anexo versionado [sino-6.12-regras.md](sino-6.12-regras.md), referência desta seção, que não as repete. O anexo traz:
+* tipos de conta e regra estrutural;
+* parcelamentos;
+* recorrências fixas e variáveis;
+* valor pendente;
+* pagamentos e estornos;
+* edição individual e coletiva;
+* transformações e a matriz de conversões;
+* as regras R1–R12 (com R4-A) e X1–X3;
+* encerramento;
+* as decisões aplicáveis e as pendências.
+
+Em resumo:
+
+* **Quatro tipos de conta:** Única, Parcelada (2 a 36 parcelas mensais), Recorrente mensal e Recorrente anual. Mensal e anual podem ter **Valor fixo** (padrão, como antes) ou **Valor variável**, em que as ocorrências seguintes nascem com **"Valor pendente"**.
+* **Mudança de tipo:** só a conta **Única** muda de tipo. Parceladas, mensais e anuais não mudam; Mensal ↔ Anual é bloqueado (R6), e "Alterar frequência" sai da tela. Fixo ↔ Variável não é uma mudança estrutural (R3, R4, R4-A, X3).
+* **Valor pendente não é R$ 0,00** (R8): não entra nos totais e bloqueia pagamentos até o valor ser informado.
+* **Proteção financeira:** parcelas e ocorrências com registros de pagamento, ativos ou estornados, e as editadas individualmente são preservadas nos recálculos e nas conversões (R12, R3, R4). As recusas acontecem antes de gravar, e as operações compostas são atômicas.
+* **Descrição:** o limite passa a 250 caracteres (5.45, atualização de 07/11/2026).
+* **Estrutura de dados:** migração v11 (9.3).
+* **Requisitos anteriores afetados:**
+  * RF10 (criação): passa a oferecer Parcelada e o valor variável;
+  * RF27 (alterar a frequência, 5.5): **retirado** da interface e recusado na camada de dados (R6). Para outra frequência, encerra-se a série e transforma-se uma ocorrência que ficou avulsa (X2);
+  * RF29 (encerrar recorrência): sem mudança (R7);
+  * RF32 e RF33 (descrição): limite de 250 (5.45).
+
 ---
 
 # 6. Requisitos Funcionais [v7]
@@ -355,16 +383,23 @@ As estruturas novas entram em **migrações separadas**, uma por entrega, para p
 |---|---|---|---|---|
 | **v9** | Aceites | Por usuário e documento: versão aceita e data e hora do aceite. Usuários existentes ficam como "anterior ao versionamento" quando a versão não puder ser determinada | M12 | 1 (M12 técnica) |
 | **v10** | Pagamentos | *Atualização (30/10/2026), implementada na Sino 6.10:* tabela `pp_pagamentos` e índice `idx_pp_pagamentos_conta` (9.2) | Pagamentos parciais (5.54, P44) | Sino 6.10 |
-| ~~**v10**~~ **v11** | Comprovantes | Ocorrência à qual pertence, nome interno aleatório do arquivo, tipo, tamanho, resumo de integridade e data | M10 | M10 |
-| ~~v10~~ v11 | Remoções pendentes | Nomes de arquivos a apagar depois de exclusões bem-sucedidas | M10 | M10 |
+| **v11** | Parcelamentos e valores variáveis | *Atualização (08/11/2026), implementada na Sino 6.12:* tabelas `parcelamentos`, `series_valor_variavel` e `ocorrencias_valor_pendente` e gatilho `trg_valor_pendente_sem_pagamentos` (9.3) | Tipos de conta e valores variáveis (5.55) | Sino 6.12 |
+| ~~**v10**~~ ~~**v11**~~ **v12** | Comprovantes | Ocorrência à qual pertence, nome interno aleatório do arquivo, tipo, tamanho, resumo de integridade e data | M10 | M10 |
+| ~~v10~~ ~~v11~~ v12 | Remoções pendentes | Nomes de arquivos a apagar depois de exclusões bem-sucedidas | M10 | M10 |
 | posterior | Faturas | Conforme o modelo que vier a ser aprovado (M13, candidata) | M13 | Só se aprovada |
 
 * A numeração segue a ordem real de implementação. Se a ordem das entregas mudar, a numeração acompanha, e cada migração continua cuidando só da sua estrutura.
 * **Criar as estruturas de comprovantes não habilita anexos:** a interface fica **indisponível** até que os novos textos estejam publicados e o novo aceite seja exigido (5.50, 5.53).
-* Antes da ~~v10~~ v11 ainda não existem comprovantes, então uma falha dela não afeta imagens. Migrações seguintes alteram só o banco.
+* Antes da ~~v10~~ ~~v11~~ v12 ainda não existem comprovantes, então uma falha dela não afeta imagens. Migrações seguintes alteram só o banco.
 * Os arquivos de imagem ficam fora do banco, em `database/comprovantes/` (fora do Git), com quarentena numa subpasta própria.
 * Nenhuma outra melhoria do escopo exige migração.
 * *Atualização (30/10/2026):* como prevê o primeiro item, a numeração acompanhou a ordem real: a **v10** foi usada pelos pagamentos parciais (Sino 6.10), e comprovantes e remoções pendentes passam à **v11**. As referências a "v10 (comprovantes)" em 10, 11.2, 13.2 (T6) e 15.1 (E16) passam a valer para a v11.
+* *Atualização (08/11/2026, Sino 6.12, preparada para integração e não publicada; decisão da autora D6B-5):* a numeração acompanhou de novo a ordem real.
+  * A **v10** continua sendo o schema da Sino 6.10 e da Sino 6.11.
+  * A **v11** passa a ser o schema da **Sino 6.12** (parcelamentos e valores variáveis, 9.3).
+  * Comprovantes e remoções pendentes passam à **v12**, que fica reservada a eles. As referências a "v11 (comprovantes)" da atualização anterior, em 10 (CT155, CT156), 11.2, 13.2 (T6) e 15.1 (E16), passam a valer para a v12.
+  * A decisão R10 do planejamento da 6.12 (06/11/2026, "sem reservar a v12") foi revista nesse ponto, como registra o anexo [sino-6.12-regras.md](sino-6.12-regras.md), seção 15.
+  * Se a ordem das entregas mudar outra vez, a numeração acompanha, como prevê o primeiro item.
 
 ## 9.2 Migração v10 — pagamentos parciais [v7 novo, Sino 6.10]
 
@@ -373,6 +408,61 @@ As estruturas novas entram em **migrações separadas**, uma por entrega, para p
 * Uma tabela `pp_pagamentos` preexistente (banco do protótipo) só é reaproveitada se for **exatamente** igual, com os registros intactos; qualquer diferença é recusada sem apagar nada.
 * **Volta à versão anterior:** a **Sino 6.9.1 não abre um banco v10** (recusa sem gravar, com a tela "Não foi possível abrir o Sino"). Voltar a ela exige **restaurar um backup compatível** — o `sino_pre_migracao_v10_…` criado na primeira abertura da 6.10, que **não contém** o que foi registrado depois dela.
 * **Ensaios (Etapa 7B, 30/10/2026, só em cópias isoladas):** cópia do banco oficial, cópias dos cinco backups, banco fictício v9 criado pela 6.9.1, execução repetida, interrupção real (SIGKILL) em dois pontos da transação e abertura de banco v10 pela 6.9.1: integridade ok, nenhuma violação de chave estrangeira, dados preservados, rollback e recusa conforme o esperado. O backup `sino_pre_migracao_v5_20260903_194647.db` tem schema **v4.1** (foi feito antes da migração v5): `preparar_banco` o recusa sem alterar nada — igual na 6.9.1 — e ele só chega à v10 com `migrar_schema_v5` explícita antes.
+
+## 9.3 Migração v11 — parcelamentos e valores variáveis [v7 novo, Sino 6.12]
+
+**Estrutura**
+* **Migração aditiva (RNF08):** nenhuma tabela, coluna ou índice existente muda, e nenhuma linha é alterada. Entram três tabelas e um gatilho:
+  * `parcelamentos`: a série, a quantidade original (2 a 36) e o total original em centavos, para parcelas guardadas como série mensal com término;
+  * `series_valor_variavel`: as séries de valor variável; uma série sem linha aqui é Fixa;
+  * `ocorrencias_valor_pendente`: as ocorrências com valor pendente; nelas, `contas.valor = 0` é só um marcador interno;
+  * gatilho `trg_valor_pendente_sem_pagamentos`: impede marcar como pendente uma ocorrência que tenha registros de pagamento, ativos ou estornados.
+* **Versão:** `PRAGMA user_version = 11`.
+* **Recorrências existentes:** todas continuam **fixas**. Pagamentos, estornos, contas legadas e séries que mudaram de frequência na 6.11 ficam como estavam.
+* **`pp_pagamentos`:** não recebe gatilho, porque a validação v10 exige essa tabela exata. A recusa de pagar uma pendente fica no código e é conferida pela validação v11.
+
+**Execução**
+* **Função:** `migrar_schema_v11`.
+* **Na abertura do app:** `preparar_banco` encadeia a v11 depois das migrações que faltarem. Um banco novo já nasce v11.
+* **Banco pessoal da autora:** a migração será feita por **chamada explícita e controlada**, com verificações antes e depois, e não pela primeira abertura (decisão D6B-2, 08/11/2026).
+* **Transação:** tudo roda numa transação única (`BEGIN IMMEDIATE`).
+* **Recusas antes de gravar e sem backup:**
+  * `user_version` não suportada;
+  * banco anterior à v10;
+  * banco v10 que não passa na própria validação;
+  * banco v10 que já tenha qualquer tabela da v11;
+  * banco v11 incompleto ou com dados fora das regras.
+* **Backup pré-migração:** `database/backups/sino_pre_migracao_v11_AAAAMMDD_HHMMSS.db`, feito pela API de backup do SQLite e conferido com `integrity_check`. Se a conferência falhar, a migração é abortada.
+* **Depois do backup:** criação das estruturas, `user_version = 11`, validação (schema v11 exato, contagens e todos os dados v10 idênticos) e COMMIT.
+* **Rollback:** qualquer falha desfaz tudo, e o banco continua v10. O backup, se já tiver sido criado, fica no disco.
+* **Interrupção do processo:** o journal do SQLite desfaz a transação na abertura seguinte, e a migração é retomada.
+* **Idempotência:** num banco v11 válido, a chamada devolve "já migrado" sem gravar nada e sem criar backup.
+
+**Volta à versão anterior**
+* **A Sino 6.11 não abre um banco v11:** recusa sem gravar e mostra a tela "Não foi possível abrir o Sino".
+* **Para voltar à 6.11:** é preciso **restaurar o banco v10**, ou seja, o backup `sino_pre_migracao_v11_…` ou a cópia de recuperação independente feita antes da migração. Esse banco **não contém** o que tiver sido registrado na 6.12.
+* **Duas recuperações independentes:**
+  * recuperar o **código**: voltar a versão do aplicativo;
+  * recuperar o **banco**: restaurar o arquivo v10.
+
+**Ensaios (só em cópias isoladas ou bancos fictícios)**
+* **Etapa 4 (08/11/2026):** migração de uma cópia descartável do banco pessoal, **38/38**. Dados das 7 tabelas idênticos, backup v10 íntegro, segunda chamada "já migrado", e a 6.11 recusa o banco migrado. Esse banco não tem pagamentos registrados.
+* **Etapa 6B (08/11/2026):** migração de um banco v10 **inteiramente fictício**, criado com o código oficial da Sino 6.11, **27/27**. O banco tinha 35 contas e 16 registros de pagamento, cobrindo:
+  * pagamento integral, parcial e de saldo;
+  * integral estornado e parcial estornado;
+  * combinações de ativos e estornados;
+  * conta legada paga sem registros;
+  * séries mensal e anual;
+  * série com a frequência alterada na 6.11.
+
+  Os resultados:
+  * integridade e chaves estrangeiras corretas antes e depois;
+  * todas as linhas de todas as tabelas e o DDL anterior idênticos;
+  * situação de pagamento das contas e totais por mês e por ano iguais aos da 6.11;
+  * exatamente 3 tabelas vazias e 1 gatilho acrescentados;
+  * o gatilho recusa pendência em conta só com pagamento estornado;
+  * idempotência confirmada;
+  * a 6.11 recusa o banco migrado sem gravar e abre o backup v10.
 
 ---
 
@@ -420,8 +510,8 @@ Os casos CT01–CT118 continuam válidos como regressão, com as alterações in
 | CT152 | Ajuste menor da Política | Aviso, sem bloquear | 5.53 |
 | CT153 | Banco v8 com usuários existentes passa pela v9 | Backup criado; tabela de aceites criada; aceites antigos marcados; nenhum dado perdido | 9.1 |
 | CT154 | Falha simulada no meio da v9 | Banco permanece v8; tela de erro | 9.1 |
-| CT155 | Banco ~~v9~~ v10 passa pela ~~v10~~ v11 (9.1, atualização de 30/10/2026) | Backup criado; estruturas de comprovantes e de remoções pendentes criadas; nenhum dado perdido; comprovantes ainda indisponíveis | 9.1 |
-| CT156 | Falha simulada no meio da ~~v10~~ v11 (comprovantes) | Banco permanece ~~v9~~ na versão anterior; tela de erro | 9.1 |
+| CT155 | Banco ~~v9~~ ~~v10~~ v11 passa pela ~~v10~~ ~~v11~~ v12 (9.1, atualizações de 30/10/2026 e de 08/11/2026) | Backup criado; estruturas de comprovantes e de remoções pendentes criadas; nenhum dado perdido; comprovantes ainda indisponíveis | 9.1 |
+| CT156 | Falha simulada no meio da ~~v10~~ ~~v11~~ v12 (comprovantes) | Banco permanece ~~v9~~ na versão anterior; tela de erro | 9.1 |
 | CT159 | Banco v9 com contas pagas e pendentes passa pela v10 | Backup criado; `pp_pagamentos` vazia; contas, séries e pagas idênticas, sem registros inventados | 9.2 |
 | CT160 | v10 repetida; falha simulada ou processo interrompido no meio da v10 | Repetida: nada muda; falha/interrupção: banco v9 intacto, próxima abertura migra | 9.2 |
 | CT161 | Abrir banco v10 com a Sino 6.9.1 | Recusado sem gravar; tela de erro | 9.2 |
@@ -441,6 +531,10 @@ Os casos CT01–CT118 continuam válidos como regressão, com as alterações in
 | CT175 | Criar contas pela nova tela (14 cenários de comparação) | Mesmo resultado da Sino 6.10: gravação, mensagens de erro e término conferido ao salvar | 8, P46 |
 | CT176 | Teclado e nomes acessíveis de Nova conta | "Escolher data" e "Escolher recorrência" com nome; foco na opção confirmada ao abrir e no campo ao fechar; Escape não fecha o diálogo | 8, RNF14 |
 | CT177 | Nova conta de 320 a 1000 px, Claro e Escuro | Resumo da Recorrência sem palavra cortada (quebra de linha); diálogo legível nos dois temas; limitações herdadas registradas em 13.4 | 8, RNF09 |
+| CT178 | Banco v10 com contas, séries, pagamentos integrais, parciais e de saldo, estornos e conta legada passa pela v11 | Backup v10 íntegro; 3 tabelas vazias e 1 gatilho criados; todas as linhas e o DDL anterior idênticos; recorrências continuam fixas; situação de pagamento e totais iguais aos da 6.11 | 9.3 |
+| CT179 | v11 repetida; falha simulada no meio da v11; banco v10 com tabela da v11 já existente | Repetida: "já migrado", nada gravado; falha: banco v10 intacto, backup mantido; tabela preexistente: recusa sem gravar | 9.3 |
+| CT180 | Abrir banco v11 com a Sino 6.11 | Recusado sem gravar; tela de erro; o backup v10 continua abrindo na 6.11 | 9.3 |
+| CT181 | Regras da Sino 6.12: tipos de conta, parcelamentos, valores pendentes, conversões, R1–R12, X1–X3 | Conforme o anexo [sino-6.12-regras.md](sino-6.12-regras.md), coberto pelos módulos `tests/test_612_*.py` | 5.55 |
 
 ---
 
@@ -474,7 +568,7 @@ O escopo completo está atendido quando:
   * as melhorias de UX estão publicadas (E5–E12);
   * a avaliação de disponibilização está registrada, com as decisões da M14 e o plano do piloto (E13);
   * os comprovantes estão habilitados depois do novo aceite (E16–E18);
-* as migrações v9 (aceites) e ~~v10~~ v11 (comprovantes) rodaram sem perda de dados (9.1, atualização de 30/10/2026; a v10 dos pagamentos parciais é da Sino 6.10);
+* as migrações v9 (aceites) e ~~v10~~ ~~v11~~ v12 (comprovantes) rodaram sem perda de dados (9.1, atualizações de 30/10/2026 e de 08/11/2026; a v10 dos pagamentos parciais é da Sino 6.10, e a v11 dos parcelamentos e valores variáveis, da Sino 6.12);
 * a escolha criptográfica do pacote de backup foi revisada (T8);
 * a legibilidade (RNF09) e o acesso pelo teclado (RNF14) dos componentes novos foram verificados nos dois temas;
 * os casos CT119–CT158 aplicáveis foram aprovados, com a regressão CT01–CT118 passando.
@@ -568,7 +662,7 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 
 | ID | Proposta |
 |---|---|
-| T6 | ~~Migração v9 única~~ (substituída por P31): cada migração (v9 aceites; v10 comprovantes e remoções pendentes) em transação única, com backup do banco antes |
+| T6 | ~~Migração v9 única~~ (substituída por P31): cada migração (v9 aceites; v10 comprovantes e remoções pendentes) em transação única, com backup do banco antes. *Numeração atualizada em 9.1 (30/10/2026 e 08/11/2026): v10 pagamentos parciais, v11 Sino 6.12, v12 comprovantes e remoções pendentes* |
 | T7 | Comprovantes em arquivos com nome aleatório fora do banco, processados com biblioteca de imagens (Pillow) de versão fixada, fora da linha da interface |
 | T8 | Pacote de backup: formato versionado, chave derivada por scrypt, AES-256-GCM em blocos autenticados com marca de fim. **Não é um formato aprovado como seguro:** na implementação, comparar com formatos e ferramentas de criptografia estabelecidos antes de criar um formato próprio, e submeter a escolha a revisão |
 | T9 | Bloqueio compartilhado app/ferramenta por trava do sistema operacional; diferenças entre Linux e Windows testadas |
@@ -595,6 +689,22 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
 * **M10:** revisão da escolha criptográfica (T8); trava de arquivos em Linux e Windows (T9).
 * **Pagamentos parciais (Sino 6.10, 30/10/2026):** (a) data de pagamento de conta legada sem acesso direto pela interface — A1/A2/A3 mantidas adiadas pela autora em 30/10/2026 (D8-C; 5.54); (b) validação manual **parcial**: aprovados pela autora só A2 (resumo e edição de conta com pagamento parcial), R1 (aviso I3) e A5 (recusa de valor abaixo do pago); as demais telas, temas, larguras, teclado e foco ficaram em testes automáticos e capturas; (c) **leitor de tela (Orca) não executado** (retirado do escopo pela autora; acessibilidade da 6.10 **não** declarada validada); (d) RNF06 no pior caso de 1.000 contas num único mês continua não atendido na janela real (cerca de 2,15 s; [desempenho-v6.md](desempenho-v6.md), atualização de 30/10/2026); (e) `tests/medir_desempenho.py` incompatível com a v10 ("marcar/desmarcar como paga" falha, porque desmarcar uma quitação registrada passou a ser estorno) — ferramenta fora da suíte, não alterada; (f) limitação de ordenação das ocorrências movidas com "Somente este mês" (5.54, anterior à 6.10); (g) a Política de Privacidade (13/10/2026) não menciona os registros de pagamentos individuais e estornos. *Atualização (30/10/2026, D8-A, P45):* ~~classificação a decidir~~ **resolvida**: nova **versão de 30/10/2026 da Política**, classificada pela autora como **relevante** (itens 2, 3, 6, 8 e 10), com novo aceite no próximo login pelo mecanismo existente; Termos inalterados (13/10/2026). Revisão jurídica continua pendente. (h) `docs/banco-de-dados/Modelagem_Banco_de_Dados_v2.md` é histórico (anterior à v5) e não descreve as estruturas v5 a v10; marcado como documento histórico em 30/10/2026 (D8-B); o schema vigente está em 9.1 e 9.2.
 * **Nova conta (Sino 6.11, 02/11/2026):** (a) limitações visuais conhecidas, herdadas da 6.10, sem correção prevista: em 320 px, o botão Cancelar do rodapé pode quebrar em duas linhas e as ações do diálogo podem ficar empilhadas, sem sobreposição; em 320 e 360 px, os campos Mês e Ano do diálogo podem mostrar o texto cortado (o mesmo ocorre no rodapé e no diálogo "Transformar em recorrente" de Editar); (b) AT-SPI e leitor de tela (Orca) não testados; (c) ~~validação manual da autora feita no protótipo (versão 3), não no código integrado, que foi verificado por testes e capturas.~~ *Atualização (02/11/2026):* resolvida — depois do protótipo (versão 3), a autora avaliou e aprovou a versão integrada da 6.11, inclusive a quebra de linha do resumo da Recorrência em 320 px.
+* **Sino 6.12 (08/11/2026, preparada para integração, não publicada):** pendências abertas, **sem correção nesta versão**; a lista completa e a classificação estão no anexo [sino-6.12-regras.md](sino-6.12-regras.md), seção 14.
+  * **Melhorias para a 6.13** (sem obrigação de implementar cada uma):
+    * (a) D7: preservar o valor informado por abrangência coletiva diante de conversões posteriores (R5 → R3);
+    * (b) D8: frase "receberão este valor" visível com o R4-A bloqueando;
+    * (c) "Valor pendente" quebrando e desalinhado em Início;
+    * (d) responsividade em 320 px (Ajustes, Nova conta, filtros, Gráfico, Início);
+    * (e) padronização dos botões indisponíveis (cinza e desabilitado);
+    * (f) P1, foco ao fechar "Configurar recorrência";
+    * (g) P2, diálogo de pagamento parcial numa pendente.
+  * **Exigem análise ou decisão:**
+    * (h) duas contas no mesmo mês depois de encerrar e transformar (igual na 6.11);
+    * (i) nome vazio e valor negativo recusados só no formulário (igual na 6.11);
+    * (j) o Enter não envia o login (igual na 6.11);
+    * (k) categoria "Cartão de crédito" sem lixeira, sem diagnóstico;
+    * (l) leitor de tela não testado;
+    * (m) comentário de `preparar_banco` ainda citando a v10.
 * **M13 (Faturas):** conflito C1–C4 e decisões G1–G7 abertos; inclusão no escopo a aprovar.
 * ~~**L1:** limpeza das contas antigas de teste.~~ Resolvida em 06/10/2026 pela reinicialização do banco da instalação principal (backup de recuperação e ref6).
 
@@ -640,7 +750,7 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 | **E13** | 4 — Disponibilização | M14: avaliação de desktop e/ou mobile e decisões (ver propostas, M14). Resultado: plano do piloto restrito. Entrega de decisões | E4 recomendada (o piloto depende do e-mail real) | — |
 | **E14** | 4 — Disponibilização | Preparação do piloto conforme as decisões da E13: empacotamento, instalação, atualização, preservação dos dados, backup e recuperação, avisos de terceiros, suporte. Pode virar várias entregas | E13 | — |
 | **E15** | 4 — Disponibilização | **Piloto restrito** com pessoas convidadas (11.3) | E14; condições de 11.3 | — |
-| **E16** | 5 — Maiores | M10, parte 1: armazenamento, consistência, processamento seguro das imagens, telas, regras de séries e exclusões. **Sem habilitar** | E2 | **v10** (comprovantes e remoções pendentes) |
+| **E16** | 5 — Maiores | M10, parte 1: armazenamento, consistência, processamento seguro das imagens, telas, regras de séries e exclusões. **Sem habilitar** | E2 | ~~**v10**~~ **v12** (comprovantes e remoções pendentes; 9.1, atualizações de 30/10 e 08/11/2026) |
 | **E17** | 5 — Maiores | M10, parte 2: ferramenta de manutenção (bloqueio compartilhado, pacote criptografado, restauração segura) | E16; revisão de T8 e T9 | — |
 | **E18** | 5 — Maiores | M10, parte 3: habilitar comprovantes | E16, E17; textos atualizados e novo aceite (5.53) | — |
 | **F1** | 5 — Maiores | M13: fechar as regras de Faturas (C1–C4, depois G1–G7 em blocos menores) e decidir a inclusão. Entrega de decisões; as entregas de implementação só são definidas depois da aprovação | Decisão da autora | Própria, se aprovada |
@@ -649,6 +759,7 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 * **Antecipação:** se a avaliação da E13 concluir que o piloto precisa do pacote de backup completo, a E17 pode ser antecipada (depois da E16).
 * **Liberação mais ampla:** só com as condições de 11.3, depois da E15.
 * *Atualização (30/10/2026):* os **pagamentos parciais** (5.54) não são uma entrega desta tabela: viram a **Sino 6.10** por decisão da autora (P44), com migração v10 (9.2). A E16 passa a usar a v11 (9.1).
+* *Atualização (08/11/2026):* os **tipos de conta, parcelamentos e valores variáveis** (5.55) também ficam fora desta tabela. Viram a **Sino 6.12**, com a migração v11 (9.3), e a E16 passa a usar a **v12** (9.1).
 * *Atualização (02/11/2026):* a **nova tela Nova conta** também não é uma entrega desta tabela: é a **Sino 6.11** (P46), sem migração.
 
 ## 15.2 Versões
@@ -668,7 +779,19 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
   * **Sino 6.9.1** — versão de **correção**, sem funcionalidade nova (RNF14, parcial): nomes acessíveis nos botões só de ícone (setas de mês, de ano e do Gráfico; grupos A a E, com a alternativa E2 nas ações das linhas de Início), e medição de RNF03/RNF06 na janela real. **Publicada no GitHub em 24/10/2026**, num único commit na `main` (identificador no histórico do Git), com **1.302 testes** automatizados aprovados, sem falhas nem erros. Sem etiqueta no Git (proposta técnica abaixo, não aplicada). Continuam registradas a limitação de RNF06 no pior caso (13.4) e as pendências de RNF14.
   * **Sino 6.10** — **pagamentos parciais** (5.54, P44), fora das entregas E1–E18, com a migração **v10** (9.2). Implementada na branch `integracao/sino-6.10` em etapas com pontos de controle locais (`checkpoint/6.10-etapa1` a `etapa6`, `etapa8` e `etapa8-complemento`); suíte completa **1.593/1.593** na Etapa 7B e **1.595/1.595** depois da nova versão da Política (P45); ensaios de migração e de desempenho aprovados com as ressalvas de 13.4; validação manual **parcial** (A2, R1/I3, A5). ~~Não publicada na data deste registro (30/10/2026)~~ **Publicada no GitHub em 30/10/2026**: integração levada à `main` por fast-forward, com a etiqueta anotada `sino-6.10` no commit que registra a publicação (identificador no histórico do Git). O banco pessoal **não** foi migrado na publicação (9.2).
   * **Sino 6.11** — **nova tela Nova conta** (8, P46), fora das entregas E1–E18, sem migração (banco v10). Implementada na branch `integracao/sino-6.11` em etapas: E1 cópia de recuperação do banco pessoal; E2 integração e testes; E3 validação técnica e correção do resumo da Recorrência em janelas estreitas; E4 esta documentação. Suíte completa **1.615/1.615**; 14 cenários de criação iguais aos da 6.10; validação visual de 320 a 1000 px nos dois temas. ~~Em preparação; não publicada na data deste registro (02/11/2026).~~ **Publicada no GitHub em 02/11/2026**: avaliação manual da versão integrada aprovada pela autora (E5); integração levada à `main` por fast-forward, com a etiqueta anotada `sino-6.11` no commit que registra a publicação (identificador no histórico do Git). Sem migração: o banco pessoal continua na versão 10. *Atualização (02/11/2026):* primeira execução da Sino 6.11 com o banco pessoal da autora **aprovada** (E5D): login, Início, navegação entre meses e a nova tela Nova conta confirmados por ela; o banco continuou na versão 10, íntegro, sem migração e sem alteração de registros financeiros (a única gravação da sessão foi a troca voluntária do tema, de Claro para Escuro, em Ajustes); backups e cópias de recuperação preservados. **Implantação encerrada.**
-  * **Sino 6.12** — *em preparação, não publicada (07/11/2026).* Tipos de conta (Única, Parcelada, Recorrente mensal e anual), contas parceladas, recorrências de valor fixo e variável com conversão entre elas, migração **v11** e o novo limite da descrição (250, 5.45). Desenvolvida num ambiente experimental isolado (clone sem remoto, banco fictício). Regras e decisões detalhadas no registro desse ambiente; serão trazidas para esta ERS na integração. Validação manual da autora concluída nos cenários executados, sem cobrir todo o roteiro. Integração, publicação e migração do banco pessoal **não autorizadas** na data deste registro. **Planejamento:** a **Sino 6.13** trata interface, organização visual, responsividade, acessibilidade e padronização dos botões. Diretriz aprovada: uma ação indisponível por condição já conhecida fica cinza e desabilitada. A **Sino 6.14 (F1)** trata as Supercontas e as contas descendentes, com descrição prevista de até 250 caracteres. Nenhuma das duas foi iniciada. *Atualização (07/11/2026, encerramento experimental):* etapa funcional experimental **concluída**, com commit local e etiqueta `sino-6.12-experimental` no clone experimental. **Não** é uma publicação nem libera a versão para uso pessoal. Resumo, testes, validação manual e ressalvas em [sino-6.12-experimental.md](sino-6.12-experimental.md).
+  * **Sino 6.12** — *em preparação, não publicada (07/11/2026).* Tipos de conta (Única, Parcelada, Recorrente mensal e anual), contas parceladas, recorrências de valor fixo e variável com conversão entre elas, migração **v11** e o novo limite da descrição (250, 5.45). Desenvolvida num ambiente experimental isolado (clone sem remoto, banco fictício). Regras e decisões detalhadas no registro desse ambiente; serão trazidas para esta ERS na integração. Validação manual da autora concluída nos cenários executados, sem cobrir todo o roteiro. Integração, publicação e migração do banco pessoal **não autorizadas** na data deste registro. **Planejamento:** a **Sino 6.13** trata interface, organização visual, responsividade, acessibilidade e padronização dos botões. Diretriz aprovada: uma ação indisponível por condição já conhecida fica cinza e desabilitada. A **Sino 6.14 (F1)** trata as Supercontas e as contas descendentes, com descrição prevista de até 250 caracteres. Nenhuma das duas foi iniciada. *Atualização (07/11/2026, encerramento experimental):* etapa funcional experimental **concluída**, com commit local e etiqueta `sino-6.12-experimental` no clone experimental. **Não** é uma publicação nem libera a versão para uso pessoal. Resumo, testes, validação manual e ressalvas em [sino-6.12-experimental.md](sino-6.12-experimental.md). *Atualização (08/11/2026, integração; não publicada):* os 11 commits experimentais foram trazidos para a branch `integracao/sino-6.12` (a etiqueta experimental ficou só no clone, D6B-6).
+    * **Etapas 1 a 5 concluídas.** Testes técnicos:
+      * suíte completa **1.894/1.894**;
+      * ensaio da migração v11 numa cópia do banco pessoal, **38/38**;
+      * camada de dados, **87/87**;
+      * roteiros gráficos, **185/185**;
+      * acessibilidade e legibilidade, **119/119**;
+      * ensaio da migração com pagamentos e estornos num banco fictício, **27/27** (Etapa 6B).
+    * **Aprovação manual da autora:** **24/24** verificações em 08/11/2026, numa sessão com banco fictício, distinta dos testes técnicos.
+    * **Decisões da integração:** mantidos na 6.12 o comportamento de R5 seguido de R3 (D7) e o texto do bloqueio R4-A (D8), com as melhorias registradas para a 6.13.
+    * **Regras:** documentadas no anexo [sino-6.12-regras.md](sino-6.12-regras.md) (5.55); migração em 9.3.
+    * **Situação:** a versão está **validada tecnicamente e preparada para integração**. Ainda **não** foi levada à `main`, **não** foi publicada e **não** tem etiqueta de versão, e o banco pessoal **não** foi migrado.
+    * **Sequência aprovada (D6B-1):** 6C, integração local e migração controlada do banco pessoal; depois 6D, publicação.
 * Cada entrega com código publicada recebe a próxima versão **menor**:
   * a primeira entrega com código publicada recebe a Sino 6.1; as seguintes recebem 6.2, 6.3, e assim por diante, **na ordem em que forem publicadas**, mesmo que a ordem da tabela mude;
   * uma correção sem funcionalidade nova recebe uma versão de **correção** (por exemplo, 6.3.1).
@@ -698,6 +821,13 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 
 **Fora das entregas (02/11/2026): Sino 6.11, nova tela Nova conta** (8, P46) — **implementada e validada;** ~~publicação pendente~~ **publicada no GitHub em 02/11/2026** (etiqueta `sino-6.11`): suíte 1.615/1.615 (os 1.595 testes da 6.10 e 20 novos), sem falhas, erros nem testes ignorados; 96 testes específicos; 14/14 cenários de criação iguais aos da 6.10; capturas em 320, 360, 380, 800 e 1000 px, Claro e Escuro, inclusive pelo teclado; avaliação manual da versão integrada aprovada pela autora, inclusive a quebra de linha do resumo em 320 px; sem migração. Pendências e limitações em 13.4. *Atualização (02/11/2026):* primeira execução da Sino 6.11 com o banco pessoal da autora **aprovada** (E5D): login, Início, navegação entre meses e a nova tela Nova conta confirmados por ela; o banco continuou na versão 10, íntegro, sem migração e sem alteração de registros financeiros (a única gravação da sessão foi a troca voluntária do tema, de Claro para Escuro, em Ajustes); backups e cópias de recuperação preservados. **Implantação encerrada.**
 
+**Fora das entregas (08/11/2026): Sino 6.12, tipos de conta, parcelamentos e valores variáveis** (5.55, 9.3, anexo [sino-6.12-regras.md](sino-6.12-regras.md))
+* **Situação:** **implementada, validada e preparada para integração;** publicação pendente.
+* **Testes técnicos:** suíte 1.894/1.894; ensaios de migração 38/38 (cópia do banco pessoal) e 27/27 (banco fictício com pagamentos e estornos); validação automatizada 87/87 (dados), 185/185 (gráfica) e 119/119 (acessibilidade e legibilidade).
+* **Aprovação manual da autora:** 24/24 (08/11/2026).
+* **Ainda não feito:** integração na `main`, migração do banco pessoal, etiqueta e publicação.
+* **Pendências:** registradas em 13.4.
+
 **Pendência registrada fora das entregas (23/10/2026):** as setas de mês anterior e próximo de Início **não têm nome acessível**. A falha é anterior à E11 e **não** faz parte da correção da Sino 6.9; o tratamento depende de decisão da autora (RNF14). *Atualização (24/10/2026):* tratada na rodada de melhorias pequenas autorizada pela autora (nomes "Mês anterior" e "Próximo mês", verificados pelo AT-SPI; ver RNF14), em alteração local **ainda não publicada**. Leitor de tela real não testado. *Atualização (24/10/2026): publicada na Sino 6.9.1 (15.2).*
 
 Legenda:
@@ -714,6 +844,7 @@ Legenda:
 | Versão | Data | Descrição |
 |---|---|---|
 | 6.0 | 23/09/2026 – 04/10/2026 | Ver a [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) (preservada sem alterações). |
+| 7.0 (revisão) | 08/11/2026 (Sino 6.12, documentação da integração; não publicada) | **Sino 6.12 preparada para integração.**<br>• Regras documentadas no novo anexo versionado [sino-6.12-regras.md](sino-6.12-regras.md), com a nova seção 5.55 apontando para ele.<br>• Migração **v11** documentada (9.3).<br>• Numeração revista em 9.1, com o registro anterior preservado: **v11 = Sino 6.12** e **v12 reservada a Comprovantes e Remoções pendentes**. Também ajustados CT155, CT156, 11.2, T6 e E16 (15.1).<br>• Novos CT178–CT181.<br>• Pendências da 6.12 em 13.4.<br>• Situação em 15.2 e 15.3: Etapas 1 a 5 concluídas, testes técnicos 1.894/1.894, 38/38, 27/27, 87/87, 185/185 e 119/119, e aprovação manual da autora 24/24.<br>Sem integração na `main`, sem migração do banco pessoal, sem etiqueta e sem publicação. Sem mudança de código, testes ou dependências. |
 | 7.0 (revisão) | 07/11/2026 (encerramento da Sino 6.12 experimental; não publicada) | Etapa funcional experimental da **Sino 6.12** concluída, com commit local e etiqueta `sino-6.12-experimental` só no clone experimental, sem remoto. Suíte completa **1.894/1.894**, regressão 990/990, isolamento 53/53, 63 itens protegidos preservados. Validação manual da autora em três rodadas, concluída nos cenários executados; os não executados continuam pendentes. Registro em [sino-6.12-experimental.md](sino-6.12-experimental.md). Integração, publicação e migração do banco pessoal **não autorizadas**. |
 | 7.0 (revisão) | 07/11/2026 (Sino 6.12, ambiente experimental; não publicada) | **Limite da descrição reduzido de 1.000 para 250 caracteres** por decisão da autora (5.45, com atualização datada; texto da Sino 6.5 preservado). Atualizados RF32/RF33 na rastreabilidade e CT133. Registrada em 15.2 a Sino 6.12, em preparação, com o planejamento da 6.13 e da 6.14/F1. As demais regras da 6.12 (parcelamentos, recorrências fixas e variáveis, conversões, v11) continuam documentadas no ambiente experimental e entram nesta ERS na integração. Sem publicação. |
 | 7.0 (revisão) | 02/11/2026 (encerramento da implantação da Sino 6.11) | **E5D concluída, aprovada:** primeira execução da Sino 6.11 com o banco pessoal da autora, com login, Início, navegação entre meses e a nova tela Nova conta confirmados por ela. Banco na versão 10, íntegro (`integrity_check` e chaves estrangeiras sem problemas), sem migração e sem alteração de registros financeiros; a única gravação da sessão foi a troca voluntária do tema, de Claro para Escuro, em Ajustes. Backups e cópias de recuperação preservados. A primeira abertura, que o registro da publicação deixava para autorização da autora, fica concluída; **implantação da Sino 6.11 encerrada**. Atualizados 15.2 e 15.3 (registros anteriores preservados). Sem mudança de requisitos, código, testes, schema ou dependências; etiqueta `sino-6.11` inalterada. |
