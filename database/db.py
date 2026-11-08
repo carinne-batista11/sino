@@ -3698,9 +3698,9 @@ def criar_conta_unica(usuario_id, nome, valor, data_vencimento, categoria_id=Non
     em `series_recorrencia`.
 
     `descricao` é opcional (5.22) e gravada já normalizada (sem espaços nas
-    bordas; vazia vira NULL). Nome acima de 30 ou descrição acima de 1000
+    bordas; vazia vira NULL). Nome acima de 30 ou descrição acima de 250
     caracteres levantam `LimiteDeCaracteresError` sem gravar nada (5.23;
-    limite da descrição pela v7.0, 5.45).
+    limite da descrição: 1000 pela v7.0, 5.45; 250 desde a 6.12).
     """
     descricao = normalizar_descricao(descricao)
     _validar_textos_conta(nome, descricao)
@@ -4777,8 +4777,9 @@ MENSAGEM_EM_DIANTE_COM_PROTEGIDAS = ("Há parcelas com registros de pagamento a 
 MENSAGEM_COMPETENCIA_DE_OUTRA_PARCELA = "Já existe outra parcela deste parcelamento nesse mês. Escolha outro mês."
 MENSAGEM_VENCIMENTO_COM_PROTEGIDAS = ("O novo vencimento levaria parcelas para o mês de uma parcela com registros de "
                                       "pagamento, que mantém o vencimento. Nada foi alterado.")
+# Sino 6.12 (validação final): texto corrigido -- desde o ajuste A a ação fica em Editar conta > Recorrência.
 MENSAGEM_VALOR_COLETIVO_PARCELADA = ("Para mudar o valor de várias parcelas, use “Alterar parcelamento” "
-                                     "nos detalhes da conta.")
+                                     "em Editar conta, no campo Recorrência.")
 MENSAGEM_REDUCAO_COM_FIXAS = ("Para reduzir a quantidade, seria preciso excluir parcelas com pagamentos ou "
                               "editadas. Nada foi alterado.")
 MENSAGEM_SEM_PARCELAS_LIVRES = ("Não há parcelas livres (sem pagamentos e sem edição individual) suficientes "

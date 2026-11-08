@@ -204,13 +204,13 @@ class TestTelasEstrutura(BaseVariavelTelas):
         db.criar_serie_recorrente(self.usuario_id, "Luz", 150.0, "2026-09-20", "mensal", variavel=True)
         db.criar_conta_unica(self.usuario_id, "Água", 80.0, "2026-09-18")
         db.criar_conta_parcelada(self.usuario_id, "Sofá", 600.0, 3, "2026-09-22")
-        for nome, esperado in (("Aluguel", ["Encerrar recorrência"]), ("Luz", ["Encerrar recorrência"]),
+        for nome, esperado in (("Aluguel", ["Alterar tipo de valor", "Encerrar recorrência"]), ("Luz", ["Alterar tipo de valor", "Encerrar recorrência"]),  # ajuste D
                                ("Água", ["Transformar em recorrente"])):
             with self.subTest(nome=nome):
                 self.editar(nome)
                 self.assertEqual(self.itens(), esperado)
         self.editar("Sofá")
-        self.assertIsNone(self.campo("Recorrência").suffix_icon)               # parcela: sem menu
+        self.assertEqual(self.itens(), ["Alterar parcelamento"])                # parcela: ajuste A
 
     def test_encerrar_e_transformar_em_duas_acoes_pela_tela(self):
         serie, ids = db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal",

@@ -363,7 +363,8 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.assertEqual(celula.col, {"xs": 12})
 
     def test_ct58_descricao_completa_com_quebras_de_linha(self):
-        descricao = "Linha 1\nLinha 2\n\n" + "texto longo " * 38
+        # 6.12: longa, com quebras, dentro do novo limite de 250 (antes " * 38", 472 caracteres)
+        descricao = "Linha 1\nLinha 2\n\n" + "texto longo " * 19
         conta_id = db.criar_conta_unica(self.usuario_id, "Seguro", 90.0, "2026-09-20", descricao=descricao)
         self.entrar()
         self.abrir_detalhes("Seguro")

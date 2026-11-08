@@ -189,14 +189,15 @@ class TestDetalhesEEditar(BaseTelas):
         self.clicar(next(c for c in self.controles(ft.Button) if c.content == "Editar"))
         recorrencia = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência")
         self.assertEqual(recorrencia.value, "Esta conta é parcelada em 6 parcelas mensais, até fevereiro de 2027.")
-        self.assertIsNone(recorrencia.suffix_icon)              # sem Alterar frequência / Encerrar
+        # Ajustes pós-validação manual (A): só "Alterar parcelamento" -- sem Alterar frequência / Encerrar.
+        self.assertEqual([i.content for i in recorrencia.suffix_icon.items], ["Alterar parcelamento"])
 
     def test_recorrencia_continua_com_o_menu(self):
         db.criar_serie_recorrente(self.usuario_id, "Aluguel", 900.0, "2026-09-20", "mensal")
         self.abrir_detalhes("Aluguel")
         self.clicar(next(c for c in self.controles(ft.Button) if c.content == "Editar"))
         menu = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Encerrar recorrência"])     # Etapa 10: R6
+        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Encerrar recorrência"])  # R6; ajuste D
 
 
 if __name__ == "__main__":

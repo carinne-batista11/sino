@@ -60,8 +60,8 @@ class TestInformarValorNaTela(BaseEdicaoTelas):
         self.assertTrue(self.salvar().disabled)                             # campo vazio: nada mudou
         self.digitar_valor("0,00")
         self.assertFalse(self.salvar().disabled)
-        self.clicar(self.salvar())
-        self.clicar(self.acao("Somente este mês"))
+        self.clicar(self.salvar())                                           # ajuste C: sem diálogo de escopo
+        self.assertEqual(self.dlg().title.value, "Alteração salva")
         self.assertEqual(self.valor(self.ids[1]), 0.0)
         self.assertNotIn(self.ids[1], self.pendentes())
         self.assertIn("Você alterou o valor de Valor pendente para R$ 0,00.", self.textos_do_dialogo())
@@ -80,9 +80,11 @@ class TestInformarValorNaTela(BaseEdicaoTelas):
         self.clicar(botao)
         self.assertEqual(self.campo("Valor").data, "valor_pendente_edicao")
         self.digitar_valor("98,40")
-        self.clicar(self.salvar())
-        self.clicar(self.acao("Este mês em diante"))                          # R5: só esta e o modelo
+        self.clicar(self.salvar())                                           # ajuste C: sem diálogo de escopo
+        self.assertEqual(self.dlg().title.value, "Alteração salva")
         self.assertEqual([self.valor(i) for i in self.ids], [150.0, 98.4, 0.0, 0.0, 0.0])
+        self.assertEqual(self.consultar("SELECT valor FROM series_recorrencia WHERE id = ?", (self.serie,)),
+                         [(150.0,)])                                         # o modelo não muda
         self.assertEqual(self.pendentes(), set(self.ids[2:]))
 
     def test_pagamento_liberado_depois_de_informar(self):
@@ -108,17 +110,18 @@ class TestMudarComportamento(BaseEdicaoTelas):
         if anterior:
             self.clicar(next(c for c in self.controles(ft.IconButton) if c.data == "mes_anterior"))
         self.clicar(self.linha(nome))
-        botao = next(c for c in self.controles(ft.TextButton) if c.data == "mudar_comportamento_valor")
-        texto = botao.content
-        self.clicar(botao)
+        # Ajustes pós-validação manual (D1): só por Editar > Recorrência > "Alterar tipo de valor".
+        self.clicar(self.botao("Editar"))
+        self.clicar(next(i for i in self.campo("Recorrência").suffix_icon.items
+                         if i.content == "Alterar tipo de valor"))
         self.assertEqual(self.dlg().data, "dialogo_comportamento_valor")
-        return texto
+        return self.dlg().title.value
 
     def test_fixo_para_variavel(self):
         serie, ids = db.criar_serie_recorrente(self.usuario_id, "Aluguel", 900.0, "2026-09-25", "mensal",
                                                data_termino="2026-12")
         db.editar_conta_ocorrencia(ids[2], valor=950.0)
-        self.assertEqual(self.abrir_dialogo("Aluguel"), "Mudar para valor variável")
+        self.assertEqual(self.abrir_dialogo("Aluguel"), "Mudar para valor variável")  # título do diálogo
         textos = " ".join(self.textos_do_dialogo())
         self.assertIn("(2 ocorrências) ficarão com “Valor pendente”; 1 ocorrência com pagamentos ou editadas", textos)
         self.clicar(self.acao("Mudar para variável"))
@@ -142,7 +145,9 @@ class TestMudarComportamento(BaseEdicaoTelas):
         self.entrar()
         self.clicar(next(c for c in self.controles(ft.IconButton) if c.data == "proximo_mes"))
         self.clicar(self.linha("Luz outubro"))
-        self.clicar(next(c for c in self.controles(ft.TextButton) if c.data == "mudar_comportamento_valor"))
+        self.clicar(self.botao("Editar"))
+        self.clicar(next(i for i in self.campo("Recorrência").suffix_icon.items
+                         if i.content == "Alterar tipo de valor"))
         self.assertIn(db.MENSAGEM_PENDENTES_ANTERIORES, self.textos_do_dialogo())
         antes = self.consultar("SELECT * FROM contas ORDER BY id")
         self.clicar(self.acao("Mudar para fixo"))
@@ -158,10 +163,11 @@ class TestMudarComportamento(BaseEdicaoTelas):
         self.assertTrue(db.serie_variavel(self.serie))
 
     def test_sem_botao_em_unica_e_parcelada(self):
+        # D1: e também em nenhuma recorrência (a conversão saiu dos Detalhes).
         db.criar_conta_unica(self.usuario_id, "Água", 80.0, "2026-09-18")
         db.criar_conta_parcelada(self.usuario_id, "Sofá", 600.0, 3, "2026-09-20")
         self.entrar()
-        for nome in ("Água", "Sofá"):
+        for nome in ("Água", "Sofá", "Luz"):
             self.entrar()
             self.clicar(self.linha(nome))
             self.assertEqual([c for c in self.controles(ft.TextButton)

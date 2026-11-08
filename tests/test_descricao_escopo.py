@@ -209,11 +209,12 @@ class TestDescricaoNaSerie(BaseDescricao):
 
 
 class TestDescricao1000NosEscopos(BaseDescricao):
-    """ERS v7.0 5.45 (M4-1; CT133): o limite de 1000 caracteres percebidos vale
-    na conta única, no modelo e nas ocorrências da série, em "Somente este mês"
-    e em "Este mês em diante"; 1001 é recusado sem gravar nada."""
+    """ERS v7.0 5.45 (M4-1; CT133): o limite da descrição vale na conta única, no
+    modelo e nas ocorrências da série, em "Somente este mês" e em "Este mês em
+    diante"; um acima é recusado sem gravar nada. O limite era 1000 (v7.0) e é 250
+    desde a 6.12 (07/11/2026): o nome da classe e de `MIL` ficam pelo histórico."""
 
-    MIL = "m" * 999 + "👩‍💻"     # 1000 caracteres percebidos
+    MIL = "m" * 249 + "👩‍💻"     # no limite: 250 caracteres percebidos (era 1000)
     MIL_E_UM = MIL + "x"
 
     def estado(self, serie_id):

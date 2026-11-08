@@ -738,7 +738,9 @@ class TestRolagemDetalhesEditar(TesteInterfacePagamentos):
 
     def setUp(self):
         super().setUp()
-        self.executar("UPDATE contas SET descricao = ? WHERE id = ?", ("Linha longa. " * 70, self.conta))
+        # 6.12: descrição longa (muitas linhas) dentro do novo limite de 250 -- acima dele, a P4
+        # exigiria reduzi-la antes de salvar, o que não é o assunto destes testes.
+        self.executar("UPDATE contas SET descricao = ? WHERE id = ?", ("Linha longa.\n" * 19, self.conta))
         pagamentos.registrar_pagamento_parcial(self.conta, 100_00, "2026-09-02")
         pagamentos.registrar_pagamento_parcial(self.conta, 50_00, "2026-09-10")
 
@@ -1677,7 +1679,7 @@ class TestVisualEditar(TesteInterfacePagamentos):
                                   campo.text_size), (main.RAIO_EDICAO, 1, 2, 15))
         self.assertEqual(self.campo("Valor").value, "400,00")                 # "R$" é só o prefixo visual
         self.assertEqual(self.campo("Nome da conta").counter, "8/30")         # contadores mantidos
-        self.assertEqual(self.campo("Descrição (opcional)").counter, "0/1000")
+        self.assertEqual(self.campo("Descrição (opcional)").counter, "0/250")  # 250 desde a 6.12
 
     # --------------------------------------------------------- barra inferior
     def test_botoes_na_barra_fixa_fora_da_area_rolavel(self):
@@ -1843,7 +1845,8 @@ class TestEditarDuasColunas(TesteInterfacePagamentos):
         self.assertEqual(self.campo("Recorrência").value, main.frase_recorrencia("mensal", "2027-10"))
         # Etapa 10 (ajuste deliberado): sem "Alterar frequência" (R6); com o encerramento pendente,
         # "Transformar" só depois de salvar (X1/X2: duas ações explícitas).
-        self.assertEqual(self.itens(), ["Encerrar recorrência"])
+        # Ajustes pós-validação manual (D): "Alterar tipo de valor" antes de "Encerrar".
+        self.assertEqual(self.itens(), ["Alterar tipo de valor", "Encerrar recorrência"])
         self.assertIsNone(self.campo("Recorrência").helper)
         self.clicar(self.acao_da_recorrencia("Encerrar recorrência"))
         self.assertEqual(self.dialogo().title.value, "Encerrar recorrência")
@@ -1854,7 +1857,7 @@ class TestEditarDuasColunas(TesteInterfacePagamentos):
         self.assertFalse(self.botao("Salvar alterações").disabled)
         self.assertEqual(self.consultar("SELECT ativa FROM series_recorrencia"), [(1,)])  # nada gravado
         self.clicar(self.acao_da_recorrencia("Desfazer esta alteração"))
-        self.assertEqual(self.itens(), ["Encerrar recorrência"])
+        self.assertEqual(self.itens(), ["Alterar tipo de valor", "Encerrar recorrência"])
         self.assertTrue(self.botao("Salvar alterações").disabled)
 
     # --------------------------------------------------------------- teclado

@@ -237,7 +237,7 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
         self.assertEqual((campo.value, campo.read_only, campo.hint_text, campo.helper),
                          ("", False, "Valor pendente", main.TEXTO_DIGITE_O_VALOR))
         menu = self.campo("Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Encerrar recorrência"])
+        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Encerrar recorrência"])  # ajuste D
         nome = self.campo("Nome da conta")
         nome.value = "Energia"
         nome.on_change(Evento(self.pagina, nome))
@@ -248,12 +248,17 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
 
     def test_valor_em_diante_na_variavel_r5(self):
         # Ajuste deliberado na Etapa 9: antes recusado; agora R5 (só a selecionada e o modelo).
+        # Ajustes pós-validação manual (C): só o valor não abre mais o diálogo; com outro campo
+        # junto (aqui, o nome), o diálogo e a R5 continuam valendo.
         self.clicar(next(c for c in self.controles(ft.IconButton) if c.data == "mes_anterior"))  # agosto
         self.clicar(self.linha("Luz"))
         self.clicar(self.botao("Editar"))
         campo = self.campo("Valor")
         campo.value = "170,00"
         campo.on_change(Evento(self.pagina, campo))
+        nome = self.campo("Nome da conta")
+        nome.value = "Energia"
+        nome.on_change(Evento(self.pagina, nome))
         self.clicar(self.botao("Salvar alterações"))
         self.assertIn(main.TEXTO_AVISO_R5, self.textos_do_dialogo())
         self.clicar(self.acao("Este mês em diante"))
@@ -267,7 +272,7 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
         self.clicar(self.linha("Aluguel"))
         self.clicar(self.botao("Editar"))
         menu = self.campo("Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Encerrar recorrência"])     # Etapa 10: R6
+        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Encerrar recorrência"])  # R6; ajuste D
 
 
 class TestGraficoComPendentes(BaseVariavelTelas):

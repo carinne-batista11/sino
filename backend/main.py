@@ -200,6 +200,9 @@ TEXTO_AVISO_R5 = ("Numa recorrência de valor variável, “Este mês em diante�
                   "valor de referência da recorrência; as próximas mantêm o próprio valor ou continuam com "
                   "“Valor pendente”.")
 TEXTO_AJUDA_VARIAVEL = "Com valor variável, as próximas ocorrências ficam com “Valor pendente”."
+# Sino 6.12 (ajustes pós-validação manual, A/D): ações de Recorrência que gravam na hora.
+TEXTO_SALVE_ANTES_DA_ACAO = ("Salve ou cancele as alterações desta tela antes de usar esta opção; "
+                             "ela é aplicada na hora e as alterações não salvas seriam perdidas.")
 
 
 def texto_do_valor(conta):
@@ -3412,7 +3415,7 @@ def main(page: ft.Page):
             # vive dentro de mostrar_formulario_edicao, porque depende de widgets
             # recriados a cada vez que essa função roda; os diálogos de
             # Recorrência (irmãos dela) só chamam este gatilho.
-            gatilho_estado_salvar = {"chamar": lambda: None}
+            gatilho_estado_salvar = {"chamar": lambda: None, "ha_alteracao": lambda: False}
 
             # RF27/RF28/RF29 (etapa "Recorrência como rascunho"):
             # Transformar em recorrente/Alterar
@@ -3471,13 +3474,42 @@ def main(page: ft.Page):
                 atualizar_bloco_recorrencia()
                 gatilho_estado_salvar["chamar"]()
 
+            def voltar_aos_detalhes_atualizados():
+                """Sino 6.12 (ajustes pós-validação manual): depois de uma alteração aplicada a
+                partir de Editar (parcelamento, tipo de valor), os Detalhes desta conta com os
+                dados relidos do banco; se ela não existir mais, a Tela Principal."""
+                atualizada = next((c for c in database.listar_contas(usuario_atual["id"])
+                                   if c["id"] == conta["id"]), None)
+                if atualizada is None:
+                    mostrar_tela_principal(tuple(mes_atual))
+                else:
+                    abrir_detalhe_conta(atualizada)
+
+            def acao_imediata_de_recorrencia(abrir_dialogo):
+                """Sino 6.12 (ajustes): "Alterar parcelamento"/"Alterar tipo de valor" gravam ao
+                confirmar o próprio diálogo (não no Salvar) e saem de Editar; com outra alteração
+                ainda não salva no formulário, nada é aberto -- ela se perderia."""
+                if gatilho_estado_salvar["ha_alteracao"]():
+                    mostrar_aviso_pagamentos(TEXTO_SALVE_ANTES_DA_ACAO, titulo="Há alterações não salvas")
+                    page.update()
+                    return
+                abrir_dialogo()
+
             def construir_conteudo_recorrencia():
                 if eh_parcelada:
                     # Sino 6.12: parcelada não muda de tipo -- sem "Alterar frequência" nem "Encerrar".
+                    # Ajustes pós-validação manual (A): "Alterar parcelamento" fica aqui, não nos Detalhes.
                     return ft.TextField(
                         label="Recorrência", data="pp_recorrencia_edicao", read_only=True, can_request_focus=False,
                         value=frase_parcelamento(identificacao_parcelada["total"], info_serie["data_termino"]),
                         multiline=True, min_lines=1, max_lines=3, color=cores.texto_principal,
+                        suffix_icon=ft.PopupMenuButton(
+                            content=icone_lapis("Editar recorrência"), tooltip="Editar recorrência",
+                            data="pp_menu_recorrencia", menu_position=ft.PopupMenuPosition.UNDER,
+                            bgcolor=cores.fundo_dialogo,
+                            items=[item_recorrencia("Alterar parcelamento", lambda e: acao_imediata_de_recorrencia(
+                                mostrar_dialogo_alterar_parcelamento))],
+                        ),
                         **estilo_edicao(ft.Icons.REPEAT),
                     )
                 acao_pendente = rascunho_recorrencia["acao"]
@@ -3507,7 +3539,13 @@ def main(page: ft.Page):
                     texto_recorrencia = frase_recorrencia(frequencia_exibida, termino_exibido, variavel_exibida)
                     # Sino 6.12 (Etapa 10, R6): sem "Alterar frequência" -- a frequência não muda.
                     # Uma transformação pendente só pode ser desfeita (e escolhida de novo).
+                    # Ajustes pós-validação manual (D): "Alterar tipo de valor" (R3/R4) é uma ação
+                    # separada de "Encerrar" e só aparece sem nenhuma decisão pendente (nunca as duas
+                    # na mesma gravação).
                     acoes_recorrencia = [] if acao_pendente == "transformar" else [
+                        *([item_recorrencia("Alterar tipo de valor", lambda e: acao_imediata_de_recorrencia(
+                            lambda: mostrar_dialogo_comportamento_valor(ao_concluir=voltar_aos_detalhes_atualizados)))]
+                          if acao_pendente is None else []),
                         item_recorrencia("Encerrar recorrência", lambda e: mostrar_dialogo_encerrar_recorrencia()),
                     ]
                 else:
@@ -3547,17 +3585,23 @@ def main(page: ft.Page):
                     **estilo_edicao(ft.Icons.REPEAT),
                 )
 
-            def mostrar_dialogo_comportamento_valor():
+            def mostrar_dialogo_comportamento_valor(ao_concluir=None):
                 """Sino 6.12 (Etapa 9): R3 (Fixo -> Variável) e R4 (Variável -> Fixo, com o valor
-                sugerido) a partir desta ocorrência, com prévia; recusas no próprio diálogo."""
+                sugerido) a partir desta ocorrência, com prévia; recusas no próprio diálogo.
+                Ajustes pós-validação manual (D/D1): só em Editar ("Alterar tipo de valor"), que
+                volta aos Detalhes (`ao_concluir`); sem `ao_concluir`, à Tela Principal."""
                 erro = ft.Text(value="", color=cores.texto_erro, size=12, data="erro_comportamento")
+                bloqueado = {"recusa": False}
 
                 def plural(n):
                     return f"{n} {'ocorrência' if n == 1 else 'ocorrências'}"
 
                 def concluir():
                     page.pop_dialog()
-                    mostrar_tela_principal(tuple(mes_atual))
+                    if ao_concluir is not None:
+                        ao_concluir()
+                    else:
+                        mostrar_tela_principal(tuple(mes_atual))
 
                 try:
                     previa = (database.previa_tornar_fixa(conta["id"]) if eh_variavel
@@ -3576,9 +3620,14 @@ def main(page: ft.Page):
                                   f"({plural(len(previa['preencher']))}) receberão este valor. Valores já "
                                   "informados e ocorrências com pagamentos não mudam. A frequência continua a mesma.")
                     erro.value = previa["recusa"] or ""
+                    # Validação final (R4-A): a recusa já é conhecida ao abrir (mesma prévia do banco,
+                    # nenhuma regra nova) -- o botão fica cinza e desabilitado; o banco continua recusando.
+                    bloqueado["recusa"] = bool(previa["recusa"])
                     controles = [ft.Text(explicacao, color=cores.texto_principal), campo, erro]
 
                     def confirmar(e):
+                        if bloqueado["recusa"]:
+                            return  # bloqueio funcional, não só visual
                         valor = parse_valor(campo.value)
                         if valor is None:
                             erro.value = database.MENSAGEM_VALOR_INVALIDO
@@ -3618,8 +3667,12 @@ def main(page: ft.Page):
                     actions=[
                         ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
                                       style=ft.ButtonStyle(color=cores.acao_primaria)),
-                        ft.Button(content=rotulo, bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
-                                  on_click=confirmar),
+                        ft.Button(content=rotulo, on_click=confirmar, data="confirmar_comportamento_valor",
+                                  disabled=bloqueado["recusa"],
+                                  bgcolor=(cores.botao_desabilitado_fundo if bloqueado["recusa"]
+                                           else cores.acao_primaria),
+                                  color=(cores.botao_desabilitado_texto if bloqueado["recusa"]
+                                         else cores.texto_sobre_acao)),
                     ],
                 ))
 
@@ -3717,6 +3770,15 @@ def main(page: ft.Page):
                 )
                 lista_previa = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO)
                 erro_alterar = ft.Text(value="", color=cores.texto_erro, size=12)
+                # Ajustes pós-validação manual (B): "Aplicar" cinza e desabilitado enquanto a prévia
+                # for recusada (a mesma recusa do banco, nunca uma segunda regra).
+                botao_aplicar = ft.Button(content="Aplicar", data="aplicar_alterar_parcelamento")
+
+                def atualizar_botao_aplicar():
+                    valido = not erro_alterar.value
+                    botao_aplicar.disabled = not valido
+                    botao_aplicar.bgcolor = cores.acao_primaria if valido else cores.botao_desabilitado_fundo
+                    botao_aplicar.color = cores.texto_sobre_acao if valido else cores.botao_desabilitado_texto
 
                 def atualizar_previa(e=None):
                     total = parse_valor(campo_total.value)
@@ -3743,6 +3805,7 @@ def main(page: ft.Page):
                                     f"{len(resultado['removidas'])} parcela(s) sem pagamentos do fim serão excluídas.",
                                     size=13, color=cores.texto_secundario))
                     lista_previa.height = min(300, 26 * max(1, len(lista_previa.controls)))
+                    atualizar_botao_aplicar()
                     if e is not None:
                         page.update()
 
@@ -3758,9 +3821,12 @@ def main(page: ft.Page):
                     page.update()
 
                 def aplicar(e):
+                    if botao_aplicar.disabled:
+                        return  # bloqueio funcional, não só visual
                     total = parse_valor(campo_total.value)
                     if total is None:
                         erro_alterar.value = database.MENSAGEM_VALOR_TOTAL_INVALIDO
+                        atualizar_botao_aplicar()
                         page.update()
                         return
                     try:
@@ -3768,10 +3834,13 @@ def main(page: ft.Page):
                                                       nova_quantidade=int(escolha["quantidade"]))
                     except database.ParcelamentoRecusadoError as recusa:
                         erro_alterar.value = str(recusa)
+                        atualizar_botao_aplicar()
                         page.update()
                         return
                     page.pop_dialog()
-                    mostrar_tela_principal(tuple(mes_atual))
+                    voltar_aos_detalhes_atualizados()  # ajuste A: aberto de Editar, volta aos Detalhes
+
+                botao_aplicar.on_click = aplicar
 
                 atualizar_previa()
                 page.show_dialog(ft.AlertDialog(
@@ -3785,8 +3854,7 @@ def main(page: ft.Page):
                     actions=[
                         ft.TextButton(content="Cancelar", on_click=fechar,
                                       style=ft.ButtonStyle(color=cores.acao_primaria)),
-                        ft.Button(content="Aplicar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
-                                  on_click=aplicar),
+                        botao_aplicar,
                     ],
                 ))
                 page.update()
@@ -4134,21 +4202,10 @@ def main(page: ft.Page):
                                               data="parcelar_conta", style=ft.ButtonStyle(color=cores.acao_primaria),
                                               on_click=lambda e: mostrar_dialogo_parcelar()),
                             ])] if not serie_ativa else []),
-                            # Sino 6.12 (Etapa 9, R3/R4): valor fixo <-> variável, com prévia (uma gravação).
-                            *([ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
-                                ft.TextButton(content="Mudar para valor fixo" if eh_variavel
-                                              else "Mudar para valor variável", icon=ft.Icons.SWAP_HORIZ,
-                                              data="mudar_comportamento_valor",
-                                              style=ft.ButtonStyle(color=cores.acao_primaria),
-                                              on_click=lambda e: mostrar_dialogo_comportamento_valor()),
-                            ])] if serie_ativa and not eh_parcelada else []),
-                            # Sino 6.12 (Etapa 7, D6/E5/R12): novo total e/ou quantidade, com prévia.
-                            *([ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
-                                ft.TextButton(content="Alterar parcelamento", icon=ft.Icons.TUNE,
-                                              data="alterar_parcelamento",
-                                              style=ft.ButtonStyle(color=cores.acao_primaria),
-                                              on_click=lambda e: mostrar_dialogo_alterar_parcelamento()),
-                            ])] if eh_parcelada else []),
+                            # Sino 6.12 (ajustes pós-validação manual, D1): a conversão Fixo <-> Variável
+                            # (R3/R4) saiu daqui -- só em Editar, "Alterar tipo de valor" no campo Recorrência.
+                            # Sino 6.12 (ajustes pós-validação manual, A): "Alterar parcelamento" saiu
+                            # daqui -- fica no campo Recorrência de Editar (só para parceladas).
                         ],
                     ),
                 )
@@ -4663,6 +4720,7 @@ def main(page: ft.Page):
                 # Registra a função real no gatilho compartilhado com os
                 # diálogos de Recorrência (ver gatilho_estado_salvar).
                 gatilho_estado_salvar["chamar"] = atualizar_estado_botao_salvar
+                gatilho_estado_salvar["ha_alteracao"] = ha_alteracao_pendente  # Sino 6.12 (ajustes A/D)
                 # Pagamentos parciais: escolha feita no diálogo "Como deseja
                 # registrar a diferença?" -- None até a usuária escolher; nada é
                 # gravado antes disso. Recomeça a cada abertura de Editar.
@@ -4939,7 +4997,15 @@ def main(page: ft.Page):
                     if escolha_diferenca["valor"] is not None and "valor" in campos_alterados:
                         campos_alterados["pp_diferenca"] = escolha_diferenca["valor"]
 
-                    if conta.get("serie_id") is not None and serie_ativa and ha_alteracao_propagavel:
+                    if (eh_variavel and ha_alteracao_propagavel
+                            and set(campos_alterados) - {"pp_diferenca"} == {"valor"}):
+                        # Sino 6.12 (ajustes pós-validação manual, C): numa recorrência de valor
+                        # variável, mudar SÓ o valor (inclusive informar o de uma pendente) grava
+                        # somente esta ocorrência, sem o diálogo de abrangência -- o valor de
+                        # referência da série e as próximas ocorrências não mudam. Com qualquer outro
+                        # campo junto, segue o diálogo de sempre (abaixo). Fixas: sem mudança.
+                        salvar_somente_esta_sem_dialogo(campos_alterados, mensagem_alteracao)
+                    elif conta.get("serie_id") is not None and serie_ativa and ha_alteracao_propagavel:
                         # RF20 (5.6): só pergunta o escopo quando existe algo
                         # propagável de fato (Nome/Valor/Vencimento/Categoria/
                         # Descrição -- um único diálogo para todos, CT107) --
@@ -5102,6 +5168,29 @@ def main(page: ft.Page):
                                 bgcolor=cores.fundo_dialogo,
                             )
                         )
+
+                def salvar_somente_esta_sem_dialogo(campos_alterados, mensagem_alteracao):
+                    """Ajuste C: a mesma gravação de "Somente este mês" (editar_conta_ocorrencia),
+                    com as mesmas recusas, mas sem diálogo de abrangência aberto."""
+                    try:
+                        sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
+                    except (limites.LimiteDeCaracteresError, database.ParcelamentoRecusadoError,
+                            database.ValorVariavelRecusadoError) as recusa:
+                        erro_edit.value = str(recusa)
+                        page.update()
+                        return
+                    except database.ValorMenorQuePagoError as recusa:
+                        mostrar_aviso_pagamentos(str(recusa), titulo=recusa.titulo)
+                        return
+                    except database.DadosDesatualizadosError as recusa:
+                        escolha_diferenca["valor"] = None
+                        mostrar_aviso_pagamentos(str(recusa), titulo="Nada foi alterado")
+                        return
+                    if not sucesso:
+                        erro_edit.value = "Não foi possível salvar esta alteração."
+                        page.update()
+                        return
+                    concluir_salvamento(mensagem_alteracao)
 
                 def mostrar_dialogo_escopo_edicao(campos_alterados, mensagem_alteracao):
                     def mostrar_recusa(erro):

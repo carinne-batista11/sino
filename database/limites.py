@@ -20,7 +20,9 @@ LIMITE_NOME_USUARIO = 70
 LIMITE_NOME_CONTA = 30
 LIMITE_NOME_CATEGORIA = 30
 # ERS v7.0 5.45 (M4): descrição de até 1000 caracteres percebidos (antes 500).
-LIMITE_DESCRICAO = 1000
+# Sino 6.12 (decisão da autora, 07/11/2026): reduzida para 250 -- substitui o limite de 1000
+# da 6.5/v7.0 5.45. Descrições já gravadas acima de 250 seguem a P4 (intactas até editar).
+LIMITE_DESCRICAO = 250
 
 # Rótulos usados nas mensagens amigáveis (sujeito da frase).
 ROTULOS_CAMPOS = {

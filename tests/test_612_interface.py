@@ -49,12 +49,12 @@ class TestMatrizDosTipos(BaseInterface):
     ESPERADO = {
         # nome: (ações nos Detalhes, menu de Recorrência em Editar, início da frase de Recorrência)
         "Água": ({"parcelar_conta"}, ["Transformar em recorrente"], "Esta conta não é recorrente."),
-        "Sofá": ({"alterar_parcelamento"}, None, "Esta conta é parcelada em 3 parcelas mensais"),
-        "Aluguel": ({"mudar_comportamento_valor"}, ["Encerrar recorrência"], "Esta conta se repete mensalmente"),
-        "Luz": ({"mudar_comportamento_valor", "informar_valor"}, ["Encerrar recorrência"],
+        "Sofá": (set(), ["Alterar parcelamento"], "Esta conta é parcelada em 3 parcelas mensais"),  # ajuste A
+        "Aluguel": (set(), ["Alterar tipo de valor", "Encerrar recorrência"], "Esta conta se repete mensalmente"),
+        "Luz": ({"informar_valor"}, ["Alterar tipo de valor", "Encerrar recorrência"],
                 "Esta conta se repete mensalmente"),
-        "IPVA": ({"mudar_comportamento_valor"}, ["Encerrar recorrência"], "Esta conta se repete anualmente"),
-        "Seguro": ({"mudar_comportamento_valor", "informar_valor"}, ["Encerrar recorrência"],
+        "IPVA": (set(), ["Alterar tipo de valor", "Encerrar recorrência"], "Esta conta se repete anualmente"),
+        "Seguro": ({"informar_valor"}, ["Alterar tipo de valor", "Encerrar recorrência"],
                    "Esta conta se repete anualmente"),
         "Gás": ({"parcelar_conta"}, ["Transformar em recorrente"], "Esta conta não é recorrente."),
     }
@@ -63,10 +63,8 @@ class TestMatrizDosTipos(BaseInterface):
         for nome, (acoes, menu, frase) in self.ESPERADO.items():
             with self.subTest(nome=nome):
                 self.assertEqual(self.acoes_dos_detalhes(nome), acoes)
-                botao = next((c for c in self.controles(ft.TextButton) if c.data == "mudar_comportamento_valor"), None)
-                if botao is not None:
-                    self.assertEqual(botao.content, "Mudar para valor fixo" if nome in ("Luz", "Seguro")
-                                     else "Mudar para valor variável")
+                # Ajustes pós-validação manual (D1): conversão nunca nos Detalhes.
+                self.assertNotIn("mudar_comportamento_valor", [getattr(c, "data", None) for c in self.controles()])
                 recorrencia = next(t for t in self.textos() if t and t.startswith(
                     ("Esta conta se repete", "Esta conta é parcelada", "Esta conta não é recorrente")))
                 self.assertTrue(recorrencia.startswith(frase), recorrencia)

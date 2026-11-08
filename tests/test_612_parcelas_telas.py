@@ -36,10 +36,18 @@ class TestTelasDasParcelas(BaseTelas):
         return {t: self.consultar(f"SELECT * FROM {t} ORDER BY 1") for t in ("contas", "pp_pagamentos",
                                                                               "series_recorrencia")}
 
+    def menu_recorrencia(self):
+        return self.campo("Recorrência").suffix_icon
+
     def abrir_alterar(self):
+        # Ajustes pós-validação manual (A): só pelo campo Recorrência de Editar.
         self.abrir_detalhes()
-        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "alterar_parcelamento"))
+        self.clicar(next(c for c in self.controles(ft.Button) if c.content == "Editar"))
+        self.clicar(next(i for i in self.menu_recorrencia().items if i.content == "Alterar parcelamento"))
         self.assertEqual(self.dlg().data, "dialogo_alterar_parcelamento")
+
+    def em_detalhes(self):
+        return any(getattr(c, "data", None) == "tela_detalhes" for c in self.controles())
 
     def previa(self):
         return [t for t in self.textos_do_dialogo() if t.startswith("Parcela ") or "serão excluídas" in t]
@@ -59,6 +67,8 @@ class TestTelasDasParcelas(BaseTelas):
         self.clicar(self.acao("Aplicar"))
         self.assertEqual(self.abertos(), [])
         self.assertEqual(self.valores(), [142.9, 200.0] + [142.85] * 6)
+        self.assertTrue(self.em_detalhes())                               # ajuste A: volta aos Detalhes
+        self.assertIn("Parcela 1 de 8", [t.value for t in self.controles(ft.Text)])
 
     def test_reducao_recusada_aparece_no_dialogo(self):
         db.editar_conta_ocorrencia(self.p[5], valor=210.0)
@@ -81,12 +91,17 @@ class TestTelasDasParcelas(BaseTelas):
         self.assertEqual(self.estado(), antes)
 
     def test_botao_so_em_parcela(self):
+        # Ajustes pós-validação manual (A): nunca nos Detalhes; em Editar, só na parcelada.
         db.criar_serie_recorrente(self.usuario_id, "Aluguel", 900.0, "2026-09-25", "mensal")
         db.criar_conta_unica(self.usuario_id, "Luz", 90.0, "2026-09-28")
-        for nome, esperado in (("Sofá", 1), ("Aluguel", 0), ("Luz", 0)):
+        for nome, esperado in (("Sofá", True), ("Aluguel", False), ("Luz", False)):
             self.abrir_detalhes(nome)
-            self.assertEqual(len([c for c in self.controles() if getattr(c, "data", None) == "alterar_parcelamento"]),
-                             esperado, nome)
+            self.assertEqual([c for c in self.controles() if getattr(c, "data", None) == "alterar_parcelamento"],
+                             [], nome)
+            self.assertNotIn("Alterar parcelamento", [getattr(c, "content", None) for c in self.controles()])
+            self.clicar(next(c for c in self.controles(ft.Button) if c.content == "Editar"))
+            itens = [i.content for i in self.menu_recorrencia().items]
+            self.assertEqual("Alterar parcelamento" in itens, esperado, nome)
 
     def test_exclusao_de_parcela_protegida_mostra_o_motivo(self):
         pagamentos.registrar_pagamento_parcial(self.p[0], 50_00, "2026-09-12")
