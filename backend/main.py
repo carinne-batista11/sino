@@ -764,7 +764,7 @@ OPCOES_DE_PARCELAS = [str(n) for n in range(database.MINIMO_PARCELAS, database.M
 # (só visual; nenhuma regra nova). Referências: novaconta_unica.png, novaconta_parcela.png,
 # novaconta_recorrencia.png e novatelacriarconta_superconta.png.
 FAIXAS_NOVA_CONTA = {
-    "unica": ("Conta única", "Entra em uma só fatura, pelo valor total da despesa."),
+    "unica": ("Conta única", "A despesa é registrada uma única vez, pelo valor informado."),
     "parcelada": ("Conta parcelada", "Divida o valor total em parcelas mensais."),
     "mensal": ("Conta recorrente mensal", "A despesa se repete todos os meses, com ou sem data de término."),
     "anual": ("Conta recorrente anual", "A despesa se repete todos os anos, com ou sem data de término."),
@@ -778,6 +778,10 @@ TEXTO_SUPERCONTA_FAIXA = ("Representa uma fatura (ex.: cartão de crédito). Ela
 TEXTO_SUPERCONTA_NOTA = ("A superconta não possui recorrência própria. As recorrências, parcelas e demais regras "
                          "serão definidas nas compras relacionadas.")
 TEXTO_SEM_ESTIMATIVA_PARCELAS = "Informe o valor total para ver o valor de cada parcela."
+
+
+# Protótipo 6.13: abaixo desta largura, os cartões de tipo põem o ícone acima do nome.
+LARGURA_TIPOS_EMPILHADOS = 520
 
 
 def resumo_estimado_das_parcelas(valor_total, quantidade):
@@ -8187,11 +8191,11 @@ def main(page: ft.Page):
 
         # Tipo de valor (só Mensal e Anual): Fixo é o padrão, como na 6.12.
         def cartao_valor(valor, titulo, subtitulo):
-            return ft.Button(col={"xs": 12, "sm": 6, "md": 5}, height=64, data=f"comportamento_{valor}",
+            return ft.Button(col={"xs": 12, "sm": 6, "md": 5}, height=68, data=f"comportamento_{valor}",
                              on_click=lambda e: escolher_comportamento(valor),
                              content=ft.Row(spacing=10, controls=[
                                  ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, size=22, color=cores.texto_secundario),
-                                 ft.Column(expand=True, spacing=0, controls=[
+                                 ft.Column(expand=True, spacing=0, alignment=ft.MainAxisAlignment.CENTER, controls=[
                                      texto(titulo, 14, True), texto(subtitulo, 12, cor=cores.texto_secundario)]),
                              ]))
 
@@ -8218,13 +8222,13 @@ def main(page: ft.Page):
         TIPOS = (("unica", "Única", ft.Icons.EVENT_OUTLINED), ("parcelada", "Parcelada", ft.Icons.LAYERS_OUTLINED),
                  ("mensal", "Recorrente mensal", ft.Icons.AUTORENEW),
                  ("anual", "Recorrente anual", ft.Icons.CALENDAR_MONTH_OUTLINED))
-        cartoes_tipo = [ft.Button(col={"xs": 6, "sm": 3}, height=96, data=f"tipo_conta_{valor}",
+        # Cartões compactos: quatro na mesma linha a partir de md; abaixo disso, 2 × 2. Em janela muito
+        # estreita o ícone fica acima do nome (ao lado, o nome quebraria letra por letra).
+        cartoes_tipo = [ft.Button(col={"xs": 6, "md": 3}, data=f"tipo_conta_{valor}",
                                   on_click=lambda e, v=valor: escolher_tipo(v))
                         for valor, _, _ in TIPOS]
-        bloco_tipos = ft.Column(spacing=10, data="tipo_da_conta", controls=[
-            ft.Column(spacing=2, controls=[texto("Tipo da conta", 17, True),
-                                           texto("Escolha como esta despesa será registrada.", 13,
-                                                 cor=cores.texto_secundario)]),
+        bloco_tipos = ft.Column(spacing=8, data="tipo_da_conta", controls=[
+            texto("Tipo da conta", 17, True),
             ft.ResponsiveRow(spacing=10, run_spacing=10, controls=cartoes_tipo),
         ])
         faixa_tipo = ft.Container(data="faixa_tipo_nova_conta")
@@ -8361,7 +8365,8 @@ def main(page: ft.Page):
         def celula(controle, col=12):
             return ft.Container(col=col, content=controle)
 
-        meia = {"xs": 12, "md": 6}
+        meia = {"xs": 12, "sm": 6}       # conta comum: lado a lado a partir de 576 px
+        meia_sc = {"xs": 12, "md": 6}    # Superconta: sem mudança nesta rodada
 
         def aplicar():
             """Mostra a modalidade escolhida. Só troca rótulos, visibilidade e estilos; nada é gravado."""
@@ -8379,28 +8384,39 @@ def main(page: ft.Page):
             if superconta:
                 grade.controls = [
                     celula(aviso_em_desenvolvimento), celula(faixa_superconta), celula(campo_nome_sc),
-                    celula(campo_valor_sc, meia), celula(campo_data_sc, meia),
-                    celula(ft.Row(controls=[campo_categoria_sc]), meia), celula(campo_detalhamento, meia),
+                    celula(campo_valor_sc, meia_sc), celula(campo_data_sc, meia_sc),
+                    celula(ft.Row(controls=[campo_categoria_sc]), meia_sc), celula(campo_detalhamento, meia_sc),
                     celula(campo_descricao_sc), celula(nota_superconta),
                 ]
                 linha_botoes.controls = [botao_cancelar_sc, botao_salvar_e_adicionar, botao_salvar_sc]
                 return
 
             tipo = recorrencia["tipo"]
+            empilhado = bool(page.width) and page.width < LARGURA_TIPOS_EMPILHADOS
             for cartao, (valor, rotulo, icone) in zip(cartoes_tipo, TIPOS):
                 ativo = valor == tipo
                 cor = cores.chip_ativo_texto if ativo else cores.texto_principal
+                cartao.height = 72 if empilhado else 56
                 cartao.style = ft.ButtonStyle(
                     bgcolor=cores.chip_ativo_fundo if ativo else cores.fundo_card,
                     side=None if ativo else ft.BorderSide(1, cores.borda_suave),
-                    shape=ft.RoundedRectangleBorder(radius=12), padding=ft.Padding(6, 6, 6, 8), elevation=0)
-                cartao.content = ft.Column(spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                                           alignment=ft.MainAxisAlignment.CENTER, controls=[
-                    ft.Row(alignment=ft.MainAxisAlignment.END, height=18, controls=[
-                        ft.Icon(ft.Icons.CHECK_CIRCLE, size=18, color=cor, semantics_label="Selecionado")
-                        if ativo else ft.Container(width=18, height=18)]),
-                    ft.Icon(icone, size=24, color=cor if ativo else cores.acao_primaria),
-                    ft.Text(rotulo, size=14, weight=ft.FontWeight.BOLD, color=cor, text_align=ft.TextAlign.CENTER),
+                    shape=ft.RoundedRectangleBorder(radius=12), padding=ft.Padding(8, 4, 8, 4), elevation=0)
+                simbolo = ft.Icon(icone, size=22, color=cor if ativo else cores.acao_primaria)
+                nome = ft.Text(rotulo, size=14, weight=ft.FontWeight.BOLD, color=cor,
+                               text_align=ft.TextAlign.CENTER if empilhado else ft.TextAlign.START)
+                marca = (ft.Icon(ft.Icons.CHECK_CIRCLE, size=18, color=cor, semantics_label="Selecionado")
+                         if ativo else ft.Container(width=18, height=18))
+                if empilhado:
+                    miolo = ft.Column(spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                      alignment=ft.MainAxisAlignment.CENTER, controls=[simbolo, nome])
+                else:
+                    miolo = ft.Row(spacing=8, alignment=ft.MainAxisAlignment.CENTER,
+                                   vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                   controls=[simbolo, ft.Container(content=nome, expand=False)])
+                cartao.content = ft.Stack(expand=True, controls=[
+                    ft.Container(expand=True, alignment=ft.Alignment.CENTER, padding=ft.Padding(14, 0, 14, 0),
+                                 content=miolo),
+                    ft.Container(right=0, top=0, content=marca),
                 ])
             titulo, conteudo = FAIXAS_NOVA_CONTA[tipo]
             icone_tipo = next(i for v, _, i in TIPOS if v == tipo)
@@ -8429,16 +8445,18 @@ def main(page: ft.Page):
             campo_termino.value = texto_do_termino()
             atualizar_resumo_parcelas()
 
-            categoria = celula(ft.Row(controls=[campo_categoria]), 12 if tipo == "unica" else meia)
-            controles = [celula(campo_nome), celula(bloco_tipos), celula(faixa_tipo)]
+            # Ordem aprovada: tipos, faixa, Nome | Categoria e os campos da modalidade, em duas colunas.
+            controles = [celula(bloco_tipos), celula(faixa_tipo), celula(campo_nome, meia),
+                         celula(ft.Row(controls=[campo_categoria]), meia)]
             if tipo == "unica":
-                controles += [celula(campo_valor, meia), celula(campo_data, meia), categoria]
+                controles += [celula(campo_valor, meia), celula(campo_data, meia)]
             elif tipo == "parcelada":
+                # Resumo abaixo de Primeiro vencimento e Categoria (decisão anterior), antes da Descrição.
                 controles += [celula(campo_valor, meia), celula(ft.Row(controls=[campo_parcelas]), meia),
-                              celula(campo_data, meia), categoria, celula(resumo_parcelas)]
+                              celula(campo_data, meia), celula(resumo_parcelas)]
             else:
-                controles += [celula(bloco_tipo_valor), celula(campo_valor, meia), celula(campo_termino, meia),
-                              celula(campo_data, meia), categoria]
+                controles += [celula(bloco_tipo_valor), celula(campo_valor, meia), celula(campo_data, meia),
+                              celula(campo_termino, meia)]
             grade.controls = controles + [celula(campo_descricao)]
             linha_botoes.controls = [botao_cancelar, botao_salvar]
 
@@ -8560,7 +8578,8 @@ def main(page: ft.Page):
                                      data="cabecalho_nova_conta", controls=[
             ft.Container(col={"xs": 12, "sm": 3}, alignment=ft.Alignment.CENTER_LEFT, content=ft.TextButton(
                 content="Voltar", icon=ft.Icons.ARROW_BACK, data="voltar_nova_conta", on_click=lambda e: sair(),
-                style=ft.ButtonStyle(color=cores.acao_primaria, padding=ft.Padding(4, 0, 8, 0),
+                style=ft.ButtonStyle(color=cores.acao_primaria, bgcolor=cores.grafico_total_fundo,
+                                     shape=ft.RoundedRectangleBorder(radius=10), padding=ft.Padding(10, 4, 14, 4),
                                      text_style=ft.TextStyle(size=15, weight=ft.FontWeight.BOLD)))),
             ft.Container(col={"xs": 12, "sm": 6}, alignment=ft.Alignment.CENTER, content=ft.Text(
                 "Nova conta", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal)),
@@ -8574,11 +8593,24 @@ def main(page: ft.Page):
         )
         aplicar()
         area = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[
-            ft.Container(padding=ft.Padding(20, 24, 20, 20), content=ft.Column(
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=16,
+            ft.Container(padding=ft.Padding(20, 16, 20, 20), content=ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=14,
                 controls=[cabecalho, cartoes_modo, grade],
             )),
         ])
+        forma_dos_tipos = {"valor": bool(page.width) and page.width < LARGURA_TIPOS_EMPILHADOS}
+
+        def ao_redimensionar(e):
+            # Só redesenha se os cartões de tipo mudarem de forma, e só com esta tela aberta.
+            if not tela["ativa"]:
+                return
+            nova = bool(page.width) and page.width < LARGURA_TIPOS_EMPILHADOS
+            if nova != forma_dos_tipos["valor"]:
+                forma_dos_tipos["valor"] = nova
+                aplicar()
+                page.update()
+
+        page.on_resize = ao_redimensionar
         page.add(ft.Column(data="nova_conta_com_rodape", expand=True, spacing=0,
                            horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[area, rodape]))
 

@@ -126,12 +126,17 @@ class TestAbertura(Base):
             self.assertFalse(self.selecionado(self.com_data(f"tipo_conta_{outro}")))
 
     def test_unica_mostra_so_os_campos_dela(self):
-        self.assertEqual(self.rotulos(), ["Nome da conta", "Valor da conta", "Data de vencimento", "Categoria",
+        # Ordem aprovada em 10/11: Nome | Categoria, Valor | Data de vencimento, Descrição.
+        self.assertEqual(self.rotulos(), ["Nome da conta", "Categoria", "Valor da conta", "Data de vencimento",
                                           "Descrição (opcional)"])
         self.assertFalse(self.existe("linha_comportamento_valor"))
         self.assertFalse(self.existe("resumo_parcelas_nova_conta"))
         self.assertFalse(self.existe("termino_nova_conta"))
-        self.assertIn("Conta única", [c.value for c in self.controles(ft.Text)])
+        textos = [c.value for c in self.controles(ft.Text)]
+        self.assertIn("Conta única", textos)
+        self.assertIn("A despesa é registrada uma única vez, pelo valor informado.", textos)
+        faixa = [c.value for c in percorrer(self.com_data("faixa_tipo_nova_conta")) if isinstance(c, ft.Text)]
+        self.assertFalse(any("fatura" in t for t in faixa))
 
     def test_cartoes_e_tipos_sao_botoes_focaveis(self):
         for data in ("modo_comum", "modo_superconta", "tipo_conta_unica", "tipo_conta_parcelada",
@@ -146,15 +151,15 @@ class TestAbertura(Base):
 class TestModalidades(Base):
     def test_parcelada(self):
         self.tipo("parcelada")
-        self.assertEqual(self.rotulos(), ["Nome da conta", "Valor total da conta", "Quantidade de parcelas",
-                                          "Primeiro vencimento", "Categoria", "Descrição (opcional)"])
+        self.assertEqual(self.rotulos(), ["Nome da conta", "Categoria", "Valor total da conta",
+                                          "Quantidade de parcelas", "Primeiro vencimento", "Descrição (opcional)"])
         self.assertEqual([o.key for o in self.campo("Quantidade de parcelas").options],
                          [str(n) for n in range(2, 37)])
         # Resumo logo depois de Primeiro vencimento e Categoria, antes da Descrição.
         grade = self.com_data("grade_nova_conta")
         ordem = [getattr(cel.content, "data", None) or getattr(cel.content, "label", None)
                  for cel in grade.controls]
-        self.assertEqual(ordem.index("resumo_parcelas_nova_conta"), ordem.index("data_nova_conta") + 2)
+        self.assertEqual(ordem.index("resumo_parcelas_nova_conta"), ordem.index("data_nova_conta") + 1)
 
     def test_resumo_usa_o_mesmo_calculo_do_banco(self):
         self.tipo("parcelada")
@@ -179,8 +184,8 @@ class TestModalidades(Base):
         self.tipo("mensal")
         self.assertTrue(self.selecionado(self.com_data("comportamento_fixo")))
         self.assertFalse(self.selecionado(self.com_data("comportamento_variavel")))
-        self.assertEqual(self.rotulos(), ["Nome da conta", "Valor por ocorrência (mensal)", "Término da recorrência",
-                                          "Primeiro vencimento", "Categoria", "Descrição (opcional)"])
+        self.assertEqual(self.rotulos(), ["Nome da conta", "Categoria", "Valor por ocorrência (mensal)",
+                                          "Primeiro vencimento", "Término da recorrência", "Descrição (opcional)"])
         self.assertFalse(self.com_data("ajuda_valor_variavel").visible)
         self.clicar(self.com_data("comportamento_variavel"))
         self.assertTrue(self.selecionado(self.com_data("comportamento_variavel")))
