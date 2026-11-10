@@ -760,6 +760,49 @@ def linhas_da_previa_de_parcelas(previa):
 OPCOES_DE_PARCELAS = [str(n) for n in range(database.MINIMO_PARCELAS, database.MAXIMO_PARCELAS + 1)]
 
 
+# PROTÓTIPO 6.13 (10/11/2026, Nova conta): textos das faixas de cada modalidade e da Superconta
+# (só visual; nenhuma regra nova). Referências: novaconta_unica.png, novaconta_parcela.png,
+# novaconta_recorrencia.png e novatelacriarconta_superconta.png.
+FAIXAS_NOVA_CONTA = {
+    "unica": ("Conta única", "Entra em uma só fatura, pelo valor total da despesa."),
+    "parcelada": ("Conta parcelada", "Divida o valor total em parcelas mensais."),
+    "mensal": ("Conta recorrente mensal", "A despesa se repete todos os meses, com ou sem data de término."),
+    "anual": ("Conta recorrente anual", "A despesa se repete todos os anos, com ou sem data de término."),
+}
+TITULO_SUPERCONTA_EM_DESENVOLVIMENTO = "Supercontas em desenvolvimento"
+TEXTO_SUPERCONTA_EM_DESENVOLVIMENTO = (
+    "Organize suas faturas, registre compras únicas, parceladas ou recorrentes e acompanhe seus gastos em um "
+    "só lugar. As supercontas estarão disponíveis na próxima versão do Sino.")
+TEXTO_SUPERCONTA_FAIXA = ("Representa uma fatura (ex.: cartão de crédito). Ela não possui recorrência própria. "
+                          "As compras, parcelas e recorrências são cadastradas depois de salvar.")
+TEXTO_SUPERCONTA_NOTA = ("A superconta não possui recorrência própria. As recorrências, parcelas e demais regras "
+                         "serão definidas nas compras relacionadas.")
+TEXTO_SEM_ESTIMATIVA_PARCELAS = "Informe o valor total para ver o valor de cada parcela."
+
+
+def resumo_estimado_das_parcelas(valor_total, quantidade):
+    """PROTÓTIPO 6.13: valor por parcela mostrado na Nova conta (Parcelada), só cálculo.
+
+    Usa exatamente `database.dividir_em_parcelas` (D3: diferença de centavos na 1ª parcela) e as
+    mesmas condições de `database.previa_parcelamento` (2 a 36 parcelas, total positivo e de pelo
+    menos 1 centavo por parcela). Sem estimativa possível: {"frase": motivo, "valor": None}.
+    """
+    if valor_total is None or not isinstance(quantidade, int) or not (
+            database.MINIMO_PARCELAS <= quantidade <= database.MAXIMO_PARCELAS):
+        return {"valor": None, "primeira": None, "frase": TEXTO_SEM_ESTIMATIVA_PARCELAS}
+    total = database.centavos_de(valor_total)
+    if total < quantidade:
+        return {"valor": None, "primeira": None, "frase": database.MENSAGEM_VALOR_PEQUENO_PARA_PARCELAS}
+    valores = database.dividir_em_parcelas(total, quantidade)
+    primeira, demais = valores[0] / 100, valores[-1] / 100
+    if valores[0] == valores[-1]:
+        frase = f"Serão registradas {quantidade} parcelas de {formatar_moeda(demais)}, com vencimento mensal."
+    else:
+        frase = (f"Serão registradas {quantidade} parcelas, com vencimento mensal: a 1ª de "
+                 f"{formatar_moeda(primeira)} e as demais de {formatar_moeda(demais)}.")
+    return {"valor": demais, "primeira": primeira if valores[0] != valores[-1] else None, "frase": frase}
+
+
 def texto_parcela(parcela):
     """(posição, total) -> "Parcela X de Y"; total None -> "Parcela X"."""
     posicao, total = parcela
@@ -7883,18 +7926,27 @@ def main(page: ft.Page):
     #  TELA DE NOVA CONTA
     # ======================================================
     def mostrar_tela_nova_conta(categoria_pre_selecionada=None):
-        # Sino 6.11: Nova conta no padrão visual de Editar conta -- grade
-        # responsiva, ícones nos campos, calendário dentro do campo, Recorrência
-        # num campo com diálogo centralizado e rodapé fixo. A lógica de salvar
-        # (validações, mensagens, ordem e chamadas ao banco) é a mesma da 6.10.
+        # PROTÓTIPO 6.13 (10/11/2026): Nova conta com os cartões Conta comum | Superconta, os quatro
+        # tipos visíveis no formulário (R11), a faixa de cada modalidade, Valor fixo | Valor variável
+        # no próprio formulário e o resumo estimado das parcelas. A lógica de salvar (validações,
+        # mensagens, ordem, prévia "Confirmar parcelamento" e chamadas ao banco) é a mesma da 6.12.
+        # A Superconta é só visual: nenhum botão dela grava, e nada da F1 é chamado.
         page.controls.clear()
         page.overlay.clear()
         page.padding = 0
 
+        tela = {"ativa": True}  # P1: o foco só volta a um controle se esta tela ainda estiver aberta
+        modo = {"valor": "comum"}
         data_selecionada = {"valor": None}
+        hoje = date.today()
+        # Mesmos valores iniciais da 6.12: Única; Fixo; término no mês e ano atuais; 2 parcelas.
+        recorrencia = {"tipo": "unica", "sem_termino": False, "mes": str(hoje.month), "ano": str(hoje.year),
+                       "parcelas": OPCOES_DE_PARCELAS[0], "variavel": False}
 
-        # Mesmo estilo dos campos de Editar (raio, bordas, texto e ícone
-        # decorativo à esquerda), copiado aqui para não mexer em Editar.
+        def sair():
+            tela["ativa"] = False
+            mostrar_tela_principal()
+
         def estilo_criacao(icone=None):
             estilo = dict(**estilo_campo_texto(), border_radius=RAIO_EDICAO, border_width=1,
                           focused_border_width=2, text_size=15)
@@ -7902,19 +7954,45 @@ def main(page: ft.Page):
                 estilo["prefix_icon"] = ft.Icon(icone, size=20, color=cores.texto_secundario)
             return estilo
 
+        def texto(valor, tamanho=14, negrito=False, cor=None, **opcoes):
+            return ft.Text(valor, size=tamanho, weight=ft.FontWeight.BOLD if negrito else ft.FontWeight.NORMAL,
+                           color=cor or cores.texto_principal, **opcoes)
+
+        async def focar_depois(controle):
+            await asyncio.sleep(0.05)
+            if not tela["ativa"]:
+                return
+            try:
+                await controle.focus()
+            except Exception:  # noqa: BLE001 -- foco é só conveniência do teclado
+                pass
+
+        def faixa(icone, titulo, conteudo, data=None, aviso=False):
+            fundo = cores.aviso_fundo if aviso else cores.grafico_total_fundo
+            cor_titulo = cores.aviso_texto if aviso else cores.texto_sucesso
+            cor_icone = cores.aviso_icone if aviso else cores.grafico_total_icone
+            return ft.Container(
+                data=data, bgcolor=fundo, border_radius=12, padding=ft.Padding(16, 12, 16, 12),
+                content=ft.Row(spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                    ft.Icon(icone, size=26, color=cor_icone),
+                    ft.Column(expand=True, spacing=2, controls=[
+                        texto(titulo, 15, True, cor_titulo),
+                        texto(conteudo, 13, cor=cores.aviso_texto if aviso else cores.texto_principal),
+                    ]),
+                ]),
+            )
+
+        # ------------------------------------------------------------------ conta comum
         campo_nome = ft.TextField(
             label="Nome da conta", hint_text="Ex: Aluguel, Internet...", color=cores.texto_principal,
             counter=texto_contador("", limites.LIMITE_NOME_CONTA),
             **estilo_criacao(ft.Icons.DESCRIPTION_OUTLINED),
         )
         campo_valor = ft.TextField(
-            label="Valor", hint_text="0,00", keyboard_type=ft.KeyboardType.NUMBER, color=cores.texto_principal,
-            prefix=ft.Text("R$ ", size=15, color=cores.texto_secundario),
-            **estilo_criacao(ft.Icons.PAYMENTS_OUTLINED),
+            label="Valor da conta", hint_text="0,00", keyboard_type=ft.KeyboardType.NUMBER,
+            color=cores.texto_principal, prefix=ft.Text("R$ ", size=15, color=cores.texto_secundario),
+            data="valor_nova_conta", **estilo_criacao(ft.Icons.PAYMENTS_OUTLINED),
         )
-        # RF04/RF32 (5.22): descrição opcional. 5.23: contador por grafemas e
-        # mensagem ao passar do limite -- sem max_length (cortaria sem aviso).
-        # v7.0 5.45 (M4-2): 2 a 8 linhas, com rolagem interna depois.
         campo_descricao = ft.TextField(
             label="Descrição (opcional)", hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
             multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
@@ -7930,36 +8008,27 @@ def main(page: ft.Page):
                 campo_data.value = data_selecionada["valor"].strftime("%d/%m/%Y")
                 page.update()
 
-        seletor_data = criar_seletor_data(
-            first_date=date(2000, 1, 1),
-            last_date=date(2100, 12, 31),
-            on_change=ao_escolher_data,
-        )
+        seletor_data = criar_seletor_data(first_date=date(2000, 1, 1), last_date=date(2100, 12, 31),
+                                          on_change=ao_escolher_data)
         page.overlay.append(seletor_data)
 
         def abrir_seletor_data(e):
             page.show_dialog(seletor_data)
 
-        # Calendário dentro do campo: o botão "Escolher data" (focável, com
-        # nome acessível) fica à direita; um clique no próprio campo também
-        # abre o calendário. O campo em si sai da ordem do Tab -- quem recebe
-        # o foco é o botão.
         campo_data = ft.TextField(
             label="Data de vencimento", hint_text="dd/mm/aaaa", read_only=True, can_request_focus=False,
-            color=cores.texto_principal, on_click=abrir_seletor_data,
+            color=cores.texto_principal, on_click=abrir_seletor_data, data="data_nova_conta",
             suffix_icon=ft.IconButton(
                 icon=icone_com_nome(ft.Icons.CALENDAR_MONTH, "Escolher data", cores.acao_primaria),
-                icon_color=cores.acao_primaria, data="escolher_data_nova_conta",
-                on_click=abrir_seletor_data,
+                icon_color=cores.acao_primaria, data="escolher_data_nova_conta", on_click=abrir_seletor_data,
             ),
-            **estilo_criacao(),
+            **estilo_criacao(ft.Icons.EVENT_OUTLINED),
         )
 
         campo_categoria = ft.Dropdown(
-            label="Categoria",
-            value=str(categoria_pre_selecionada) if categoria_pre_selecionada else "",
-            options=montar_opcoes_categoria(), color=cores.texto_principal,
-            expand=True, border_radius=RAIO_EDICAO, border_width=1, focused_border_width=2, text_size=15,
+            label="Categoria", value=str(categoria_pre_selecionada) if categoria_pre_selecionada else "",
+            options=montar_opcoes_categoria(), color=cores.texto_principal, expand=True,
+            border_radius=RAIO_EDICAO, border_width=1, focused_border_width=2, text_size=15,
             leading_icon=ft.Icon(ft.Icons.SELL_OUTLINED, size=20, color=cores.texto_secundario),
             **estilo_lista(),
         )
@@ -7969,11 +8038,6 @@ def main(page: ft.Page):
             if campo_categoria.value != SENTINELA_NOVA_CATEGORIA:
                 ultima_categoria_valida["valor"] = campo_categoria.value
                 return
-
-            # "+ Nova categoria": nunca deixa a sentinela como valor
-            # selecionado -- restaura a seleção anterior antes de abrir o
-            # formulário compartilhado, para que cancelar a criação não
-            # deixe o Dropdown "preso" numa opção que não é uma categoria.
             campo_categoria.value = ultima_categoria_valida["valor"]
             page.update()
 
@@ -7985,245 +8049,397 @@ def main(page: ft.Page):
 
             abrir_criacao_categoria(ao_criar_categoria)
 
-        # Mesma correção de Editar Conta: ft.Dropdown usa `on_select`, não
-        # `on_change` (Flet 0.86.5 não declara esse campo em Dropdown).
         campo_categoria.on_select = ao_mudar_categoria
 
-        # RF10/5.18: tipo de conta e término -- mesmos valores iniciais da
-        # Sino 6.10 (Única; "Sem data de término" desligado; término no mês
-        # e ano atuais). A configuração é escolhida num diálogo
-        # centralizado no padrão de "Transformar em recorrente" (Editar conta);
-        # o diálogo trabalha num rascunho e só o Confirmar o leva para
-        # `recorrencia`, que é de onde o Salvar lê (como a 6.10 lia dos chips e
-        # do cartão de término). Nada é gravado no banco antes do Salvar.
-        hoje = date.today()
-        recorrencia = {"tipo": "unica", "sem_termino": False, "mes": str(hoje.month), "ano": str(hoje.year),
-                       "parcelas": OPCOES_DE_PARCELAS[0],  # Sino 6.12: quantidade da Parcelada
-                       "variavel": False}                  # Sino 6.12 (Etapa 8): Fixo (padrão) ou Variável
-        # Antes da primeira confirmação, o campo mostra só a orientação
-        # "Escolha o tipo da conta" -- sem obrigar a escolher: o Salvar usa
-        # "Única", como sempre. Depois, mostra o resumo da escolha confirmada.
-        estado_recorrencia = {"confirmada": False}
-        ORIENTACAO_RECORRENCIA = "Escolha o tipo da conta"
+        # Parcelada: quantidade de 2 a 36 (D4), na mesma lista da 6.12.
+        campo_parcelas = ft.Dropdown(
+            label="Quantidade de parcelas", value=recorrencia["parcelas"], color=cores.texto_principal,
+            options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS], expand=True,
+            border_radius=RAIO_EDICAO, border_width=1, focused_border_width=2, text_size=15,
+            leading_icon=ft.Icon(ft.Icons.LAYERS_OUTLINED, size=20, color=cores.texto_secundario),
+            data="quantidade_parcelas_nova_conta", **estilo_lista(),
+        )
 
-        def texto_da_recorrencia():
-            # Texto curto. Com "Única", o término não vale (como no Salvar).
-            if recorrencia["tipo"] == "unica":
-                return "Única"
-            if recorrencia["tipo"] == "parcelada":  # Sino 6.12
-                return f"Parcelada em {recorrencia['parcelas']} parcelas"
-            frequencia = "Mensal" if recorrencia["tipo"] == "mensal" else "Anual"
-            variavel = ", valor variável" if recorrencia["variavel"] else ""  # Sino 6.12 (Etapa 8)
+        # Resumo estimado (abaixo de Primeiro vencimento e Categoria): mesmo cálculo do banco (D3).
+        valor_parcela = texto("—", 22, True, cores.texto_sucesso, data="valor_por_parcela_estimado")
+        primeira_parcela = texto("", 12, cor=cores.texto_secundario, visible=False)
+        frase_parcelas = texto(TEXTO_SEM_ESTIMATIVA_PARCELAS, 13, data="frase_das_parcelas")
+        resumo_parcelas = ft.Container(
+            data="resumo_parcelas_nova_conta", bgcolor=cores.grafico_total_fundo, border_radius=12,
+            padding=ft.Padding(16, 12, 16, 12),
+            content=ft.ResponsiveRow(spacing=12, run_spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                     controls=[
+                ft.Row(col={"xs": 12, "md": 5}, spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                       controls=[
+                    ft.Icon(ft.Icons.CALCULATE_OUTLINED, size=26, color=cores.grafico_total_icone),
+                    ft.Column(expand=True, spacing=0, controls=[
+                        texto("Valor por parcela (estimado)", 13, True), valor_parcela, primeira_parcela]),
+                ]),
+                ft.Row(col={"xs": 12, "md": 7}, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                       controls=[ft.Icon(ft.Icons.INFO_OUTLINE, size=22, color=cores.texto_secundario),
+                                 ft.Column(expand=True, controls=[frase_parcelas])]),
+            ]),
+        )
+
+        def atualizar_resumo_parcelas(e=None):
+            resumo = resumo_estimado_das_parcelas(parse_valor(campo_valor.value), int(recorrencia["parcelas"]))
+            valor_parcela.value = formatar_moeda(resumo["valor"]) if resumo["valor"] is not None else "—"
+            primeira_parcela.visible = resumo["primeira"] is not None
+            if resumo["primeira"] is not None:
+                primeira_parcela.value = f"1ª parcela: {formatar_moeda(resumo['primeira'])}"
+            frase_parcelas.value = resumo["frase"]
+            if e is not None:
+                page.update()
+
+        def ao_mudar_parcelas(e):
+            recorrencia["parcelas"] = campo_parcelas.value
+            atualizar_resumo_parcelas(e)
+
+        campo_parcelas.on_select = ao_mudar_parcelas
+        campo_valor.on_change = atualizar_resumo_parcelas
+
+        # Recorrências: término num campo do formulário; Mês e Ano no diálogo central (padrão de
+        # "Configurar recorrência" da 6.12), que só leva o rascunho para `recorrencia` no Confirmar.
+        botao_termino = ft.IconButton(
+            icon=icone_com_nome(ft.Icons.ARROW_DROP_DOWN, "Escolher término da recorrência", cores.texto_secundario, 24),
+            icon_color=cores.texto_secundario, data="escolher_termino",
+        )
+        campo_termino = ft.TextField(
+            label="Término da recorrência", read_only=True, can_request_focus=False, multiline=True,
+            min_lines=1, max_lines=3, color=cores.texto_principal, data="termino_nova_conta",
+            suffix_icon=botao_termino, **estilo_criacao(ft.Icons.EVENT_REPEAT),
+        )
+
+        def texto_do_termino():
             if recorrencia["sem_termino"]:
-                return f"{frequencia}, sem término{variavel}"
-            return (f"{frequencia} até {MESES_PT[int(recorrencia['mes']) - 1].lower()} de {recorrencia['ano']}"
-                    f"{variavel}")
+                return "Sem data de término"
+            return f"Até {MESES_PT[int(recorrencia['mes']) - 1].lower()} de {recorrencia['ano']}"
 
-        # O campo de sempre, com a seta à direita. O campo sai da ordem do Tab;
-        # quem recebe o foco é o botão da seta (e é para ele que o foco volta
-        # quando o diálogo fecha).
-        botao_escolher_recorrencia = ft.IconButton(
-            icon=icone_com_nome(ft.Icons.ARROW_DROP_DOWN, "Escolher recorrência", cores.texto_secundario, 24),
-            icon_color=cores.texto_secundario, data="escolher_recorrencia",
-        )
-        # O Flet 0.86.5 não deixa o rótulo sempre no alto, e a dica (hint) só
-        # aparece com ele no alto; por isso a orientação é o próprio texto do
-        # campo (somente leitura, em cinza), trocado pelo resumo depois. Em
-        # janelas estreitas, o texto quebra por palavra (como a Recorrência de
-        # Editar), em vez de ser cortado no limite do campo.
-        campo_recorrencia = ft.TextField(
-            label="Recorrência", value=ORIENTACAO_RECORRENCIA, read_only=True,
-            can_request_focus=False, multiline=True, min_lines=1, max_lines=3,
-            color=cores.texto_secundario, data="recorrencia_nova_conta",
-            suffix_icon=botao_escolher_recorrencia,
-            **estilo_criacao(ft.Icons.REPEAT),
-        )
-
-        def atualizar_campo_recorrencia():
-            if estado_recorrencia["confirmada"]:
-                campo_recorrencia.value = texto_da_recorrencia()
-                campo_recorrencia.color = cores.texto_principal
-            # Sino 6.12 (D2): na Parcelada, o valor informado é o total.
-            campo_valor.label = "Valor total" if recorrencia["tipo"] == "parcelada" else "Valor"
-
-        async def focar_depois(controle):
-            await asyncio.sleep(0.05)
-            try:
-                await controle.focus()
-            except Exception:  # noqa: BLE001 -- foco é só conveniência do teclado
-                pass
-
-        def mostrar_dialogo_recorrencia(e=None):
-            # Rascunho da configuração confirmada: alternar entre Única, Mensal
-            # e Anual preserva o término escolhido; Cancelar descarta o rascunho;
-            # Confirmar o copia. Nenhuma validação aqui -- o término continua
-            # conferido só no Salvar, como na 6.10.
+        def mostrar_dialogo_termino(e=None):
             rascunho = dict(recorrencia)
-
-            # Mesmos controles e medidas do diálogo "Transformar em recorrente".
             sem_termino = ft.Switch(value=rascunho["sem_termino"], active_color=cores.acao_primaria,
                                     data="sem_termino_recorrencia")
             ano_atual = date.today().year
-            campo_mes_termino = ft.Dropdown(
+            campo_mes = ft.Dropdown(
                 label="Mês", color=cores.texto_principal, expand=True, value=rascunho["mes"],
                 options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
                 **estilo_lista(),
             )
-            campo_ano_termino = ft.Dropdown(
+            campo_ano = ft.Dropdown(
                 label="Ano", color=cores.texto_principal, expand=True, value=rascunho["ano"],
                 options=[ft.dropdown.Option(key=str(a), text=str(a)) for a in range(ano_atual, ano_atual + 11)],
                 **estilo_lista(),
             )
-            linha_termino = ft.Row(spacing=8, controls=[campo_mes_termino, campo_ano_termino])
-            # Sino 6.12 (D2/D4): quantidade de parcelas da Parcelada (2 a 36).
-            campo_parcelas = ft.Dropdown(
-                label="Quantidade de parcelas", color=cores.texto_principal, value=rascunho["parcelas"],
-                options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS],
-                data="quantidade_parcelas_nova_conta", **estilo_lista(),
-            )
-            linha_sem_termino = ft.Row(
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                controls=[ft.Text("Sem data de término", size=13, color=cores.texto_principal), sem_termino],
-            )
+            linha_mes_ano = ft.Row(spacing=8, controls=[campo_mes, campo_ano], visible=not rascunho["sem_termino"])
 
-            # Opções no visual dos chips de frequência de Editar (verde quando
-            # escolhida), mas como botões: focáveis e acionáveis por Enter/Espaço.
-            # Criados uma vez por abertura: escolher troca só o estilo, e o foco
-            # do teclado continua no botão escolhido.
-            def estilo_chip(ativo):
-                return ft.ButtonStyle(
-                    bgcolor=cores.chip_ativo_fundo if ativo else cores.chip_inativo_fundo,
-                    color=cores.chip_ativo_texto if ativo else cores.chip_inativo_texto,
-                    side=None if ativo else ft.BorderSide(1, cores.borda_suave),
-                    shape=ft.RoundedRectangleBorder(radius=10), elevation=0,
-                    text_style=ft.TextStyle(size=13, weight=ft.FontWeight.BOLD),
-                    padding=ft.Padding(4, 12, 4, 12),
-                )
-
-            # Sino 6.12: quatro opções; a largura acompanha o tamanho de cada rótulo, para que
-            # "Parcelada" não quebre a palavra em janelas estreitas (380 px).
-            pesos_tipo = {"unica": 5, "parcelada": 9, "mensal": 6, "anual": 5}
-            linha_tipo = ft.Row(spacing=8, controls=[
-                ft.Button(content=rotulo, expand=pesos_tipo[valor], height=40, data=f"tipo_recorrencia_{valor}",
-                          on_click=lambda e, v=valor: selecionar_tipo(v))
-                for valor, rotulo in (("unica", "Única"), ("parcelada", "Parcelada"), ("mensal", "Mensal"),
-                                      ("anual", "Anual"))
-            ])
-
-            # Sino 6.12 (Etapa 8): valor Fixo (padrão, como na 6.11) ou Variável -- só Mensal/Anual.
-            linha_comportamento = ft.Row(spacing=8, data="linha_comportamento_valor", controls=[
-                ft.Button(content=rotulo, expand=1, height=40, data=f"comportamento_{valor}",
-                          on_click=lambda e, v=valor: selecionar_comportamento(v))
-                for valor, rotulo in (("fixo", "Valor fixo"), ("variavel", "Valor variável"))
-            ])
-            ajuda_variavel = ft.Text(TEXTO_AJUDA_VARIAVEL, size=12, color=cores.texto_secundario)
-            bloco_comportamento = ft.Column(spacing=6, controls=[linha_comportamento, ajuda_variavel])
-
-            def selecionar_comportamento(valor):
-                rascunho["variavel"] = valor == "variavel"
-                atualizar()
-                page.update()
-
-            def atualizar():
-                # Única: só os três botões (o término fica guardado no rascunho
-                # e não vale no Salvar). Mensal/Anual: "Sem data de término";
-                # Mês e Ano só com ele desligado.
-                for botao in linha_tipo.controls:
-                    botao.style = estilo_chip(botao.data == f"tipo_recorrencia_{rascunho['tipo']}")
-                recorrente = rascunho["tipo"] in ("mensal", "anual")
-                for botao in linha_comportamento.controls:
-                    botao.style = estilo_chip(botao.data == ("comportamento_variavel" if rascunho["variavel"]
-                                                             else "comportamento_fixo"))
-                bloco_comportamento.visible = recorrente
-                ajuda_variavel.visible = rascunho["variavel"]
-                linha_sem_termino.visible = recorrente
-                linha_termino.visible = recorrente and not rascunho["sem_termino"]
-                campo_parcelas.visible = rascunho["tipo"] == "parcelada"  # Sino 6.12
-
-            def selecionar_tipo(valor):
-                rascunho["tipo"] = valor
-                atualizar()
-                page.update()
-
-            def ao_mudar_sem_termino(e):
+            def ao_mudar_sem_termino(ev):
                 rascunho["sem_termino"] = sem_termino.value
-                atualizar()
+                linha_mes_ano.visible = not sem_termino.value
                 page.update()
 
-            def ao_mudar_mes(e):
-                rascunho["mes"] = campo_mes_termino.value
+            def ao_mudar_mes(ev):
+                rascunho["mes"] = campo_mes.value
 
-            def ao_mudar_ano(e):
-                rascunho["ano"] = campo_ano_termino.value
-
-            def ao_mudar_parcelas(e):
-                rascunho["parcelas"] = campo_parcelas.value
+            def ao_mudar_ano(ev):
+                rascunho["ano"] = campo_ano.value
 
             sem_termino.on_change = ao_mudar_sem_termino
-            campo_mes_termino.on_select = ao_mudar_mes
-            campo_ano_termino.on_select = ao_mudar_ano
-            campo_parcelas.on_select = ao_mudar_parcelas
+            campo_mes.on_select = ao_mudar_mes
+            campo_ano.on_select = ao_mudar_ano
 
             def fechar():
                 page.pop_dialog()
                 page.update()
-                page.run_task(focar_depois, botao_escolher_recorrencia)
+                page.run_task(focar_depois, botao_termino)
 
-            def cancelar(e):
+            def confirmar(ev):
+                recorrencia.update({k: rascunho[k] for k in ("sem_termino", "mes", "ano")})
+                campo_termino.value = texto_do_termino()
                 fechar()
 
-            def confirmar(e):
-                recorrencia.update(rascunho)
-                estado_recorrencia["confirmada"] = True
-                atualizar_campo_recorrencia()
-                fechar()
-
-            atualizar()
-            dialogo = ft.AlertDialog(
-                modal=True,
-                bgcolor=cores.fundo_dialogo,
-                data="dialogo_recorrencia",
-                title=ft.Text("Configurar recorrência", color=cores.texto_principal),
-                # Largura e espaço do rodapé iguais aos de "Transformar em
-                # recorrente" (lá a largura vem do texto mais longo; aqui é
-                # fixa, e o Flet a reduz em janelas estreitas). A linha vazia
-                # ocupa o lugar da mensagem de erro de Editar: aqui não há
-                # validação -- o término é conferido no Salvar.
-                content=ft.Column(
-                    tight=True,
-                    spacing=12,
-                    width=548,
-                    controls=[
-                        ft.Text("Escolha como esta conta deverá se repetir.", color=cores.texto_principal),
-                        linha_tipo,
-                        linha_sem_termino,
-                        linha_termino,
-                        bloco_comportamento,  # Sino 6.12 (Etapa 8): Valor fixo | Valor variável
-                        campo_parcelas,
-                        ft.Text(value="", color=cores.texto_erro, size=12),
-                    ],
-                ),
+            page.show_dialog(ft.AlertDialog(
+                modal=True, bgcolor=cores.fundo_dialogo, data="dialogo_termino",
+                title=ft.Text("Término da recorrência", color=cores.texto_principal),
+                content=ft.Column(tight=True, spacing=12, width=420, controls=[
+                    ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
+                        ft.Text("Sem data de término", size=13, color=cores.texto_principal), sem_termino]),
+                    linha_mes_ano,
+                    ft.Text(value="", color=cores.texto_erro, size=12),
+                ]),
                 actions=[
-                    ft.TextButton(content="Cancelar", on_click=cancelar,
+                    ft.TextButton(content="Cancelar", on_click=lambda ev: fechar(),
                                   style=ft.ButtonStyle(color=cores.acao_primaria)),
                     ft.Button(content="Confirmar", bgcolor=cores.acao_primaria, color=cores.texto_sobre_acao,
                               on_click=confirmar),
                 ],
+            ))
+            page.run_task(focar_depois, sem_termino)
+
+        campo_termino.on_click = mostrar_dialogo_termino
+        botao_termino.on_click = mostrar_dialogo_termino
+
+        # Tipo de valor (só Mensal e Anual): Fixo é o padrão, como na 6.12.
+        def cartao_valor(valor, titulo, subtitulo):
+            return ft.Button(col={"xs": 12, "sm": 6, "md": 5}, height=64, data=f"comportamento_{valor}",
+                             on_click=lambda e: escolher_comportamento(valor),
+                             content=ft.Row(spacing=10, controls=[
+                                 ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, size=22),
+                                 ft.Column(expand=True, spacing=0, controls=[
+                                     texto(titulo, 14, True), texto(subtitulo, 12, cor=cores.texto_secundario)]),
+                             ]))
+
+        cartoes_valor = [cartao_valor("fixo", "Valor fixo", "O mesmo valor em todas as ocorrências."),
+                         cartao_valor("variavel", "Valor variável", "O valor pode mudar a cada ocorrência.")]
+        ajuda_variavel = texto(TEXTO_AJUDA_VARIAVEL, 12, cor=cores.texto_secundario, data="ajuda_valor_variavel")
+        bloco_tipo_valor = ft.Column(data="linha_comportamento_valor", spacing=6, controls=[
+            ft.ResponsiveRow(spacing=10, run_spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                ft.Row(col={"xs": 12, "md": 2}, spacing=4, controls=[
+                    texto("Tipo de valor", 15, True),
+                    ft.Icon(ft.Icons.INFO_OUTLINE, size=18, color=cores.texto_secundario,
+                            tooltip=TEXTO_AJUDA_VARIAVEL)]),
+                *cartoes_valor,
+            ]),
+            ajuda_variavel,
+        ])
+
+        def escolher_comportamento(valor):
+            recorrencia["variavel"] = valor == "variavel"
+            aplicar()
+            page.update()
+
+        # Seletor dos quatro tipos (botões focáveis; Enter ou Espaço escolhem).
+        TIPOS = (("unica", "Única", ft.Icons.EVENT_OUTLINED), ("parcelada", "Parcelada", ft.Icons.LAYERS_OUTLINED),
+                 ("mensal", "Recorrente mensal", ft.Icons.AUTORENEW),
+                 ("anual", "Recorrente anual", ft.Icons.CALENDAR_MONTH_OUTLINED))
+        cartoes_tipo = [ft.Button(col={"xs": 6, "sm": 3}, height=96, data=f"tipo_conta_{valor}",
+                                  on_click=lambda e, v=valor: escolher_tipo(v))
+                        for valor, _, _ in TIPOS]
+        bloco_tipos = ft.Column(spacing=10, data="tipo_da_conta", controls=[
+            ft.Column(spacing=2, controls=[texto("Tipo da conta", 17, True),
+                                           texto("Escolha como esta despesa será registrada.", 13,
+                                                 cor=cores.texto_secundario)]),
+            ft.ResponsiveRow(spacing=10, run_spacing=10, controls=cartoes_tipo),
+        ])
+        faixa_tipo = ft.Container(data="faixa_tipo_nova_conta")
+
+        def escolher_tipo(valor):
+            recorrencia["tipo"] = valor
+            erro.value = ""
+            aplicar()
+            page.update()
+
+        # ------------------------------------------------------------------ superconta (só visual)
+        campo_nome_sc = ft.TextField(
+            label="Nome da superconta", hint_text="Ex: Cartão de crédito", color=cores.texto_principal,
+            counter=texto_contador("", limites.LIMITE_NOME_CONTA), data="nome_superconta",
+            **estilo_criacao(ft.Icons.DESCRIPTION_OUTLINED),
+        )
+        campo_valor_sc = ft.TextField(
+            label="Valor total da fatura", hint_text="0,00", keyboard_type=ft.KeyboardType.NUMBER,
+            color=cores.texto_principal, prefix=ft.Text("R$ ", size=15, color=cores.texto_secundario),
+            **estilo_criacao(ft.Icons.PAYMENTS_OUTLINED),
+        )
+        campo_descricao_sc = ft.TextField(
+            label="Descrição (opcional)", hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
+            multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
+            counter=texto_contador("", limites.LIMITE_DESCRICAO), **estilo_criacao(ft.Icons.NOTES),
+        )
+        ligar_contador_de_limite(campo_nome_sc, "nome_conta", limites.LIMITE_NOME_CONTA)
+        ligar_contador_de_limite(campo_descricao_sc, "descricao", limites.LIMITE_DESCRICAO)
+
+        def ao_escolher_data_sc(e):
+            if e.control.value:
+                campo_data_sc.value = e.control.value.date().strftime("%d/%m/%Y")
+                page.update()
+
+        seletor_data_sc = criar_seletor_data(first_date=date(2000, 1, 1), last_date=date(2100, 12, 31),
+                                             on_change=ao_escolher_data_sc)
+        page.overlay.append(seletor_data_sc)
+
+        def abrir_seletor_data_sc(e):
+            page.show_dialog(seletor_data_sc)
+
+        campo_data_sc = ft.TextField(
+            label="Vencimento da fatura", hint_text="dd/mm/aaaa", read_only=True, can_request_focus=False,
+            color=cores.texto_principal, on_click=abrir_seletor_data_sc,
+            suffix_icon=ft.IconButton(
+                icon=icone_com_nome(ft.Icons.CALENDAR_MONTH, "Escolher data da fatura", cores.acao_primaria),
+                icon_color=cores.acao_primaria, data="escolher_data_superconta", on_click=abrir_seletor_data_sc,
+            ),
+            **estilo_criacao(ft.Icons.EVENT_OUTLINED),
+        )
+        # Sem "+ Nova categoria": na Superconta nada pode ser gravado, nem uma categoria.
+        campo_categoria_sc = ft.Dropdown(
+            label="Categoria", value="", color=cores.texto_principal, expand=True,
+            options=[o for o in montar_opcoes_categoria() if o.key != SENTINELA_NOVA_CATEGORIA],
+            border_radius=RAIO_EDICAO, border_width=1, focused_border_width=2, text_size=15,
+            leading_icon=ft.Icon(ft.Icons.SELL_OUTLINED, size=20, color=cores.texto_secundario),
+            data="categoria_superconta", **estilo_lista(),
+        )
+        campo_detalhamento = ft.TextField(
+            label="Detalhamento da fatura", value="Adicione suas compras depois de salvar.", read_only=True,
+            can_request_focus=False, multiline=True, min_lines=1, max_lines=3, color=cores.texto_principal,
+            data="detalhamento_superconta",
+            suffix_icon=ft.Icon(ft.Icons.INFO_OUTLINE, size=20, color=cores.texto_secundario,
+                                tooltip="As compras são registradas depois de criar a superconta."),
+            **estilo_criacao(ft.Icons.LAYERS_OUTLINED),
+        )
+        aviso_em_desenvolvimento = faixa(ft.Icons.CONSTRUCTION, TITULO_SUPERCONTA_EM_DESENVOLVIMENTO,
+                                         TEXTO_SUPERCONTA_EM_DESENVOLVIMENTO, data="superconta_em_desenvolvimento",
+                                         aviso=True)
+        faixa_superconta = faixa(ft.Icons.INFO_OUTLINE, "Superconta", TEXTO_SUPERCONTA_FAIXA)
+        nota_superconta = faixa(ft.Icons.INFO_OUTLINE, "Compras relacionadas", TEXTO_SUPERCONTA_NOTA)
+
+        # ------------------------------------------------------------------ cartões Conta comum | Superconta
+        def cartao_modo(valor, titulo, subtitulo, icone):
+            return ft.Button(
+                col={"xs": 12, "sm": 6}, data=f"modo_{valor}", on_click=lambda e: escolher_modo(valor),
+                color=cores.texto_principal,
+                content=ft.Row(spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                    ft.Container(width=48, height=48, border_radius=24, alignment=ft.Alignment.CENTER,
+                                 bgcolor=ft.Colors.with_opacity(0.12, cores.detalhes_icone),
+                                 content=ft.Icon(icone, size=24, color=cores.detalhes_icone)),
+                    ft.Column(expand=True, spacing=2, controls=[
+                        texto(titulo, 16, True), texto(subtitulo, 13, cor=cores.texto_secundario)]),
+                    ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, size=24, color=cores.texto_secundario),
+                ]),
             )
-            page.show_dialog(dialogo)
-            # Teclado: o foco vai para a opção confirmada.
-            page.run_task(focar_depois, next(b for b in linha_tipo.controls
-                                             if b.data == f"tipo_recorrencia_{rascunho['tipo']}"))
 
-        # Clique no campo ou o botão da seta (Tab + Enter) abrem o diálogo.
-        campo_recorrencia.on_click = mostrar_dialogo_recorrencia
-        botao_escolher_recorrencia.on_click = mostrar_dialogo_recorrencia
+        cartoes_modo = ft.ResponsiveRow(data="modo_da_conta", spacing=12, run_spacing=12, controls=[
+            cartao_modo("comum", "Conta comum", "Cadastre uma despesa individual.", ft.Icons.DESCRIPTION_OUTLINED),
+            cartao_modo("superconta", "Superconta", "Agrupe compras e acompanhe suas faturas em um só lugar.",
+                        ft.Icons.LAYERS_OUTLINED),
+        ])
 
+        def escolher_modo(valor):
+            modo["valor"] = valor
+            erro.value = ""
+            aplicar()
+            page.update()
+
+        # ------------------------------------------------------------------ rodapé
         erro = ft.Text(value="", color=cores.texto_erro, size=12)
 
+        def estilo_rodape(fundo, texto_cor, borda=None):
+            return ft.ButtonStyle(bgcolor=fundo, color=texto_cor, side=borda,
+                                  shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO), padding=ft.Padding(8, 0, 8, 0),
+                                  text_style=ft.TextStyle(size=14, weight=ft.FontWeight.BOLD))
+
+        def novo_cancelar(col):
+            return ft.Button(content="Cancelar", col=col, height=44, on_click=lambda e: sair(),
+                             style=estilo_rodape(cores.botao_secundario_fundo, cores.botao_secundario_texto,
+                                                 ft.BorderSide(1, cores.borda_suave)))
+
+        botao_cancelar = novo_cancelar({"xs": 5, "sm": 4, "md": 3})
+        botao_salvar = ft.Button(content="Salvar conta", icon=ft.Icons.SAVE_OUTLINED, col={"xs": 7, "sm": 6, "md": 4},
+                                 height=44, data="salvar_nova_conta",
+                                 style=estilo_rodape(cores.acao_primaria, cores.texto_sobre_acao))
+        # Diretriz aprovada: ação indisponível por condição conhecida fica cinza e desabilitada.
+        botao_cancelar_sc = novo_cancelar({"xs": 12, "sm": 4, "md": 3})
+        botao_salvar_e_adicionar = ft.Button(
+            content="Salvar e adicionar compra", icon=ft.Icons.ADD, disabled=True, col={"xs": 12, "sm": 8, "md": 5},
+            height=44, data="salvar_e_adicionar_indisponivel",
+            style=estilo_rodape(cores.botao_desabilitado_fundo, cores.botao_desabilitado_texto,
+                                ft.BorderSide(1, cores.borda_suave)))
+        botao_salvar_sc = ft.Button(
+            content="Salvar superconta", icon=ft.Icons.SAVE_OUTLINED, disabled=True, col={"xs": 12, "md": 4},
+            height=44, data="salvar_superconta_indisponivel",
+            style=estilo_rodape(cores.botao_desabilitado_fundo, cores.botao_desabilitado_texto))
+        linha_botoes = ft.ResponsiveRow(alignment=ft.MainAxisAlignment.END, spacing=10, run_spacing=8)
+
+        # ------------------------------------------------------------------ montagem
+        grade = ft.ResponsiveRow(data="grade_nova_conta", spacing=12, run_spacing=12,
+                                 vertical_alignment=ft.CrossAxisAlignment.START)
+
+        def celula(controle, col=12):
+            return ft.Container(col=col, content=controle)
+
+        meia = {"xs": 12, "md": 6}
+
+        def aplicar():
+            """Mostra a modalidade escolhida. Só troca rótulos, visibilidade e estilos; nada é gravado."""
+            superconta = modo["valor"] == "superconta"
+            for cartao in cartoes_modo.controls:
+                ativo = cartao.data == f"modo_{modo['valor']}"
+                cartao.style = ft.ButtonStyle(
+                    bgcolor=cores.grafico_total_fundo if ativo else cores.fundo_card,
+                    side=ft.BorderSide(2 if ativo else 1, cores.acao_primaria if ativo else cores.borda_suave),
+                    shape=ft.RoundedRectangleBorder(radius=14), padding=ft.Padding(14, 14, 14, 14), elevation=0)
+                cartao.content.controls[-1] = ft.Icon(
+                    ft.Icons.CHECK_CIRCLE if ativo else ft.Icons.RADIO_BUTTON_UNCHECKED, size=24,
+                    color=cores.acao_primaria if ativo else cores.texto_secundario,
+                    semantics_label="Selecionado" if ativo else "Não selecionado")
+            if superconta:
+                grade.controls = [
+                    celula(aviso_em_desenvolvimento), celula(faixa_superconta), celula(campo_nome_sc),
+                    celula(campo_valor_sc, meia), celula(campo_data_sc, meia),
+                    celula(ft.Row(controls=[campo_categoria_sc]), meia), celula(campo_detalhamento, meia),
+                    celula(campo_descricao_sc), celula(nota_superconta),
+                ]
+                linha_botoes.controls = [botao_cancelar_sc, botao_salvar_e_adicionar, botao_salvar_sc]
+                return
+
+            tipo = recorrencia["tipo"]
+            for cartao, (valor, rotulo, icone) in zip(cartoes_tipo, TIPOS):
+                ativo = valor == tipo
+                cor = cores.chip_ativo_texto if ativo else cores.texto_principal
+                cartao.style = ft.ButtonStyle(
+                    bgcolor=cores.chip_ativo_fundo if ativo else cores.fundo_card,
+                    side=None if ativo else ft.BorderSide(1, cores.borda_suave),
+                    shape=ft.RoundedRectangleBorder(radius=12), padding=ft.Padding(6, 6, 6, 8), elevation=0)
+                cartao.content = ft.Column(spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                           alignment=ft.MainAxisAlignment.CENTER, controls=[
+                    ft.Row(alignment=ft.MainAxisAlignment.END, height=18, controls=[
+                        ft.Icon(ft.Icons.CHECK_CIRCLE, size=18, color=cor, semantics_label="Selecionado")
+                        if ativo else ft.Container(width=18, height=18)]),
+                    ft.Icon(icone, size=24, color=cor if ativo else cores.acao_primaria),
+                    ft.Text(rotulo, size=14, weight=ft.FontWeight.BOLD, color=cor, text_align=ft.TextAlign.CENTER),
+                ])
+            titulo, conteudo = FAIXAS_NOVA_CONTA[tipo]
+            icone_tipo = next(i for v, _, i in TIPOS if v == tipo)
+            faixa_tipo.content = faixa(icone_tipo, titulo, conteudo).content
+            faixa_tipo.bgcolor, faixa_tipo.border_radius = cores.grafico_total_fundo, 12
+            faixa_tipo.padding = ft.Padding(16, 12, 16, 12)
+
+            recorrente = tipo in ("mensal", "anual")
+            variavel = recorrente and recorrencia["variavel"]
+            for cartao in cartoes_valor:
+                ativo = cartao.data == ("comportamento_variavel" if recorrencia["variavel"] else "comportamento_fixo")
+                cartao.style = ft.ButtonStyle(
+                    bgcolor=cores.grafico_total_fundo if ativo else cores.fundo_card, color=cores.texto_principal,
+                    side=ft.BorderSide(2 if ativo else 1, cores.acao_primaria if ativo else cores.borda_suave),
+                    shape=ft.RoundedRectangleBorder(radius=12), padding=ft.Padding(12, 8, 12, 8), elevation=0)
+                cartao.content.controls[0] = ft.Icon(
+                    ft.Icons.RADIO_BUTTON_CHECKED if ativo else ft.Icons.RADIO_BUTTON_UNCHECKED, size=22,
+                    color=cores.acao_primaria if ativo else cores.texto_secundario,
+                    semantics_label="Selecionado" if ativo else "Não selecionado")
+            ajuda_variavel.visible = variavel
+
+            periodo = "mensal" if tipo == "mensal" else "anual"
+            campo_valor.label = {"unica": "Valor da conta", "parcelada": "Valor total da conta"}.get(
+                tipo, "Valor da primeira ocorrência" if variavel else f"Valor por ocorrência ({periodo})")
+            campo_data.label = "Data de vencimento" if tipo == "unica" else "Primeiro vencimento"
+            campo_termino.value = texto_do_termino()
+            atualizar_resumo_parcelas()
+
+            categoria = celula(ft.Row(controls=[campo_categoria]), 12 if tipo == "unica" else meia)
+            controles = [celula(campo_nome), celula(bloco_tipos), celula(faixa_tipo)]
+            if tipo == "unica":
+                controles += [celula(campo_valor, meia), celula(campo_data, meia), categoria]
+            elif tipo == "parcelada":
+                controles += [celula(campo_valor, meia), celula(ft.Row(controls=[campo_parcelas]), meia),
+                              celula(campo_data, meia), categoria, celula(resumo_parcelas)]
+            else:
+                controles += [celula(bloco_tipo_valor), celula(campo_valor, meia), celula(campo_termino, meia),
+                              celula(campo_data, meia), categoria]
+            grade.controls = controles + [celula(campo_descricao)]
+            linha_botoes.controls = [botao_cancelar, botao_salvar]
+
         def salvar(e):
-            # Mesma lógica da Sino 6.10; só a origem do tipo e do término mudou
-            # (configuração confirmada no diálogo, em vez dos chips e do cartão).
+            # Mesma lógica da Sino 6.12; o tipo, a quantidade, o término e Fixo/Variável vêm do
+            # formulário (antes, do diálogo "Configurar recorrência"). A Superconta nunca grava.
+            if modo["valor"] != "comum":
+                return
             nome = campo_nome.value.strip() if campo_nome.value else ""
             valor = parse_valor(campo_valor.value)
             categoria_id = int(campo_categoria.value) if campo_categoria.value else None
@@ -8261,7 +8477,6 @@ def main(page: ft.Page):
                 return
 
             if tipo == "parcelada":
-                # Sino 6.12 (Etapa 6): prévia dos valores e vencimentos antes de salvar.
                 mostrar_previa_do_parcelamento(nome, valor, int(recorrencia["parcelas"]),
                                                data_selecionada["valor"].isoformat(), categoria_id, descricao)
                 return
@@ -8277,17 +8492,16 @@ def main(page: ft.Page):
                         usuario_atual["id"], nome, valor, data_selecionada["valor"].isoformat(),
                         "mensal" if tipo == "mensal" else "anual",
                         data_termino=data_termino, categoria_id=categoria_id, descricao=descricao,
-                        variavel=recorrencia["variavel"],  # Sino 6.12 (Etapa 8)
+                        variavel=recorrencia["variavel"],
                     )
             except (limites.LimiteDeCaracteresError, database.ValorVariavelRecusadoError) as erro_limite:
-                # Segunda barreira (a persistência valida de novo, 5.23).
                 erro.value = str(erro_limite)
                 page.update()
                 return
-            mostrar_tela_principal()
+            sair()
 
         def mostrar_previa_do_parcelamento(nome, valor_total, quantidade, data_primeira, categoria_id, descricao):
-            """Sino 6.12 (Etapa 6): prévia das parcelas; só o Confirmar grava (uma transação)."""
+            """Sino 6.12 (Etapa 6), sem mudança: prévia das parcelas; só o Confirmar grava (uma transação)."""
             try:
                 previa = database.previa_parcelamento(valor_total, quantidade, data_primeira)
             except database.ParcelamentoRecusadoError as recusa:
@@ -8297,7 +8511,7 @@ def main(page: ft.Page):
             erro.value = ""
             erro_previa = ft.Text(value="", color=cores.texto_erro, size=12)
 
-            def confirmar(e):
+            def confirmar(ev):
                 try:
                     database.criar_conta_parcelada(usuario_atual["id"], nome, valor_total, quantidade, data_primeira,
                                                    categoria_id=categoria_id, descricao=descricao)
@@ -8306,9 +8520,9 @@ def main(page: ft.Page):
                     page.update()
                     return
                 page.pop_dialog()
-                mostrar_tela_principal()
+                sair()
 
-            def cancelar(e):
+            def cancelar(ev):
                 page.pop_dialog()
                 page.update()
 
@@ -8331,90 +8545,35 @@ def main(page: ft.Page):
             ))
             page.update()
 
-        cabecalho = ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.IconButton(icon=icone_com_nome(ft.Icons.ARROW_BACK, "Voltar", cores.texto_principal, 20),
-                              icon_size=20, icon_color=cores.texto_principal,
-                              on_click=lambda e: mostrar_tela_principal()),
-                ft.Text("Nova conta", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_principal),
-                ft.Container(width=40),
-            ],
-        )
+        botao_salvar.on_click = salvar
 
-        # Rodapé fixo no padrão de Editar -- mensagem de erro, Cancelar
-        # (mesmo destino da seta Voltar: sai sem gravar) e "Salvar conta",
-        # sempre verde, validando ao clicar.
-        botao_cancelar = ft.Button(
-            content="Cancelar",
-            bgcolor=cores.botao_secundario_fundo,
-            color=cores.botao_secundario_texto,
-            style=ft.ButtonStyle(side=ft.BorderSide(1, cores.borda_suave),
-                                 shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO),
-                                 padding=ft.Padding(8, 0, 8, 0)),
-            col={"xs": 4, "sm": 3, "md": 2}, height=44,
-            on_click=lambda e: mostrar_tela_principal(),
-        )
-        botao_salvar = ft.Button(
-            content="Salvar conta",
-            icon=ft.Icons.SAVE_OUTLINED,
-            bgcolor=cores.acao_primaria,
-            color=cores.texto_sobre_acao,
-            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO),
-                                 padding=ft.Padding(8, 0, 8, 0)),
-            col={"xs": 8, "sm": 5, "md": 3}, height=44,
-            on_click=salvar,
-        )
+        # Em janela estreita, Voltar fica numa linha própria (sem quebrar a palavra) e o título centralizado
+        # embaixo; a partir de sm, os dois na mesma linha, com o título no centro.
+        cabecalho = ft.ResponsiveRow(spacing=0, run_spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                     data="cabecalho_nova_conta", controls=[
+            ft.Container(col={"xs": 12, "sm": 3}, alignment=ft.Alignment.CENTER_LEFT, content=ft.TextButton(
+                content="Voltar", icon=ft.Icons.ARROW_BACK, data="voltar_nova_conta", on_click=lambda e: sair(),
+                style=ft.ButtonStyle(color=cores.acao_primaria, padding=ft.Padding(4, 0, 8, 0),
+                                     text_style=ft.TextStyle(size=15, weight=ft.FontWeight.BOLD)))),
+            ft.Container(col={"xs": 12, "sm": 6}, alignment=ft.Alignment.CENTER, content=ft.Text(
+                "Nova conta", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal)),
+            ft.Container(col={"xs": 0, "sm": 3}),
+        ])
         rodape = ft.Container(
-            data="rodape_nova_conta",
-            bgcolor=cores.fundo_pagina,
-            border=ft.Border(top=ft.BorderSide(1, cores.divisor)),
-            padding=ft.Padding(20, 2, 20, 14),
-            content=ft.Column(spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[
-                erro,
-                ft.ResponsiveRow(alignment=ft.MainAxisAlignment.END, spacing=10,
-                                 controls=[botao_cancelar, botao_salvar]),
-            ]),
+            data="rodape_nova_conta", bgcolor=cores.fundo_pagina,
+            border=ft.Border(top=ft.BorderSide(1, cores.divisor)), padding=ft.Padding(20, 2, 20, 14),
+            content=ft.Column(spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                              controls=[erro, linha_botoes]),
         )
-
-        # Duas colunas a partir de md (como Editar); abaixo, uma só, na
-        # mesma ordem.
-        area = ft.Column(
-            scroll=ft.ScrollMode.AUTO,
-            expand=True,
-            controls=[
-                ft.Container(
-                    padding=ft.Padding(20, 32, 20, 20),
-                    content=ft.Column(
-                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                        spacing=12,
-                        controls=[
-                            cabecalho,
-                            ft.Container(height=8),
-                            ft.ResponsiveRow(
-                                data="grade_nova_conta", spacing=12, run_spacing=12,
-                                vertical_alignment=ft.CrossAxisAlignment.START,
-                                controls=[
-                                    ft.Container(col=12, content=campo_nome),
-                                    ft.Container(col={"xs": 12, "md": 6}, content=campo_valor),
-                                    ft.Container(col={"xs": 12, "md": 6}, content=campo_data),
-                                    ft.Container(col={"xs": 12, "md": 6},
-                                                 content=ft.Row(controls=[campo_categoria])),
-                                    ft.Container(col={"xs": 12, "md": 6}, content=campo_recorrencia),
-                                    ft.Container(col=12, content=campo_descricao),
-                                ],
-                            ),
-                        ],
-                    ),
-                ),
-            ],
-        )
-
-        page.add(ft.Column(
-            data="nova_conta_com_rodape", expand=True, spacing=0,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            controls=[area, rodape],
-        ))
+        aplicar()
+        area = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, controls=[
+            ft.Container(padding=ft.Padding(20, 24, 20, 20), content=ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=16,
+                controls=[cabecalho, cartoes_modo, grade],
+            )),
+        ])
+        page.add(ft.Column(data="nova_conta_com_rodape", expand=True, spacing=0,
+                           horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[area, rodape]))
 
     sessao.ao_encerrar = mostrar_tela_login  # Sair da conta (botão em Ajustes, passo 4)
     mostrar_tela_login()
