@@ -2,10 +2,15 @@
 
 Anexo da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (seções 5.55, 9.1 e 9.3). Registra as regras de negócio da **Sino 6.12** como foram aprovadas pela autora e implementadas na branch `integracao/sino-6.12`.
 
-**Situação (08/11/2026):**
-- A versão está **validada tecnicamente e preparada para integração**.
-- **Ainda não está publicada:** não foi levada à `main` nem marcada com etiqueta.
-- O banco pessoal da autora **não** foi migrado.
+**Situação (10/11/2026):** **publicada no GitHub** (etiqueta `sino-6.12`):
+- integrada à `main` por fast-forward;
+- banco pessoal da autora migrado para a versão 11 por chamada explícita a `migrar_schema_v11` (D6B-2), com backup automático antes;
+- primeira abertura com o banco pessoal aprovada pela autora (14/14).
+
+~~**Situação (08/11/2026):**~~
+- ~~A versão está **validada tecnicamente e preparada para integração**.~~
+- ~~**Ainda não está publicada:** não foi levada à `main` nem marcada com etiqueta.~~
+- ~~O banco pessoal da autora **não** foi migrado.~~
 
 **Fontes:**
 - Notas do ambiente experimental, que ficam fora do repositório e foram transcritas aqui sem alterar as regras:
@@ -320,8 +325,14 @@ A **interface é mínima**, feita com os componentes já existentes na 6.11 (R11
 
 **Aprovação manual da autora:** **24/24** verificações aprovadas em 08/11/2026, na sessão manual com banco fictício (Etapa 5B), com mouse e teclado reais.
 
-**Não realizado até esta data:**
-- integração na `main`;
-- migração do banco pessoal (prevista por chamada explícita a `migrar_schema_v11`, D6B-2);
-- publicação no GitHub;
-- etiqueta de versão.
+~~**Não realizado até esta data:**~~
+- ~~integração na `main`;~~
+- ~~migração do banco pessoal (prevista por chamada explícita a `migrar_schema_v11`, D6B-2);~~
+- ~~publicação no GitHub;~~
+- ~~etiqueta de versão.~~
+
+*Atualização (10/11/2026):* todos realizados:
+- integração na `main` por fast-forward;
+- migração do banco pessoal por `migrar_schema_v11`, **38/38**, com backup automático pré-v11;
+- primeira abertura com o banco pessoal aprovada pela autora, **14/14**, sem alteração nos dados;
+- publicação no GitHub com a etiqueta anotada `sino-6.12`.

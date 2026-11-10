@@ -5,11 +5,18 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
-## Sino 6.12 — tipos de conta, parcelamentos e valores variáveis (preparada para integração)
+## Sino 6.12 — tipos de conta, parcelamentos e valores variáveis (10/11/2026)
 
-**Validada tecnicamente e preparada para integração em 08/11/2026. Ainda não publicada:**
-- não está na `main`, não tem etiqueta e não tem data de publicação;
-- o banco pessoal da autora ainda não foi migrado.
+**Publicada no GitHub em 10/11/2026** (etiqueta `sino-6.12`):
+- integrada à `main` por fast-forward;
+- banco pessoal da autora migrado da versão 10 para a 11 por chamada explícita a `migrar_schema_v11`, com backup automático antes;
+- primeira abertura com o banco pessoal aprovada pela autora (14/14), sem nenhuma alteração nos dados.
+
+~~**Validada tecnicamente e preparada para integração em 08/11/2026. Ainda não publicada:**~~
+- ~~não está na `main`, não tem etiqueta e não tem data de publicação;~~
+- ~~o banco pessoal da autora ainda não foi migrado.~~
+
+*Atualização (10/11/2026):* ver acima.
 
 A versão fica fora das entregas E1–E18 do planejamento. Regras completas no anexo [sino-6.12-regras.md](sino-6.12-regras.md) e na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seções 5.55 e 9.3. Os Termos de Uso e a Política de Privacidade não mudam.
 
@@ -51,6 +58,7 @@ A versão fica fora das entregas E1–E18 do planejamento. Regras completas no a
   - 27/27 num banco fictício com pagamentos integrais, parciais, de saldo e estornados.
 - **Validação técnica automatizada:** 87/87 na camada de dados, 185/185 na interface (temas Claro e Escuro, de 320 a 1000 px) e 119/119 em acessibilidade e legibilidade.
 - **Validação manual da autora:** 24/24 verificações aprovadas em 08/11/2026, com mouse e teclado reais, em banco fictício.
+- **Validação pessoal (10/11/2026):** migração do banco pessoal com 38/38 verificações; na primeira abertura, a autora aprovou 14/14 (login, contas, valores, vencimentos, estados, recorrência, categorias, gráficos, totais, detalhes e navegação), sem gravar nada no banco.
 
 **Ressalvas e pendências**
 
