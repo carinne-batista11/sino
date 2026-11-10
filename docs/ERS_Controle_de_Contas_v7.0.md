@@ -833,6 +833,38 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 * ~~**Ainda não feito:** integração na `main`, migração do banco pessoal, etiqueta e publicação.~~ *Atualização (10/11/2026):* concluídos a integração na `main` (fast-forward), a migração do banco pessoal (38/38, com backup automático), a etiqueta e a publicação.
 * **Pendências:** registradas em 13.4.
 
+**Situação geral após a Sino 6.12 (10/11/2026; registro de continuidade, sem nova decisão e sem nova ordem de prioridade):**
+* **Última versão publicada:** **Sino 6.12**, publicada no GitHub e com a implantação encerrada em 10/11/2026.
+  * Commit de publicação `ca1ea139747bed96bd9e717dad16371bec731864`, com a etiqueta anotada `sino-6.12`, que fica nesse commit.
+  * Commit de encerramento `5796685ca668375c5ed95ee352779696796bfd29`; `main` e `origin/main` sincronizadas nele.
+* **O que a 6.12 trouxe** (regras no anexo [sino-6.12-regras.md](sino-6.12-regras.md)):
+  * quatro tipos de conta: Única, **Parcelada** (2 a 36 parcelas, com prévia, edição de parcelas e "Alterar parcelamento"), Recorrente mensal e Recorrente anual; "Parcela X de Y" nas parceladas e "Ocorrência X de Y" nas recorrências;
+  * recorrências de **valor fixo ou variável**, com "Valor pendente", que não entra nos totais e bloqueia pagamentos até o valor ser informado; conversão Fixo ↔ Variável;
+  * mudança de tipo só a partir da Única: para Parcelada só sem nenhum registro de pagamento (R1), para Mensal ou Anual com o histórico preservado (R2); Mensal ↔ Anual bloqueado (R6);
+  * pagamentos e estornos preservados em todas as operações; descrição de até 250 caracteres (5.45).
+* **Banco pessoal:** na **v11** desde 10/11/2026, migrado por chamada explícita a `migrar_schema_v11` (38/38, com backup automático pré-v11). Íntegro e sem alteração nos dados desde a migração. Os sete backups automáticos e as quatro cópias de recuperação, mantidas fora do repositório, estão preservados. Conferência final de proteção (fora do repositório): **63/63** itens protegidos e **5/5** complementares.
+* **Testes e validação:** suíte **1.894/1.894**; validação manual da autora **24/24** (banco fictício, 08/11/2026) e **14/14** (banco pessoal, 10/11/2026).
+* **Continuam pendentes** (registros já existentes, sem mudança de decisão; nada aqui é dado como implementado):
+  * **Sino 6.13** (15.2): interface, organização visual, responsividade, acessibilidade e padronização dos botões; avaliação das melhorias **D7** e **D8** e das demais pendências da 6.12 (13.4; anexo, seção 14). Não iniciada.
+    * *Orientação da autora (10/11/2026):* priorizar a modernização e a organização das telas existentes. A interface pode ser preparada gradualmente para receber as Supercontas no futuro, **sem implementar nem ativar** a funcionalidade.
+  * **F1 — Supercontas e contas descendentes** (15.1; relacionada à M13, candidata): não iniciada na versão oficial e sem regras aprovadas nesta ERS. A indicação "Sino 6.14", registrada em 15.2 e no anexo da 6.12 (07 e 08/11/2026), é uma **previsão histórica sujeita a revisão**, e não um compromisso de versão. Pela regra de 15.2, o número acompanha a ordem de publicação.
+    * *Orientação da autora (10/11/2026):* a implementação funcional das Supercontas fica para uma das últimas fases do sistema.
+    * Os protótipos isolados, fora do repositório, foram feitos antes da 6.12, sobre versões com banco v9 e v10. **Antes de qualquer implementação, as regras da F1 precisam ser revistas diante da 6.12:**
+      * o tipo Parcelada próprio e a distinção "Parcela X de Y" × "Ocorrência X de Y" (D1);
+      * a mudança de tipo só a partir da Única (R1, R2) e o bloqueio Mensal ↔ Anual (R6);
+      * os valores variáveis e o "Valor pendente";
+      * o limite de 250 caracteres;
+      * o schema atual (v11), com a v12 reservada aos Comprovantes (9.1), o que pede um número de migração próprio para as estruturas da F1;
+      * o conflito C1–C4 da M13.
+
+    Nenhuma dessas questões foi decidida neste registro.
+  * **E13 (M14), APK Android:** suspensa temporariamente desde 24/10/2026 ([E13_M14_continuidade.md](E13_M14_continuidade.md)); a retomada depende de nova autorização.
+  * **E14 e E15, disponibilização e piloto com terceiros:** pendentes. O envio de e-mails a terceiros continua dependendo das condições de 11.3, entre elas a ampliação explícita da lista de destinatários só para os participantes. O serviço de códigos segue em produção restrita, e a M8 continua aberta (13.4).
+  * **E16 a E18, Comprovantes (M10):** pendentes, com a migração **v12** reservada (9.1).
+  * **M13, Faturas:** proposta candidata; C1–C4 e G1–G7 abertos.
+  * **Demais pendências:** 13.4, entre elas a revisão jurídica dos Termos e da Política e o leitor de tela não testado.
+* **Ordem de prioridade:** este registro não define uma ordem completa de desenvolvimento nem renumera etapas. Registra só as orientações da autora de 10/11/2026 acima (telas primeiro; Supercontas em uma das últimas fases, com preparação gradual da interface). Cada etapa continua dependendo de escolha e autorização da autora.
+
 **Pendência registrada fora das entregas (23/10/2026):** as setas de mês anterior e próximo de Início **não têm nome acessível**. A falha é anterior à E11 e **não** faz parte da correção da Sino 6.9; o tratamento depende de decisão da autora (RNF14). *Atualização (24/10/2026):* tratada na rodada de melhorias pequenas autorizada pela autora (nomes "Mês anterior" e "Próximo mês", verificados pelo AT-SPI; ver RNF14), em alteração local **ainda não publicada**. Leitor de tela real não testado. *Atualização (24/10/2026): publicada na Sino 6.9.1 (15.2).*
 
 Legenda:
@@ -849,6 +881,7 @@ Legenda:
 | Versão | Data | Descrição |
 |---|---|---|
 | 6.0 | 23/09/2026 – 04/10/2026 | Ver a [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) (preservada sem alterações). |
+| 7.0 (revisão) | 10/11/2026 (continuidade após a Sino 6.12) | **Registro de continuidade** em 15.3 ("Situação geral após a Sino 6.12"): última versão publicada, commits de publicação e de encerramento, etiqueta `sino-6.12`, resumo funcional da 6.12, banco pessoal v11, testes e validações. Lista do que continua pendente (Sino 6.13 com D7 e D8; F1 (indicação "Sino 6.14" tratada como previsão sujeita a revisão), com a revisão das regras diante da 6.12; orientações da autora de 10/11/2026 (telas primeiro; Supercontas em uma das últimas fases, com preparação gradual da interface sem ativar a funcionalidade); E13 suspensa; E14–E15; E16–E18 com v12; M13; 13.4), sem nova decisão e sem nova ordem de prioridade. Registros anteriores preservados. Só documentação. |
 | 7.0 (revisão) | 10/11/2026 (encerramento da implantação da Sino 6.12) | **Implantação da Sino 6.12 encerrada.**<br>• Publicada no GitHub com a etiqueta anotada `sino-6.12`; `main` e `origin/main` sincronizadas no mesmo commit.<br>• Integração por fast-forward e migração controlada do banco pessoal para a v11 (`migrar_schema_v11`, 38/38, com backup automático).<br>• Testes automáticos 1.894/1.894; validação manual da autora 24/24 (banco fictício) e 14/14 (banco pessoal).<br>• Banco pessoal na v11, íntegro e sem alteração nos dados desde a migração; sete backups automáticos e quatro cópias de recuperação preservados.<br>• Pendências em 13.4, inclusive D7 e D8, para avaliação na Sino 6.13.<br>ERS v7.0 (15.2, 15.3 e histórico) e notas da versão. Registros anteriores preservados. Só documentação; etiqueta `sino-6.12` inalterada. |
 | 7.0 (revisão) | 10/11/2026 (publicação da Sino 6.12) | **Sino 6.12 publicada** no GitHub em 10/11/2026.<br>• A branch `integracao/sino-6.12` foi levada à `main` por fast-forward (13 commits, sem merge).<br>• Banco pessoal migrado da v10 para a v11 por chamada explícita a `migrar_schema_v11` (38/38), com backup automático pré-v11.<br>• Primeira abertura com o banco pessoal aprovada pela autora (14/14), sem alteração nos dados.<br>• Etiqueta anotada `sino-6.12` no commit que registra a publicação.<br>Situação atualizada em 13.4, 15.2 e 15.3, com os registros anteriores preservados. Só documentação. |
 | 7.0 (revisão) | 08/11/2026 (Sino 6.12, documentação da integração; não publicada) | **Sino 6.12 preparada para integração.**<br>• Regras documentadas no novo anexo versionado [sino-6.12-regras.md](sino-6.12-regras.md), com a nova seção 5.55 apontando para ele.<br>• Migração **v11** documentada (9.3).<br>• Numeração revista em 9.1, com o registro anterior preservado: **v11 = Sino 6.12** e **v12 reservada a Comprovantes e Remoções pendentes**. Também ajustados CT155, CT156, 11.2, T6 e E16 (15.1).<br>• Novos CT178–CT181.<br>• Pendências da 6.12 em 13.4.<br>• Situação em 15.2 e 15.3: Etapas 1 a 5 concluídas, testes técnicos 1.894/1.894, 38/38, 27/27, 87/87, 185/185 e 119/119, e aprovação manual da autora 24/24.<br>Sem integração na `main`, sem migração do banco pessoal, sem etiqueta e sem publicação. Sem mudança de código, testes ou dependências. |
