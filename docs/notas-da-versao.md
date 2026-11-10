@@ -10,7 +10,8 @@ Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 **Publicada no GitHub em 10/11/2026** (etiqueta `sino-6.12`):
 - integrada à `main` por fast-forward;
 - banco pessoal da autora migrado da versão 10 para a 11 por chamada explícita a `migrar_schema_v11`, com backup automático antes;
-- primeira abertura com o banco pessoal aprovada pela autora (14/14), sem nenhuma alteração nos dados.
+- primeira abertura com o banco pessoal aprovada pela autora (14/14), sem nenhuma alteração nos dados;
+- implantação encerrada em 10/11/2026.
 
 ~~**Validada tecnicamente e preparada para integração em 08/11/2026. Ainda não publicada:**~~
 - ~~não está na `main`, não tem etiqueta e não tem data de publicação;~~
@@ -59,6 +60,7 @@ A versão fica fora das entregas E1–E18 do planejamento. Regras completas no a
 - **Validação técnica automatizada:** 87/87 na camada de dados, 185/185 na interface (temas Claro e Escuro, de 320 a 1000 px) e 119/119 em acessibilidade e legibilidade.
 - **Validação manual da autora:** 24/24 verificações aprovadas em 08/11/2026, com mouse e teclado reais, em banco fictício.
 - **Validação pessoal (10/11/2026):** migração do banco pessoal com 38/38 verificações; na primeira abertura, a autora aprovou 14/14 (login, contas, valores, vencimentos, estados, recorrência, categorias, gráficos, totais, detalhes e navegação), sem gravar nada no banco.
+- **Implantação (10/11/2026):** encerrada. No GitHub, a `main` e a etiqueta `sino-6.12` apontam para o commit que registra a publicação, com a `main` local sincronizada. O banco pessoal continua na versão 11, íntegro (`integrity_check` e chaves estrangeiras sem problemas) e sem alteração nos dados desde a migração. Os sete backups automáticos e as quatro cópias de recuperação estão preservados e íntegros. As pendências abaixo, inclusive D7 e D8, ficam para avaliação na Sino 6.13.
 
 **Ressalvas e pendências**
 
