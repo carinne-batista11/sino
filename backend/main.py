@@ -8130,7 +8130,14 @@ def main(page: ft.Page):
                 options=[ft.dropdown.Option(key=str(a), text=str(a)) for a in range(ano_atual, ano_atual + 11)],
                 **estilo_lista(),
             )
-            linha_mes_ano = ft.Row(spacing=8, controls=[campo_mes, campo_ano], visible=not rascunho["sem_termino"])
+            # Em telas estreitas, Mês e Ano ficam um sobre o outro para não cortar o texto.
+            estreita = (page.width or 0) and page.width < 600
+            if estreita:
+                campo_mes.expand = campo_ano.expand = False
+            linha_mes_ano = (ft.Column(spacing=12, controls=[campo_mes, campo_ano], visible=not rascunho["sem_termino"],
+                                       horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+                             if estreita else
+                             ft.Row(spacing=8, controls=[campo_mes, campo_ano], visible=not rascunho["sem_termino"]))
 
             def ao_mudar_sem_termino(ev):
                 rascunho["sem_termino"] = sem_termino.value
