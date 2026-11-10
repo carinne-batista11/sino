@@ -8183,7 +8183,7 @@ def main(page: ft.Page):
             return ft.Button(col={"xs": 12, "sm": 6, "md": 5}, height=64, data=f"comportamento_{valor}",
                              on_click=lambda e: escolher_comportamento(valor),
                              content=ft.Row(spacing=10, controls=[
-                                 ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, size=22),
+                                 ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, size=22, color=cores.texto_secundario),
                                  ft.Column(expand=True, spacing=0, controls=[
                                      texto(titulo, 14, True), texto(subtitulo, 12, cor=cores.texto_secundario)]),
                              ]))
