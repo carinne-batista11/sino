@@ -5010,52 +5010,62 @@ def _editar_parcelada_em_diante(conta_id, serie_id, posicao_referencia, nome=Non
     da última parcela. A selecionada não pode ter registros de pagamento nem ir
     para antes da parcela anterior. Uma transação.
     """
+    with transacao() as cursor:
+        return _editar_parcelada_em_diante_no_cursor(
+            cursor, conta_id, serie_id, posicao_referencia, nome=nome, valor=valor, categoria_id=categoria_id,
+            data_vencimento=data_vencimento, remover_categoria=remover_categoria, descricao=descricao,
+            remover_descricao=remover_descricao)
+
+
+def _editar_parcelada_em_diante_no_cursor(cursor, conta_id, serie_id, posicao_referencia, nome=None, valor=None,
+                                          categoria_id=None, data_vencimento=None, remover_categoria=False,
+                                          descricao=None, remover_descricao=False):
+    """6.13 (correção 1): núcleo de `_editar_parcelada_em_diante` no cursor recebido (D14)."""
     if valor is not None:
         raise ParcelamentoRecusadoError(MENSAGEM_VALOR_COLETIVO_PARCELADA)
-    with transacao() as cursor:
-        parcelas = [p for p in _parcelas(cursor, serie_id) if p["posicao"] >= posicao_referencia]
-        if data_vencimento is not None:
-            if parcelas[0]["protegida"]:
-                raise ParcelamentoRecusadoError(MENSAGEM_PARCELA_PROTEGIDA_EDICAO)
-            anterior = cursor.execute(
-                "SELECT data_prevista FROM contas WHERE serie_id = ? AND posicao < ? ORDER BY posicao DESC LIMIT 1",
-                (serie_id, posicao_referencia)).fetchone()
-            if anterior is not None and data_vencimento[:7] <= anterior[0][:7]:
-                raise VencimentoAntesDaParcelaAnteriorError()
-            ano, mes, dia = map(int, data_vencimento.split("-"))
-            vagas = [data_vencimento]
-            for _ in parcelas[1:]:
-                ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
-                vagas.append(date(ano, mes, _ajustar_dia(ano, mes, dia)).isoformat())
-            for parcela, vaga in zip(parcelas, vagas):
-                if parcela["protegida"]:
-                    if parcela["vencimento"][:7] != vaga[:7]:
-                        raise ParcelamentoRecusadoError(MENSAGEM_VENCIMENTO_COM_PROTEGIDAS)
-                else:
-                    cursor.execute("UPDATE contas SET data_vencimento = ?, data_prevista = ? WHERE id = ?",
-                                   (vaga, vaga, parcela["id"]))
-            cursor.execute(
-                "UPDATE series_recorrencia SET dia_ancora = ?, data_inicio = ?, posicao_ancora = ?, "
-                "data_termino = ?, horizonte_gerado_ate = ? WHERE id = ?",
-                (dia, data_vencimento, posicao_referencia, vagas[-1][:7], vagas[-1], serie_id))
-        campos, valores = [], []
-        if nome is not None:
-            campos.append("nome = ?")
-            valores.append(nome)
-        if remover_categoria:
-            campos.append("categoria_id = NULL")
-        elif categoria_id is not None:
-            campos.append("categoria_id = ?")
-            valores.append(categoria_id)
-        if remover_descricao:
-            campos.append("descricao = NULL")
-        elif descricao is not None:
-            campos.append("descricao = ?")
-            valores.append(descricao)
-        if campos:
-            cursor.execute(f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?",
-                           (*valores, serie_id, posicao_referencia))
-            cursor.execute(f"UPDATE series_recorrencia SET {', '.join(campos)} WHERE id = ?", (*valores, serie_id))
+    parcelas = [p for p in _parcelas(cursor, serie_id) if p["posicao"] >= posicao_referencia]
+    if data_vencimento is not None:
+        if parcelas[0]["protegida"]:
+            raise ParcelamentoRecusadoError(MENSAGEM_PARCELA_PROTEGIDA_EDICAO)
+        anterior = cursor.execute(
+            "SELECT data_prevista FROM contas WHERE serie_id = ? AND posicao < ? ORDER BY posicao DESC LIMIT 1",
+            (serie_id, posicao_referencia)).fetchone()
+        if anterior is not None and data_vencimento[:7] <= anterior[0][:7]:
+            raise VencimentoAntesDaParcelaAnteriorError()
+        ano, mes, dia = map(int, data_vencimento.split("-"))
+        vagas = [data_vencimento]
+        for _ in parcelas[1:]:
+            ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+            vagas.append(date(ano, mes, _ajustar_dia(ano, mes, dia)).isoformat())
+        for parcela, vaga in zip(parcelas, vagas):
+            if parcela["protegida"]:
+                if parcela["vencimento"][:7] != vaga[:7]:
+                    raise ParcelamentoRecusadoError(MENSAGEM_VENCIMENTO_COM_PROTEGIDAS)
+            else:
+                cursor.execute("UPDATE contas SET data_vencimento = ?, data_prevista = ? WHERE id = ?",
+                               (vaga, vaga, parcela["id"]))
+        cursor.execute(
+            "UPDATE series_recorrencia SET dia_ancora = ?, data_inicio = ?, posicao_ancora = ?, "
+            "data_termino = ?, horizonte_gerado_ate = ? WHERE id = ?",
+            (dia, data_vencimento, posicao_referencia, vagas[-1][:7], vagas[-1], serie_id))
+    campos, valores = [], []
+    if nome is not None:
+        campos.append("nome = ?")
+        valores.append(nome)
+    if remover_categoria:
+        campos.append("categoria_id = NULL")
+    elif categoria_id is not None:
+        campos.append("categoria_id = ?")
+        valores.append(categoria_id)
+    if remover_descricao:
+        campos.append("descricao = NULL")
+    elif descricao is not None:
+        campos.append("descricao = ?")
+        valores.append(descricao)
+    if campos:
+        cursor.execute(f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?",
+                       (*valores, serie_id, posicao_referencia))
+        cursor.execute(f"UPDATE series_recorrencia SET {', '.join(campos)} WHERE id = ?", (*valores, serie_id))
     return True
 
 
@@ -5750,26 +5760,35 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     True quando aplicada, False se rejeitada (conta inexistente, série
     inativa, ou reorganização ultrapassaria o término).
     """
-    conexao_leitura = conectar()
-    cursor_leitura = conexao_leitura.cursor()
-    cursor_leitura.execute(
+    with transacao() as cursor:
+        return _editar_conta_serie_no_cursor(
+            cursor, conta_id, nome=nome, valor=valor, categoria_id=categoria_id, data_vencimento=data_vencimento,
+            remover_categoria=remover_categoria, descricao=descricao, remover_descricao=remover_descricao,
+            pp_diferenca=pp_diferenca)
+
+
+def _editar_conta_serie_no_cursor(cursor, conta_id, nome=None, valor=None, categoria_id=None, data_vencimento=None,
+                                  remover_categoria=False, descricao=None, remover_descricao=False,
+                                  pp_diferenca=None):
+    """6.13 (correção 1): núcleo de `editar_conta_serie` (mesmas regras, recusas e retorno), lendo e
+    gravando só no `cursor` recebido, sem COMMIT/ROLLBACK próprios (D14) -- para compor com o
+    término da recorrência numa única transação (`salvar_edicao_com_termino`)."""
+    cursor.execute(
         """
         SELECT serie_id, data_vencimento, nome, valor, categoria_id, descricao, posicao
         FROM contas WHERE id = ?
         """,
         (conta_id,),
     )
-    linha = cursor_leitura.fetchone()
+    linha = cursor.fetchone()
     if linha is None:
-        conexao_leitura.close()
         return False
     (serie_id, data_referencia, nome_atual, valor_atual, categoria_id_atual, descricao_atual,
      posicao_referencia) = linha
     descricao, remover_descricao = _normalizar_entrada_descricao(descricao, remover_descricao)
     # Sino 6.12 (Etapa 9): numa pendente, qualquer valor (inclusive 0,00) é informado, nunca "igual".
-    selecionada_pendente = _valor_pendente_no_cursor(cursor_leitura, conta_id)
+    selecionada_pendente = _valor_pendente_no_cursor(cursor, conta_id)
     if selecionada_pendente and valor is not None and not _valor_valido(valor):
-        conexao_leitura.close()
         raise ValorVariavelRecusadoError(MENSAGEM_VALOR_INVALIDO)
 
     # Correção v6.0 (Etapa 0): só propaga o que o usuário realmente alterou
@@ -5793,61 +5812,49 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
     if descricao is not None and descricao == descricao_atual:
         descricao = None
 
-    try:
-        _validar_textos_conta(nome, descricao)
-    except LimiteDeCaracteresError:
-        conexao_leitura.close()
-        raise
+    _validar_textos_conta(nome, descricao)
 
     if serie_id is None:
-        conexao_leitura.close()
-        return editar_conta_ocorrencia(conta_id, nome=nome, valor=valor,
-                                        categoria_id=categoria_id, data_vencimento=data_vencimento,
-                                        remover_categoria=remover_categoria,
-                                        descricao=descricao, remover_descricao=remover_descricao,
-                                        pp_diferenca=pp_diferenca)
+        return _editar_conta_ocorrencia_no_cursor(cursor, conta_id, nome=nome, valor=valor,
+                                                  categoria_id=categoria_id, data_vencimento=data_vencimento,
+                                                  remover_categoria=remover_categoria,
+                                                  descricao=descricao, remover_descricao=remover_descricao,
+                                                  pp_diferenca=pp_diferenca)
 
-    cursor_leitura.execute(
+    cursor.execute(
         "SELECT frequencia, data_termino, ativa, mes_ancora FROM series_recorrencia WHERE id = ?",
         (serie_id,),
     )
-    frequencia, data_termino, ativa, mes_ancora_atual = cursor_leitura.fetchone()
+    frequencia, data_termino, ativa, mes_ancora_atual = cursor.fetchone()
     if ativa == 0:
-        conexao_leitura.close()
         return False
-    if _serie_parcelada_no_cursor(cursor_leitura, serie_id):  # Sino 6.12 (Etapa 7): regras próprias
-        conexao_leitura.close()
-        return _editar_parcelada_em_diante(
-            conta_id, serie_id, posicao_referencia, nome=nome, valor=valor, categoria_id=categoria_id,
+    if _serie_parcelada_no_cursor(cursor, serie_id):  # Sino 6.12 (Etapa 7): regras próprias
+        return _editar_parcelada_em_diante_no_cursor(
+            cursor, conta_id, serie_id, posicao_referencia, nome=nome, valor=valor, categoria_id=categoria_id,
             data_vencimento=data_vencimento, remover_categoria=remover_categoria, descricao=descricao,
             remover_descricao=remover_descricao)
     # Sino 6.12 (Etapa 9, R5): numa variável, o valor vai só para a selecionada e para o modelo.
-    variavel = _serie_variavel_no_cursor(cursor_leitura, serie_id)
+    variavel = _serie_variavel_no_cursor(cursor, serie_id)
 
     if valor is not None:  # Pagamentos parciais: a selecionada segue as regras individuais (as protegidas não mudam)
-        try:
-            _exigir_valor_cobre_pagamentos(cursor_leitura, valor, "id = ?", (conta_id,))
-        except ValorMenorQuePagoError:
-            conexao_leitura.close()
-            raise
+        _exigir_valor_cobre_pagamentos(cursor, valor, "id = ?", (conta_id,))
 
     # D5: o novo vencimento precisa cair numa competência posterior à VAGA
     # da ocorrência imediatamente anterior (não ao vencimento real dela, que
     # pode ter sido movido). Sem anterior (primeira ocorrência), sem limite.
     if data_vencimento is not None:
-        cursor_leitura.execute(
+        cursor.execute(
             "SELECT data_prevista FROM contas WHERE serie_id = ? AND posicao < ? "
             "ORDER BY posicao DESC LIMIT 1",
             (serie_id, posicao_referencia),
         )
-        anterior = cursor_leitura.fetchone()
+        anterior = cursor.fetchone()
         if anterior is not None and _competencia(data_vencimento) <= _competencia(anterior[0]):
-            conexao_leitura.close()
             raise VencimentoAntesDaParcelaAnteriorError()
 
     # Etapa 2b: "futuras" = posição lógica maior que a da selecionada (não
     # o vencimento real), em ordem de posição.
-    cursor_leitura.execute(
+    cursor.execute(
         """
         SELECT id, data_prevista, editado_individualmente, data_vencimento FROM contas
         WHERE serie_id = ? AND posicao > ?
@@ -5855,11 +5862,10 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
         """,
         (serie_id, posicao_referencia),
     )
-    ocorrencias_futuras = cursor_leitura.fetchall()
+    ocorrencias_futuras = cursor.fetchall()
     # H2: as seguintes com pagamentos (ativos ou estornados) não mudam de mês nem de ano.
-    com_pagamentos = set(_contas_com_pagamentos(cursor_leitura, "serie_id = ? AND posicao > ?",
+    com_pagamentos = set(_contas_com_pagamentos(cursor, "serie_id = ? AND posicao > ?",
                                                 (serie_id, posicao_referencia)))
-    conexao_leitura.close()
 
     novas_datas_por_id = None
     dia_ancora_novo = mes_ancora_novo = None
@@ -5885,89 +5891,75 @@ def editar_conta_serie(conta_id, nome=None, valor=None, categoria_id=None, data_
 
         novas_datas_por_id = plano["datas"]
 
-    conexao = sqlite3.connect(NOME_DO_BANCO)
-    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
-    conexao.execute("PRAGMA foreign_keys = ON;")
-    cursor = conexao.cursor()
-    try:
-        cursor.execute("BEGIN;")
-        if valor is not None and pp_diferenca is not None:  # só a conta quitada que a tela mostrava
-            _conferir_quitada(cursor, conta_id, pp_diferenca["esperado"])
+    if valor is not None and pp_diferenca is not None:  # só a conta quitada que a tela mostrava
+        _conferir_quitada(cursor, conta_id, pp_diferenca["esperado"])
 
-        campos, valores = [], []
-        if nome is not None:
-            campos.append("nome = ?"); valores.append(nome)
-        if remover_categoria:
-            campos.append("categoria_id = NULL")
-        elif categoria_id is not None:
-            campos.append("categoria_id = ?"); valores.append(categoria_id)
-        if remover_descricao:
-            campos.append("descricao = NULL")
-        elif descricao is not None:
-            campos.append("descricao = ?"); valores.append(descricao)
-        if campos:
-            sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?"
-            cursor.execute(sql, (*valores, serie_id, posicao_referencia))
-        if valor is not None and variavel:
-            # Sino 6.12 (Etapa 9, R5): só a selecionada (que deixa de ser pendente, se era);
-            # pendências e valores futuros já informados não mudam.
-            _informar_valor_no_cursor(cursor, conta_id, valor)
-            if pp_diferenca is not None and pp_diferenca["registrar"]:
-                _registrar_diferenca(cursor, conta_id)
-            _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
-        elif valor is not None:
-            # Pagamentos parciais (opção D): o valor novo vai para a selecionada e
-            # para as ocorrências seguintes SEM histórico de pagamentos; as que têm
-            # qualquer pagamento (parcial, quitação ou só estornado) mantêm o valor,
-            # os pagamentos, o saldo e o status. Nada é reaberto nem pago.
+    campos, valores = [], []
+    if nome is not None:
+        campos.append("nome = ?"); valores.append(nome)
+    if remover_categoria:
+        campos.append("categoria_id = NULL")
+    elif categoria_id is not None:
+        campos.append("categoria_id = ?"); valores.append(categoria_id)
+    if remover_descricao:
+        campos.append("descricao = NULL")
+    elif descricao is not None:
+        campos.append("descricao = ?"); valores.append(descricao)
+    if campos:
+        sql = f"UPDATE contas SET {', '.join(campos)} WHERE serie_id = ? AND posicao >= ?"
+        cursor.execute(sql, (*valores, serie_id, posicao_referencia))
+    if valor is not None and variavel:
+        # Sino 6.12 (Etapa 9, R5): só a selecionada (que deixa de ser pendente, se era);
+        # pendências e valores futuros já informados não mudam.
+        _informar_valor_no_cursor(cursor, conta_id, valor)
+        if pp_diferenca is not None and pp_diferenca["registrar"]:
+            _registrar_diferenca(cursor, conta_id)
+        _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
+    elif valor is not None:
+        # Pagamentos parciais (opção D): o valor novo vai para a selecionada e
+        # para as ocorrências seguintes SEM histórico de pagamentos; as que têm
+        # qualquer pagamento (parcial, quitação ou só estornado) mantêm o valor,
+        # os pagamentos, o saldo e o status. Nada é reaberto nem pago.
+        cursor.execute(
+            f"UPDATE contas SET valor = ? WHERE serie_id = ? AND posicao >= ? "
+            f"AND (id = ? OR id NOT IN ({_sql_contas_com_pagamentos(cursor)}))",
+            (valor, serie_id, posicao_referencia, conta_id),
+        )
+        if pp_diferenca is not None and pp_diferenca["registrar"]:
+            _registrar_diferenca(cursor, conta_id)  # só a selecionada, nunca as outras
+        _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
+
+    if novas_datas_por_id is not None:
+        for oc_id, (novo_vencimento, nova_vaga) in novas_datas_por_id.items():
             cursor.execute(
-                f"UPDATE contas SET valor = ? WHERE serie_id = ? AND posicao >= ? "
-                f"AND (id = ? OR id NOT IN ({_sql_contas_com_pagamentos(cursor)}))",
-                (valor, serie_id, posicao_referencia, conta_id),
+                "UPDATE contas SET data_vencimento = ?, data_prevista = ? WHERE id = ?",
+                (novo_vencimento, nova_vaga, oc_id),
             )
-            if pp_diferenca is not None and pp_diferenca["registrar"]:
-                _registrar_diferenca(cursor, conta_id)  # só a selecionada, nunca as outras
-            _sincronizar_quitacao(cursor, "id = ?", (conta_id,))
+        _renumerar_segmento(cursor, serie_id, posicao_referencia)
 
-        if novas_datas_por_id is not None:
-            for oc_id, (novo_vencimento, nova_vaga) in novas_datas_por_id.items():
-                cursor.execute(
-                    "UPDATE contas SET data_vencimento = ?, data_prevista = ? WHERE id = ?",
-                    (novo_vencimento, nova_vaga, oc_id),
-                )
-            _renumerar_segmento(cursor, serie_id, posicao_referencia)
-
-        campos_serie, valores_serie = [], []
-        if nome is not None:
-            campos_serie.append("nome = ?"); valores_serie.append(nome)
-        if valor is not None:
-            campos_serie.append("valor = ?"); valores_serie.append(valor)
-        if remover_categoria:
-            campos_serie.append("categoria_id = NULL")
-        elif categoria_id is not None:
-            campos_serie.append("categoria_id = ?"); valores_serie.append(categoria_id)
-        if remover_descricao:
-            campos_serie.append("descricao = NULL")
-        elif descricao is not None:
-            campos_serie.append("descricao = ?"); valores_serie.append(descricao)
-        if data_vencimento is not None:
-            campos_serie.append("dia_ancora = ?"); valores_serie.append(dia_ancora_novo)
-            campos_serie.append("mes_ancora = ?")
-            valores_serie.append(mes_ancora_novo if frequencia == "anual" else None)
-            campos_serie.append("data_inicio = ?"); valores_serie.append(data_vencimento)
-            campos_serie.append("posicao_ancora = ?"); valores_serie.append(posicao_referencia)
-            campos_serie.append("horizonte_gerado_ate = ?"); valores_serie.append(horizonte_novo)
-        if campos_serie:
-            sql = f"UPDATE series_recorrencia SET {', '.join(campos_serie)} WHERE id = ?"
-            cursor.execute(sql, (*valores_serie, serie_id))
-
-
-        cursor.execute("COMMIT;")
-    except Exception:
-        cursor.execute("ROLLBACK;")
-        raise
-    finally:
-        conexao.close()
+    campos_serie, valores_serie = [], []
+    if nome is not None:
+        campos_serie.append("nome = ?"); valores_serie.append(nome)
+    if valor is not None:
+        campos_serie.append("valor = ?"); valores_serie.append(valor)
+    if remover_categoria:
+        campos_serie.append("categoria_id = NULL")
+    elif categoria_id is not None:
+        campos_serie.append("categoria_id = ?"); valores_serie.append(categoria_id)
+    if remover_descricao:
+        campos_serie.append("descricao = NULL")
+    elif descricao is not None:
+        campos_serie.append("descricao = ?"); valores_serie.append(descricao)
+    if data_vencimento is not None:
+        campos_serie.append("dia_ancora = ?"); valores_serie.append(dia_ancora_novo)
+        campos_serie.append("mes_ancora = ?")
+        valores_serie.append(mes_ancora_novo if frequencia == "anual" else None)
+        campos_serie.append("data_inicio = ?"); valores_serie.append(data_vencimento)
+        campos_serie.append("posicao_ancora = ?"); valores_serie.append(posicao_referencia)
+        campos_serie.append("horizonte_gerado_ate = ?"); valores_serie.append(horizonte_novo)
+    if campos_serie:
+        sql = f"UPDATE series_recorrencia SET {', '.join(campos_serie)} WHERE id = ?"
+        cursor.execute(sql, (*valores_serie, serie_id))
 
     return True
 
@@ -6688,31 +6680,58 @@ def alterar_termino_recorrencia(conta_id, novo_termino):
     seguintes sem histórico protegido além do novo término, gera a grade que faltar até o
     término (ou 12 meses, sem término) e grava `data_termino`/`horizonte_gerado_ate`.
     Qualquer falha desfaz tudo. Retorna {serie_id, removidas, preservadas, novas}."""
-    conexao = sqlite3.connect(NOME_DO_BANCO)
-    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
-    conexao.execute("PRAGMA foreign_keys = ON;")
-    cursor = conexao.cursor()
-    try:
-        cursor.execute("BEGIN IMMEDIATE;")
-        try:
-            plano = _plano_do_termino(cursor, conta_id, novo_termino)
-            ids_novos = []
-            if not plano["sem_mudanca"]:
-                if plano["removidas"]:
-                    marcas = ",".join("?" * len(plano["removidas"]))
-                    _apagar_complementos_de_contas(cursor, f"id IN ({marcas})", plano["removidas"])
-                    cursor.execute(f"DELETE FROM contas WHERE id IN ({marcas})", plano["removidas"])
-                ids_novos = _inserir_vagas_no_cursor(cursor, plano["serie_id"], plano["grade"])
-                cursor.execute("UPDATE series_recorrencia SET data_termino = ?, horizonte_gerado_ate = ? "
-                               "WHERE id = ?", (novo_termino, plano["horizonte"], plano["serie_id"]))
-            cursor.execute("COMMIT;")
-        except Exception:
-            cursor.execute("ROLLBACK;")
-            raise
-    finally:
-        conexao.close()
+    with transacao() as cursor:
+        return _alterar_termino_no_cursor(cursor, conta_id, novo_termino)
+
+
+def _alterar_termino_no_cursor(cursor, conta_id, novo_termino):
+    """6.13 (correção 1): núcleo de `alterar_termino_recorrencia` no cursor recebido (D14)."""
+    plano = _plano_do_termino(cursor, conta_id, novo_termino)
+    ids_novos = []
+    if not plano["sem_mudanca"]:
+        if plano["removidas"]:
+            marcas = ",".join("?" * len(plano["removidas"]))
+            _apagar_complementos_de_contas(cursor, f"id IN ({marcas})", plano["removidas"])
+            cursor.execute(f"DELETE FROM contas WHERE id IN ({marcas})", plano["removidas"])
+        ids_novos = _inserir_vagas_no_cursor(cursor, plano["serie_id"], plano["grade"])
+        cursor.execute("UPDATE series_recorrencia SET data_termino = ?, horizonte_gerado_ate = ? "
+                       "WHERE id = ?", (novo_termino, plano["horizonte"], plano["serie_id"]))
     return {"serie_id": plano["serie_id"], "removidas": plano["removidas"],
             "preservadas": plano["preservadas"], "novas": ids_novos}
+
+
+MENSAGEM_TERMINO_COM_VENCIMENTO_EM_DIANTE = (
+    "Não é possível mudar o vencimento em “Este mês em diante” junto com a alteração do término. "
+    "Salve uma alteração de cada vez: desfaça o término pendente ou escolha “Somente este mês”.")
+ESCOPOS_DA_EDICAO = ("somente_este_mes", "este_mes_em_diante")
+
+
+class _CamposRecusados(Exception):
+    """Interna: a gravação dos campos foi recusada (retorno False) -- desfaz a transação inteira."""
+
+
+def salvar_edicao_com_termino(conta_id, escopo, novo_termino, **campos):
+    """6.13 (correção 1): o Salvar de Editar com um término pendente, ATÔMICO. Os campos do
+    formulário (`escopo` "somente_este_mes" = `editar_conta_ocorrencia`, "este_mes_em_diante" =
+    `editar_conta_serie`, com as mesmas regras, recusas e pagamentos -- inclusive `pp_diferenca`) e
+    o término (`alterar_termino_recorrencia`, B1-B7) são gravados numa ÚNICA transação: qualquer
+    falha, recusa ou erro inesperado em qualquer etapa desfaz tudo (ROLLBACK), e nada fica gravado
+    pela metade. B5: um novo vencimento em "Este mês em diante" não combina com o término (recusa
+    antes de qualquer gravação). Retorna False se os campos forem recusados (nada gravado); senão,
+    o resultado do término."""
+    if escopo not in ESCOPOS_DA_EDICAO:
+        raise ValueError(f"escopo inválido: {escopo!r}")
+    if escopo == "este_mes_em_diante" and campos.get("data_vencimento") is not None:
+        raise TerminoRecusadoError(MENSAGEM_TERMINO_COM_VENCIMENTO_EM_DIANTE)
+    gravar_campos = (_editar_conta_ocorrencia_no_cursor if escopo == "somente_este_mes"
+                     else _editar_conta_serie_no_cursor)
+    try:
+        with transacao() as cursor:
+            if not gravar_campos(cursor, conta_id, **campos):
+                raise _CamposRecusados()
+            return _alterar_termino_no_cursor(cursor, conta_id, novo_termino)
+    except _CamposRecusados:
+        return False
 
 if __name__ == "__main__":
     criar_tabelas()

@@ -699,9 +699,7 @@ TEXTO_NAO_RECORRENTE = "Esta conta não é recorrente."
 # 6.13 (melhoria B): textos do diálogo "Alterar término da recorrência".
 TEXTO_AVISO_RECRIACAO_TERMINO = ("Ao prorrogar ou remover o término, ocorrências que tinham sido excluídas "
                                  "poderão voltar a ser geradas.")
-TEXTO_TERMINO_COM_VENCIMENTO_EM_DIANTE = (
-    "Não é possível mudar o vencimento em “Este mês em diante” junto com a alteração do término. "
-    "Salve uma alteração de cada vez: desfaça o término pendente ou escolha “Somente este mês”.")
+TEXTO_TERMINO_COM_VENCIMENTO_EM_DIANTE = database.MENSAGEM_TERMINO_COM_VENCIMENTO_EM_DIANTE  # B5 (fonte: banco)
 
 
 def texto_ocorrencias_excluidas_no_termino(quantidade):
@@ -5103,6 +5101,21 @@ def main(page: ft.Page):
                 # registrar a diferença?" -- None até a usuária escolher; nada é
                 # gravado antes disso. Recomeça a cada abertura de Editar.
                 escolha_diferenca = {"valor": None}
+                # 6.13 (correção 1): com um término pendente, campos e término vão juntos numa só
+                # transação (database.salvar_edicao_com_termino); depois disso, nada a aplicar.
+                termino_gravado_com_campos = {"valor": False}
+
+                def gravar_campos(escopo, campos):
+                    """Grava os campos do formulário no `escopo` ("somente_este_mes" ou
+                    "este_mes_em_diante"). Sem término pendente: as mesmas chamadas de sempre."""
+                    if rascunho_recorrencia["acao"] == "alterar_termino":
+                        resultado = database.salvar_edicao_com_termino(
+                            conta["id"], escopo, rascunho_recorrencia["data_termino"], **campos)
+                        termino_gravado_com_campos["valor"] = bool(resultado)
+                        return bool(resultado)
+                    if escopo == "este_mes_em_diante":
+                        return database.editar_conta_serie(conta["id"], **campos)
+                    return database.editar_conta_ocorrencia(conta["id"], **campos)
                 # Recorrência: reseta o rascunho e recompõe o bloco na hora, para
                 # que Cancelar (reabrir Editar) nunca mostre uma decisão pendente de uma sessão já cancelada.
                 rascunho_recorrencia["acao"] = None
@@ -5288,7 +5301,8 @@ def main(page: ft.Page):
                             conta["serie_id"] = novo_serie_id
                         elif acao == "encerrar":
                             database.encerrar_recorrencia(conta["id"])
-                        elif acao == "alterar_termino":  # 6.13 (B): uma transação, rollback integral
+                        elif acao == "alterar_termino" and not termino_gravado_com_campos["valor"]:
+                            # 6.13 (B): só o término (sem campos alterados) -- uma transação, rollback integral.
                             database.alterar_termino_recorrencia(conta["id"], rascunho_recorrencia["data_termino"])
                     except ValueError:
                         return False
@@ -5579,9 +5593,9 @@ def main(page: ft.Page):
                     """Ajuste C: a mesma gravação de "Somente este mês" (editar_conta_ocorrencia),
                     com as mesmas recusas, mas sem diálogo de abrangência aberto."""
                     try:
-                        sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
+                        sucesso = gravar_campos("somente_este_mes", campos_alterados)
                     except (limites.LimiteDeCaracteresError, database.ParcelamentoRecusadoError,
-                            database.ValorVariavelRecusadoError) as recusa:
+                            database.ValorVariavelRecusadoError, database.TerminoRecusadoError) as recusa:
                         erro_edit.value = str(recusa)
                         page.update()
                         return
@@ -5612,9 +5626,10 @@ def main(page: ft.Page):
 
                     def aplicar_somente_esta(e):
                         try:
-                            sucesso = database.editar_conta_ocorrencia(conta["id"], **campos_alterados)
+                            sucesso = gravar_campos("somente_este_mes", campos_alterados)
                         except (limites.LimiteDeCaracteresError, database.ParcelamentoRecusadoError,
-                                database.ValorVariavelRecusadoError) as erro_limite:  # Sino 6.12
+                                database.ValorVariavelRecusadoError,
+                                database.TerminoRecusadoError) as erro_limite:  # Sino 6.12; 6.13 (B)
                             mostrar_recusa(erro_limite)
                             return
                         except database.ValorMenorQuePagoError as recusa:
@@ -5640,12 +5655,13 @@ def main(page: ft.Page):
                             mostrar_recusa(TEXTO_TERMINO_COM_VENCIMENTO_EM_DIANTE)
                             return
                         try:
-                            sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
+                            sucesso = gravar_campos("este_mes_em_diante", campos_alterados)
                         except (limites.LimiteDeCaracteresError,
                                 database.VencimentoAntesDaParcelaAnteriorError,
                                 database.CompetenciaComPagamentosError,
                                 database.ParcelamentoRecusadoError,
-                                database.ValorVariavelRecusadoError) as erro:  # I4; Sino 6.12
+                                database.ValorVariavelRecusadoError,
+                                database.TerminoRecusadoError) as erro:  # I4; Sino 6.12; 6.13 (B)
                             mostrar_recusa(erro)
                             return
                         except database.ValorMenorQuePagoError as recusa:
@@ -5754,9 +5770,11 @@ def main(page: ft.Page):
                     content="Cancelar",
                     bgcolor=cores.botao_secundario_fundo,
                     color=cores.botao_secundario_texto,
+                    # 6.13 (correção 2): recuo lateral de 4 (era 8) -- em 320 px "Cancelar" cabe numa
+                    # linha só; a largura continua vindo da coluna (380/1000 px sem mudança).
                     style=ft.ButtonStyle(side=ft.BorderSide(1, cores.borda_suave),
                                          shape=ft.RoundedRectangleBorder(radius=RAIO_EDICAO),
-                                         padding=ft.Padding(8, 0, 8, 0)),
+                                         padding=ft.Padding(4, 0, 4, 0)),
                     col={"xs": 4, "sm": 3, "md": 2}, height=44,
                     on_click=lambda e: voltar_do_formulario(),
                 )
