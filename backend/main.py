@@ -784,6 +784,11 @@ TEXTO_SEM_ESTIMATIVA_PARCELAS = "Informe o valor total para ver o valor de cada 
 LARGURA_TIPOS_EMPILHADOS = 520
 
 
+def tipos_da_conta_empilhados(largura_pagina):
+    """True: ícone acima do nome nos cartões de tipo. Largura desconhecida conta como larga."""
+    return isinstance(largura_pagina, (int, float)) and 0 < largura_pagina < LARGURA_TIPOS_EMPILHADOS
+
+
 def resumo_estimado_das_parcelas(valor_total, quantidade):
     """PROTÓTIPO 6.13: valor por parcela mostrado na Nova conta (Parcelada), só cálculo.
 
@@ -8135,7 +8140,7 @@ def main(page: ft.Page):
                 **estilo_lista(),
             )
             # Em telas estreitas, Mês e Ano ficam um sobre o outro para não cortar o texto.
-            estreita = (page.width or 0) and page.width < 600
+            estreita = isinstance(page.width, (int, float)) and 0 < page.width < 600
             if estreita:
                 campo_mes.expand = campo_ano.expand = False
             linha_mes_ano = (ft.Column(spacing=12, controls=[campo_mes, campo_ano], visible=not rascunho["sem_termino"],
@@ -8392,7 +8397,7 @@ def main(page: ft.Page):
                 return
 
             tipo = recorrencia["tipo"]
-            empilhado = bool(page.width) and page.width < LARGURA_TIPOS_EMPILHADOS
+            empilhado = tipos_da_conta_empilhados(page.width)
             for cartao, (valor, rotulo, icone) in zip(cartoes_tipo, TIPOS):
                 ativo = valor == tipo
                 cor = cores.chip_ativo_texto if ativo else cores.texto_principal
@@ -8598,13 +8603,13 @@ def main(page: ft.Page):
                 controls=[cabecalho, cartoes_modo, grade],
             )),
         ])
-        forma_dos_tipos = {"valor": bool(page.width) and page.width < LARGURA_TIPOS_EMPILHADOS}
+        forma_dos_tipos = {"valor": tipos_da_conta_empilhados(page.width)}
 
         def ao_redimensionar(e):
             # Só redesenha se os cartões de tipo mudarem de forma, e só com esta tela aberta.
             if not tela["ativa"]:
                 return
-            nova = bool(page.width) and page.width < LARGURA_TIPOS_EMPILHADOS
+            nova = tipos_da_conta_empilhados(page.width)
             if nova != forma_dos_tipos["valor"]:
                 forma_dos_tipos["valor"] = nova
                 aplicar()
