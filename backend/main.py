@@ -8405,7 +8405,8 @@ def main(page: ft.Page):
                 cartao.style = ft.ButtonStyle(
                     bgcolor=cores.chip_ativo_fundo if ativo else cores.fundo_card,
                     side=None if ativo else ft.BorderSide(1, cores.borda_suave),
-                    shape=ft.RoundedRectangleBorder(radius=12), padding=ft.Padding(8, 4, 8, 4), elevation=0)
+                    shape=ft.RoundedRectangleBorder(radius=12),
+                    padding=ft.Padding(4, 4, 4, 4) if empilhado else ft.Padding(8, 4, 8, 4), elevation=0)
                 simbolo = ft.Icon(icone, size=22, color=cor if ativo else cores.acao_primaria)
                 nome = ft.Text(rotulo, size=14, weight=ft.FontWeight.BOLD, color=cor,
                                text_align=ft.TextAlign.CENTER if empilhado else ft.TextAlign.START)
@@ -8419,7 +8420,10 @@ def main(page: ft.Page):
                                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                    controls=[simbolo, ft.Container(content=nome, expand=False)])
                 cartao.content = ft.Stack(expand=True, controls=[
-                    ft.Container(expand=True, alignment=ft.Alignment.CENTER, padding=ft.Padding(14, 0, 14, 0),
+                    # Empilhado, a marca fica no canto acima do ícone; sem recuo
+                    # lateral, "Recorrente" cabe inteiro em 320 px.
+                    ft.Container(expand=True, alignment=ft.Alignment.CENTER,
+                                 padding=ft.Padding(0, 0, 0, 0) if empilhado else ft.Padding(14, 0, 14, 0),
                                  content=miolo),
                     ft.Container(right=0, top=0, content=marca),
                 ])
