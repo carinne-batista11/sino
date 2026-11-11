@@ -204,8 +204,8 @@ class TestTelasEstrutura(BaseVariavelTelas):
         db.criar_serie_recorrente(self.usuario_id, "Luz", 150.0, "2026-09-20", "mensal", variavel=True)
         db.criar_conta_unica(self.usuario_id, "Água", 80.0, "2026-09-18")
         db.criar_conta_parcelada(self.usuario_id, "Sofá", 600.0, 3, "2026-09-22")
-        for nome, esperado in (("Aluguel", ["Alterar tipo de valor", "Encerrar recorrência"]), ("Luz", ["Alterar tipo de valor", "Encerrar recorrência"]),  # ajuste D
-                               ("Água", ["Transformar em recorrente"])):
+        for nome, esperado in (("Aluguel", ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"]), ("Luz", ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"]),  # ajuste D
+                               ("Água", ["Transformar em recorrente", "Parcelar esta conta"])):
             with self.subTest(nome=nome):
                 self.editar(nome)
                 self.assertEqual(self.itens(), esperado)
@@ -225,7 +225,7 @@ class TestTelasEstrutura(BaseVariavelTelas):
         self.clicar(self.botao("Salvar alterações"))
         self.assertEqual(self.consultar("SELECT ativa FROM series_recorrencia"), [(0,)])
         self.editar("Academia")                                                # agora é avulsa
-        self.assertEqual(self.itens(), ["Transformar em recorrente"])
+        self.assertEqual(self.itens(), ["Transformar em recorrente", "Parcelar esta conta"])  # 6.13 (E1)
         self.clicar(next(i for i in self.campo("Recorrência").suffix_icon.items
                          if i.content == "Transformar em recorrente"))
         from test_tela_principal import percorrer

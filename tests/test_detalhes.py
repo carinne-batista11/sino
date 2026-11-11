@@ -392,7 +392,7 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
         self.assertFalse(self.na_tela_de_detalhes())
         # Editar usa o mesmo texto (Sino 6.10: no campo somente leitura "Recorrência")
         recorrencia = next(c for c in self.controles() if isinstance(c, ft.TextField) and c.label == "Recorrência")
-        self.assertEqual(recorrencia.value, "Esta conta não é recorrente.")
+        self.assertEqual(recorrencia.value, "Única · Sem repetição")  # 6.13 (E2): resumo curto em Editar
         self.clicar(self.botao("Cancelar"))
         self.assertTrue(self.na_tela_de_detalhes())
 

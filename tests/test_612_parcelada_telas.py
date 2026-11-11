@@ -42,7 +42,10 @@ class BaseTelas(Base):
 
     def escolher(self, controle, valor):
         controle.value = valor
-        controle.on_select(Evento(self.pagina, controle))
+        if isinstance(controle, ft.Dropdown):
+            controle.on_select(Evento(self.pagina, controle))
+        else:  # 6.13 (E5): a quantidade de parcelas é digitada (com setas), não escolhida numa lista
+            controle.on_change(Evento(self.pagina, controle))
 
     def contas(self):
         return self.consultar("SELECT nome, valor, data_vencimento, serie_id FROM contas ORDER BY id")
@@ -143,7 +146,12 @@ class TestDetalhesEEditar(BaseTelas):
         self.clicar(linha)
 
     def botao_parcelar(self):
-        return [c for c in self.controles() if getattr(c, "data", None) == "parcelar_conta"]
+        # Protótipo 6.13 (E1): "Parcelar esta conta" é item do lápis da Recorrência em Editar.
+        editar = [c for c in self.controles(ft.Button) if c.content == "Editar"]
+        if editar:
+            self.clicar(editar[0])
+        campo = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência")
+        return [i for i in (campo.suffix_icon.items or []) if i.content == "Parcelar esta conta"]
 
     def test_unica_parcelada_pelos_detalhes(self):
         conta = db.criar_conta_unica(self.usuario_id, "Geladeira", 2400.0, "2026-09-30")
@@ -188,7 +196,7 @@ class TestDetalhesEEditar(BaseTelas):
         self.assertIn("Parcela 1 de 6", textos)
         self.clicar(next(c for c in self.controles(ft.Button) if c.content == "Editar"))
         recorrencia = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência")
-        self.assertEqual(recorrencia.value, "Esta conta é parcelada em 6 parcelas mensais, até fevereiro de 2027.")
+        self.assertEqual(recorrencia.value, "Parcelada · 6 parcelas")  # 6.13 (E2): resumo curto em Editar
         # Ajustes pós-validação manual (A): só "Alterar parcelamento" -- sem Alterar frequência / Encerrar.
         self.assertEqual([i.content for i in recorrencia.suffix_icon.items], ["Alterar parcelamento"])
 
@@ -197,7 +205,7 @@ class TestDetalhesEEditar(BaseTelas):
         self.abrir_detalhes("Aluguel")
         self.clicar(next(c for c in self.controles(ft.Button) if c.content == "Editar"))
         menu = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Encerrar recorrência"])  # R6; ajuste D
+        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"])  # R6; ajuste D
 
 
 if __name__ == "__main__":

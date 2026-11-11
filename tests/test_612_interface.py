@@ -48,15 +48,15 @@ class BaseInterface(BaseVariavelTelas):
 class TestMatrizDosTipos(BaseInterface):
     ESPERADO = {
         # nome: (ações nos Detalhes, menu de Recorrência em Editar, início da frase de Recorrência)
-        "Água": ({"parcelar_conta"}, ["Transformar em recorrente"], "Esta conta não é recorrente."),
+        "Água": (set(), ["Transformar em recorrente", "Parcelar esta conta"], "Esta conta não é recorrente."),
         "Sofá": (set(), ["Alterar parcelamento"], "Esta conta é parcelada em 3 parcelas mensais"),  # ajuste A
-        "Aluguel": (set(), ["Alterar tipo de valor", "Encerrar recorrência"], "Esta conta se repete mensalmente"),
-        "Luz": ({"informar_valor"}, ["Alterar tipo de valor", "Encerrar recorrência"],
+        "Aluguel": (set(), ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"], "Esta conta se repete mensalmente"),
+        "Luz": ({"informar_valor"}, ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"],
                 "Esta conta se repete mensalmente"),
-        "IPVA": (set(), ["Alterar tipo de valor", "Encerrar recorrência"], "Esta conta se repete anualmente"),
-        "Seguro": ({"informar_valor"}, ["Alterar tipo de valor", "Encerrar recorrência"],
+        "IPVA": (set(), ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"], "Esta conta se repete anualmente"),
+        "Seguro": ({"informar_valor"}, ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"],
                    "Esta conta se repete anualmente"),
-        "Gás": ({"parcelar_conta"}, ["Transformar em recorrente"], "Esta conta não é recorrente."),
+        "Gás": (set(), ["Transformar em recorrente", "Parcelar esta conta"], "Esta conta não é recorrente."),
     }
 
     def test_acoes_menu_e_frase_de_cada_tipo(self):

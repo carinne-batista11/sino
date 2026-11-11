@@ -276,7 +276,7 @@ class TestAjusteCValorVariavelSemDialogo(BaseAjustes):
 
 # ---------------------------------------------------------------- D: Alterar tipo de valor
 class TestAjusteDAlterarTipoDeValor(BaseAjustes):
-    MENU = ["Alterar tipo de valor", "Encerrar recorrência"]
+    MENU = ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"]  # 6.13 (E4)
 
     def test_menu_por_tipo(self):
         db.criar_serie_recorrente(self.usuario_id, "Aluguel", 900.0, "2026-09-25", "mensal")
@@ -288,8 +288,8 @@ class TestAjusteDAlterarTipoDeValor(BaseAjustes):
                                            data_termino="2026-12")
         db.encerrar_recorrencia(gas[0])
         for nome, esperado in (("Aluguel", self.MENU), ("Luz", self.MENU), ("IPVA", self.MENU),
-                               ("Água", ["Transformar em recorrente"]), ("Sofá", ["Alterar parcelamento"]),
-                               ("Gás", ["Transformar em recorrente"])):
+                               ("Água", ["Transformar em recorrente", "Parcelar esta conta"]), ("Sofá", ["Alterar parcelamento"]),
+                               ("Gás", ["Transformar em recorrente", "Parcelar esta conta"])):
             with self.subTest(nome=nome):
                 self.abrir_editar(nome)
                 self.assertEqual(self.itens_do_menu(), esperado)

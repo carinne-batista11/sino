@@ -30,6 +30,23 @@ NO_LIMITE = "d" * 249 + EMOJI_COMPOSTO         # 250 caracteres percebidos
 UM_ABAIXO = "d" * 249                          # 249
 COM_QUEBRAS = ("linha\n" * 41) + "fim!"        # 250, com quebras internas
 LEGADA = "x" * 300                             # acima do limite (dado antigo)
+
+
+# Protótipo 6.13 (E3): Nome e Descrição de Editar têm o contador DENTRO do campo, antes do lápis
+# (suffix_icon = Row(contador, lápis)). Só os contadores de Editar (data "contador_*_edicao").
+def lapis_de(campo):
+    s = campo.suffix_icon
+    return s.controls[-1] if isinstance(s, ft.Row) else s
+
+
+def contador_de(campo):
+    s = campo.suffix_icon
+    if isinstance(s, ft.Row):
+        for c in s.controls:
+            if isinstance(c, ft.Text) and str(c.data or "").startswith("contador_") and str(c.data).endswith("_edicao"):
+                return c.value
+    return campo.counter
+
 ROTULO = "Descrição (opcional)"
 
 
@@ -83,15 +100,15 @@ class BaseDescricao250(TesteComBancoTemporario):
     def assert_campo(self, campo, contador):
         self.assertEqual((campo.multiline, campo.min_lines, campo.max_lines), (True, 2, 8))  # M4-2
         self.assertEqual(campo.hint_text, "Até 250 caracteres")                            # Q1
-        self.assertEqual(campo.counter, contador)
+        self.assertEqual(contador_de(campo), contador)
         self.assertIsNone(getattr(campo, "max_length", None))                              # sem corte
 
     def assert_recusa_do_251(self, campo):
         self.digitar(campo, NO_LIMITE)
-        self.assertEqual((campo.value, campo.counter, campo.helper), (NO_LIMITE, "250/250", None))
+        self.assertEqual((campo.value, contador_de(campo), campo.helper), (NO_LIMITE, "250/250", None))
         with som_simulado() as tocar:
             self.digitar(campo, NO_LIMITE + "!")
-        self.assertEqual((campo.value, campo.counter, campo.helper), (NO_LIMITE, "250/250", "Limite atingido"))
+        self.assertEqual((campo.value, contador_de(campo), campo.helper), (NO_LIMITE, "250/250", "Limite atingido"))
         tocar.assert_called_once_with()
 
 
@@ -156,7 +173,7 @@ class TestNovaConta(BaseDescricao250):
         campo = self.campo_descricao()
         for texto, contador in (("a", "1/250"), (UM_ABAIXO, "249/250"), ("", "0/250")):
             self.digitar(campo, texto)
-            self.assertEqual((campo.counter, campo.helper), (contador, None))
+            self.assertEqual((contador_de(campo), campo.helper), (contador, None))
 
 
 class TestEditarConta(BaseDescricao250):
@@ -225,7 +242,7 @@ class TestDescricaoLegada(BaseDescricao250):
         pagos = self.consultar("SELECT * FROM pp_pagamentos")
         self.abrir_edicao_pelo_lapis()
         campo = self.campo_descricao()
-        self.assertEqual((campo.value, campo.counter), (LEGADA, "300/250"))     # sem corte
+        self.assertEqual((campo.value, contador_de(campo)), (LEGADA, "300/250"))     # sem corte
         self.assertEqual(campo.error, "A descrição pode ter no máximo 250 caracteres (atual: 300).")
 
         self.clicar(self.botao("Salvar alterações"))                            # sem reduzir: recusado
@@ -238,7 +255,7 @@ class TestDescricaoLegada(BaseDescricao250):
         tocar.assert_called_once_with()
 
         self.digitar(campo, "x" * 250)                                          # reduzir é permitido
-        self.assertEqual((campo.counter, campo.error), ("250/250", None))
+        self.assertEqual((contador_de(campo), campo.error), ("250/250", None))
         self.clicar(self.botao("Salvar alterações"))
         self.assertEqual(self.descricao_no_banco(conta_id), "x" * 250)
         self.assertEqual(self.consultar("SELECT valor, status FROM contas WHERE id = ?", (conta_id,)), financeiro)

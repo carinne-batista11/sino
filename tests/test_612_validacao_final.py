@@ -53,7 +53,7 @@ class TestR4ACenarioDaValidacaoManual(BaseAjustes):
 
     def abrir_conversao_em_janeiro(self):
         self.editar(4)                                                          # set -> jan/2027
-        self.assertEqual(self.itens_do_menu(), ["Alterar tipo de valor", "Encerrar recorrência"])
+        self.assertEqual(self.itens_do_menu(), ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"])
         self.escolher_no_menu("Alterar tipo de valor")
         self.assertEqual(self.dlg().data, "dialogo_comportamento_valor")
         return self.acao("Mudar para fixo")

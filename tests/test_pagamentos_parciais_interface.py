@@ -31,6 +31,22 @@ ESTRUTURA = ["Valor da conta", "Vencimento", "Total pago", "Saldo devedor", "Cat
              "Recorrência", "Descrição", "Pagamentos registrados"]
 
 
+# Protótipo 6.13 (E3): Nome e Descrição de Editar têm o contador DENTRO do campo, antes do lápis
+# (suffix_icon = Row(contador, lápis)). Só os contadores de Editar (data "contador_*_edicao").
+def lapis_de(campo):
+    s = campo.suffix_icon
+    return s.controls[-1] if isinstance(s, ft.Row) else s
+
+
+def contador_de(campo):
+    s = campo.suffix_icon
+    if isinstance(s, ft.Row):
+        for c in s.controls:
+            if isinstance(c, ft.Text) and str(c.data or "").startswith("contador_") and str(c.data).endswith("_edicao"):
+                return c.value
+    return campo.counter
+
+
 class TesteInterfacePagamentos(TesteComBancoTemporario):
     def setUp(self):
         super().setUp()
@@ -1678,8 +1694,8 @@ class TestVisualEditar(TesteInterfacePagamentos):
                 self.assertEqual((campo.border_radius, campo.border_width, campo.focused_border_width,
                                   campo.text_size), (main.RAIO_EDICAO, 1, 2, 15))
         self.assertEqual(self.campo("Valor").value, "400,00")                 # "R$" é só o prefixo visual
-        self.assertEqual(self.campo("Nome da conta").counter, "8/30")         # contadores mantidos
-        self.assertEqual(self.campo("Descrição (opcional)").counter, "0/250")  # 250 desde a 6.12
+        self.assertEqual(contador_de(self.campo("Nome da conta")), "8/30")         # contadores mantidos
+        self.assertEqual(contador_de(self.campo("Descrição (opcional)")), "0/250")  # 250 desde a 6.12
 
     # --------------------------------------------------------- barra inferior
     def test_botoes_na_barra_fixa_fora_da_area_rolavel(self):
@@ -1796,9 +1812,9 @@ class TestEditarDuasColunas(TesteInterfacePagamentos):
                              ("Descrição (opcional)", "Editar descrição")):
             with self.subTest(rotulo=rotulo):
                 campo = self.campo(rotulo)
-                self.conferir_lapis(campo.suffix_icon, nome)
+                self.conferir_lapis(lapis_de(campo), nome)
                 with mock.patch.object(type(campo), "focus", new_callable=mock.AsyncMock) as focar:
-                    self.clicar_e_esperar(campo.suffix_icon)
+                    self.clicar_e_esperar(lapis_de(campo))
                 focar.assert_awaited_once()
         self.assertTrue(self.botao("Salvar alterações").disabled)              # nada mudou, nada salvo
         self.assertEqual(self.consultar("SELECT * FROM contas"), antes)
@@ -1829,35 +1845,35 @@ class TestEditarDuasColunas(TesteInterfacePagamentos):
     def test_recorrencia_avulsa_com_menu_transformar(self):
         self.editar()
         campo = self.campo("Recorrência")
-        self.assertEqual(campo.value, main.TEXTO_NAO_RECORRENTE)
+        self.assertEqual(campo.value, "Única · Sem repetição")  # 6.13 (E2)
         self.assertTrue(campo.read_only)
         self.assertFalse(campo.can_request_focus)                              # o foco vai para o lápis
         self.assertIsInstance(self.menu(), ft.PopupMenuButton)
         self.assertEqual((self.menu().content.semantics_label, self.menu().tooltip),
                          ("Editar recorrência", "Editar recorrência"))
-        self.assertEqual(self.itens(), ["Transformar em recorrente"])
+        self.assertEqual(self.itens(), ["Transformar em recorrente", "Parcelar esta conta"])  # 6.13 (E1)
         self.clicar(self.acao_da_recorrencia("Transformar em recorrente"))
         self.assertEqual(self.dialogo().title.value, "Transformar em recorrente")   # o diálogo de sempre
 
     def test_recorrencia_ativa_rascunho_e_desfazer(self):
         db.criar_serie_recorrente(self.usuario_id, "Academia", 100.0, "2026-09-10", "mensal", data_termino="2027-10")
         self.editar("Academia")
-        self.assertEqual(self.campo("Recorrência").value, main.frase_recorrencia("mensal", "2027-10"))
+        self.assertEqual(self.campo("Recorrência").value, "Mensal · Fixo · Até out/2027")  # 6.13 (E2)
         # Etapa 10 (ajuste deliberado): sem "Alterar frequência" (R6); com o encerramento pendente,
         # "Transformar" só depois de salvar (X1/X2: duas ações explícitas).
         # Ajustes pós-validação manual (D): "Alterar tipo de valor" antes de "Encerrar".
-        self.assertEqual(self.itens(), ["Alterar tipo de valor", "Encerrar recorrência"])
+        self.assertEqual(self.itens(), ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"])
         self.assertIsNone(self.campo("Recorrência").helper)
         self.clicar(self.acao_da_recorrencia("Encerrar recorrência"))
         self.assertEqual(self.dialogo().title.value, "Encerrar recorrência")
         self.clicar(self.acao_do_dialogo("Encerrar recorrência"))
-        self.assertEqual(self.campo("Recorrência").value, main.TEXTO_NAO_RECORRENTE)   # prévia do rascunho
+        self.assertEqual(self.campo("Recorrência").value, "Única · Sem repetição")   # prévia do rascunho (6.13, E2)
         self.assertEqual(self.campo("Recorrência").helper, "Alteração pendente: será aplicada ao salvar.")
         self.assertEqual(self.itens(), ["Desfazer esta alteração"])
         self.assertFalse(self.botao("Salvar alterações").disabled)
         self.assertEqual(self.consultar("SELECT ativa FROM series_recorrencia"), [(1,)])  # nada gravado
         self.clicar(self.acao_da_recorrencia("Desfazer esta alteração"))
-        self.assertEqual(self.itens(), ["Alterar tipo de valor", "Encerrar recorrência"])
+        self.assertEqual(self.itens(), ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"])
         self.assertTrue(self.botao("Salvar alterações").disabled)
 
     # --------------------------------------------------------------- teclado
@@ -1870,7 +1886,7 @@ class TestEditarDuasColunas(TesteInterfacePagamentos):
             if isinstance(c, ft.TextField):
                 if c.can_request_focus is not False:
                     ordem.append(c.label)
-                ordem.append(c.suffix_icon.tooltip)
+                ordem.append(lapis_de(c).tooltip)
             elif isinstance(c, ft.Dropdown):
                 ordem.append(c.label)
         self.assertEqual(ordem, ["Nome da conta", "Editar nome da conta", "Valor", "Editar valor",

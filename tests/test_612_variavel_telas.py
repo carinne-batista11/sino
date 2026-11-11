@@ -145,7 +145,7 @@ class TestTransformarEmVariavel(BaseVariavelTelas):
         self.clicar(linha.controls[1])
         self.clicar(self.acao("Transformar"))
         recorrencia = self.campo("Recorrência").value
-        self.assertTrue(recorrencia.endswith("O valor varia a cada ocorrência."), recorrencia)
+        self.assertEqual(recorrencia, "Mensal · Variável · Sem término")  # 6.13 (E2): resumo curto
         self.clicar(self.botao("Salvar alterações"))
         serie_id = self.consultar("SELECT serie_id FROM contas WHERE id = ?", (conta,))[0][0]
         self.assertTrue(db.serie_variavel(serie_id))
@@ -237,7 +237,7 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
         self.assertEqual((campo.value, campo.read_only, campo.hint_text, campo.helper),
                          ("", False, "Valor pendente", main.TEXTO_DIGITE_O_VALOR))
         menu = self.campo("Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Encerrar recorrência"])  # ajuste D
+        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"])  # ajuste D
         nome = self.campo("Nome da conta")
         nome.value = "Energia"
         nome.on_change(Evento(self.pagina, nome))
@@ -272,7 +272,7 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
         self.clicar(self.linha("Aluguel"))
         self.clicar(self.botao("Editar"))
         menu = self.campo("Recorrência").suffix_icon
-        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Encerrar recorrência"])  # R6; ajuste D
+        self.assertEqual([i.content for i in menu.items], ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"])  # R6; ajuste D
 
 
 class TestGraficoComPendentes(BaseVariavelTelas):
