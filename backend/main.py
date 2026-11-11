@@ -3851,7 +3851,9 @@ def main(page: ft.Page):
                         previa = database.previa_parcelamento(valor, int(escolha["quantidade"]), vencimento)
                         lista_previa.controls = [ft.Text(linha, size=14, color=cores.texto_principal)
                                                  for linha in linhas_da_previa_de_parcelas(previa)]
-                        lista_previa.height = min(300, 26 * len(previa))
+                        # 6.13: em janelas estreitas cada linha da prévia quebra em duas.
+                        estreita = isinstance(page.width, (int, float)) and 0 < page.width < 420
+                        lista_previa.height = min(300, (46 if estreita else 26) * len(previa))
                         erro_parcelar.value = ""
                     except database.ParcelamentoRecusadoError as recusa:
                         lista_previa.controls = []
