@@ -522,8 +522,9 @@ class TestGravacaoIgualA612(Base):
                                         (max(r[0] for r in antes[1]),)), antes[1])
         self.assertEqual([r[2] for r in self.series()], ["2026-12", None, None])
         # A edição mostra o término efetivamente salvo, sem trocar pelo padrão novo.
-        for nome, frase in (("Seguro", main.frase_recorrencia("mensal", "2026-12")),
-                            ("Internet", main.frase_recorrencia("anual", None))):
+        # Editar mostra o resumo curto da 6.13 (Editar conta) com o término salvo.
+        for nome, frase in (("Seguro", "Mensal · Fixo · Até dez/2026"),
+                            ("Internet", "Anual · Fixo · Sem término")):
             with self.subTest(nome=nome):
                 linha = next(c for c in self.controles(ft.Container)
                              if c.data in ("linha_conta", "linha_conta_empilhada")

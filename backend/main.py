@@ -687,6 +687,23 @@ def filtrar_por_status(contas, filtro):
 
 
 TEXTO_NAO_RECORRENTE = "Esta conta não é recorrente."
+
+
+def resumo_curto_recorrencia(tipo, variavel=False, data_termino=None, parcelas=None):
+    """6.13 (Editar conta): resumo curto do campo Recorrência, no padrão da Nova conta.
+    tipo: "unica", "parcelada", "mensal" ou "anual"; data_termino "AAAA-MM" ou None.
+    Ex.: "Única · Sem repetição", "Parcelada · 11 parcelas", "Mensal · Fixo · Até set/2027".
+    A frase longa continua nos Detalhes e nos diálogos."""
+    if tipo == "unica":
+        return "Única · Sem repetição"
+    if tipo == "parcelada":
+        return f"Parcelada · {parcelas} parcelas"
+    if data_termino:
+        ano, mes = map(int, data_termino.split("-"))
+        termino = f"Até {MESES_PT[mes - 1][:3].lower()}/{ano}"
+    else:
+        termino = "Sem término"
+    return " · ".join(("Mensal" if tipo == "mensal" else "Anual", "Variável" if variavel else "Fixo", termino))
 # Sino 6.10 (visual de Editar): um só raio para campos, painéis e botões do formulário.
 RAIO_EDICAO = 10
 # ERS v7.0 5.43 (M2, U2): orientação de Início para o usuário sem nenhuma conta.
@@ -3621,7 +3638,7 @@ def main(page: ft.Page):
                     # Ajustes pós-validação manual (A): "Alterar parcelamento" fica aqui, não nos Detalhes.
                     return ft.TextField(
                         label="Recorrência", data="pp_recorrencia_edicao", read_only=True, can_request_focus=False,
-                        value=frase_parcelamento(identificacao_parcelada["total"], info_serie["data_termino"]),
+                        value=resumo_curto_recorrencia("parcelada", parcelas=identificacao_parcelada["total"]),
                         multiline=True, min_lines=1, max_lines=3, color=cores.texto_principal,
                         suffix_icon=ft.PopupMenuButton(
                             content=icone_lapis("Editar recorrência"), tooltip="Editar recorrência",
@@ -3656,7 +3673,8 @@ def main(page: ft.Page):
                         termino_exibido = info_serie["data_termino"]
                     variavel_exibida = (rascunho_recorrencia["variavel"] if acao_pendente == "transformar"
                                         else eh_variavel)
-                    texto_recorrencia = frase_recorrencia(frequencia_exibida, termino_exibido, variavel_exibida)
+                    texto_recorrencia = resumo_curto_recorrencia(frequencia_exibida, variavel_exibida,
+                                                                 termino_exibido)
                     # Sino 6.12 (Etapa 10, R6): sem "Alterar frequência" -- a frequência não muda.
                     # Uma transformação pendente só pode ser desfeita (e escolhida de novo).
                     # Ajustes pós-validação manual (D): "Alterar tipo de valor" (R3/R4) é uma ação
@@ -3669,13 +3687,21 @@ def main(page: ft.Page):
                         item_recorrencia("Encerrar recorrência", lambda e: mostrar_dialogo_encerrar_recorrencia()),
                     ]
                 else:
-                    texto_recorrencia = TEXTO_NAO_RECORRENTE
+                    texto_recorrencia = resumo_curto_recorrencia("unica")
                     acoes_recorrencia = [
                         item_recorrencia("Transformar em recorrente",
                                          lambda e: mostrar_dialogo_transformar_recorrente()),
                     ]
                     if situacao_pagamento["atual"] and situacao_pagamento["atual"].get("valor_pendente"):
                         acoes_recorrencia = []  # Sino 6.12 (Etapa 8): a primeira ocorrência precisa ter valor
+                    if acao_pendente is None and not serie_ativa:
+                        # 6.13: "Parcelar esta conta" saiu dos Detalhes e fica aqui, logo abaixo de
+                        # "Transformar em recorrente". Mesma regra da 6.12 nos Detalhes (toda conta que
+                        # não é de série ativa); a elegibilidade (R1) é do banco e, se recusada, o
+                        # diálogo explica o motivo. Grava ao confirmar, como "Alterar parcelamento".
+                        acoes_recorrencia.append(item_recorrencia(
+                            "Parcelar esta conta",
+                            lambda e: acao_imediata_de_recorrencia(mostrar_dialogo_parcelar)))
                     if acao_pendente == "encerrar":
                         # Sino 6.12 (Etapa 10, X1/X2): encerrar e transformar são duas ações
                         # explícitas -- "Transformar" só depois que o encerramento estiver salvo.
@@ -3851,7 +3877,8 @@ def main(page: ft.Page):
                         page.update()
                         return
                     page.pop_dialog()
-                    mostrar_tela_principal(tuple(mes_atual))
+                    # 6.13: aberto de Editar (campo Recorrência), volta aos Detalhes já como parcela 1.
+                    voltar_aos_detalhes_atualizados()
 
                 atualizar_previa()
                 page.show_dialog(ft.AlertDialog(
@@ -4316,12 +4343,8 @@ def main(page: ft.Page):
                             historico,
                             ft.Divider(color=cores.divisor),
                             botoes_rodape,
-                            # Sino 6.12 (Etapa 6, P6/R1): Única -> Parcelada, com prévia.
-                            *([ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[
-                                ft.TextButton(content="Parcelar esta conta", icon=ft.Icons.CALL_SPLIT,
-                                              data="parcelar_conta", style=ft.ButtonStyle(color=cores.acao_primaria),
-                                              on_click=lambda e: mostrar_dialogo_parcelar()),
-                            ])] if not serie_ativa else []),
+                            # 6.13: "Parcelar esta conta" (Única -> Parcelada) saiu daqui -- fica no campo
+                            # Recorrência de Editar, abaixo de "Transformar em recorrente".
                             # Sino 6.12 (ajustes pós-validação manual, D1): a conversão Fixo <-> Variável
                             # (R3/R4) saiu daqui -- só em Editar, "Alterar tipo de valor" no campo Recorrência.
                             # Sino 6.12 (ajustes pós-validação manual, A): "Alterar parcelamento" saiu
@@ -4461,11 +4484,10 @@ def main(page: ft.Page):
                     data="comportamento_transformar",
                     ao_mudar=lambda v: setattr(ajuda_variavel_transf, "visible", v == "variavel"))
 
-                # "Sem data de término" começa DESATIVADO -- mesmo padrão já usado em
-                # "Nova conta" e em "Alterar frequência" (D5): o término fica visível e
-                # disponível por padrão; só quando o usuário ativa explicitamente é que
-                # a recorrência passa a ser sem término.
-                sem_termino_transf = ft.Switch(value=False, active_color=cores.acao_primaria)
+                # 6.13: "Sem data de término" começa ATIVADO, como na Nova conta. Mês e Ano ficam
+                # visíveis, mas desabilitados e esmaecidos até a opção ser desativada.
+                sem_termino_transf = ft.Switch(value=True, active_color=cores.acao_primaria,
+                                               data="sem_termino_transformar")
                 ano_atual_transf = date.today().year
                 campo_mes_termino_transf = ft.Dropdown(
                     label="Mês", color=cores.texto_principal, expand=True,
@@ -4480,13 +4502,27 @@ def main(page: ft.Page):
                              for a in range(ano_atual_transf, ano_atual_transf + 11)],
                     **estilo_lista(),
                 )
-                linha_termino_transf = ft.Row(
-                    spacing=8, controls=[campo_mes_termino_transf, campo_ano_termino_transf], visible=True,
-                )
+                # Em telas estreitas, Mês e Ano um sobre o outro (como no diálogo da Nova conta).
+                if isinstance(page.width, (int, float)) and 0 < page.width < 600:
+                    campo_mes_termino_transf.expand = campo_ano_termino_transf.expand = False
+                    linha_termino_transf = ft.Column(
+                        spacing=12, controls=[campo_mes_termino_transf, campo_ano_termino_transf],
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH, data="termino_transformar")
+                else:
+                    linha_termino_transf = ft.Row(
+                        spacing=8, controls=[campo_mes_termino_transf, campo_ano_termino_transf],
+                        data="termino_transformar")
                 erro_transf = ft.Text(value="", color=cores.texto_erro, size=12)
 
+                def habilitar_mes_ano_transf():
+                    inativos = bool(sem_termino_transf.value)
+                    campo_mes_termino_transf.disabled = campo_ano_termino_transf.disabled = inativos
+                    linha_termino_transf.opacity = 0.45 if inativos else 1.0
+
+                habilitar_mes_ano_transf()
+
                 def ao_mudar_sem_termino_transf(e):
-                    linha_termino_transf.visible = not sem_termino_transf.value
+                    habilitar_mes_ano_transf()
                     page.update()
 
                 sem_termino_transf.on_change = ao_mudar_sem_termino_transf
@@ -4950,10 +4986,25 @@ def main(page: ft.Page):
                     ]),
                 )
 
-                ligar_contador_de_limite(campo_nome_edit, "nome_conta", limites.LIMITE_NOME_CONTA,
-                                         ao_mudar=lambda e: atualizar_estado_botao_salvar())
-                ligar_contador_de_limite(campo_descricao_edit, "descricao", limites.LIMITE_DESCRICAO,
-                                         ao_mudar=lambda e: atualizar_estado_botao_salvar())
+                def ligar_contador_interno_edicao(campo, chave, limite):
+                    """6.13: contador dentro do campo, à direita, antes do lápis (mesmo padrão da Nova
+                    conta); nenhuma linha reservada embaixo. Limite, recusa, "Limite atingido", som e
+                    a mensagem de excesso de um dado antigo continuam os de `LimiteDoCampo`."""
+                    contador = ft.Text(texto_contador(campo.value, limite), size=12, color=cores.texto_secundario,
+                                       data=f"contador_{chave}_edicao", text_align=ft.TextAlign.RIGHT,
+                                       width=8 * len(f"{limite}/{limite}"))
+                    campo.suffix_icon = ft.Row(tight=True, spacing=0,
+                                               vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                               controls=[contador, campo.suffix_icon])
+
+                    def ao_mudar(e):
+                        contador.value = texto_contador(campo.value, limite)
+                        atualizar_estado_botao_salvar()
+
+                    ligar_contador_de_limite(campo, chave, limite, ao_mudar=ao_mudar, mostrar_contador=False)
+
+                ligar_contador_interno_edicao(campo_nome_edit, "nome_conta", limites.LIMITE_NOME_CONTA)
+                ligar_contador_interno_edicao(campo_descricao_edit, "descricao", limites.LIMITE_DESCRICAO)
                 def ao_mudar_valor_edit(e):
                     escolha_diferenca["valor"] = None  # Pagamentos parciais: valor novo pede nova escolha
                     atualizar_resumo()
