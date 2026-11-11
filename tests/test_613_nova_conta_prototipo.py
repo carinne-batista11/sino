@@ -116,6 +116,37 @@ class Base(TesteComBancoTemporario):
     def selecionado(self, botao):
         return any(isinstance(c, ft.Icon) and c.semantics_label == "Selecionado" for c in percorrer(botao))
 
+    # 6.13 (término): o diálogo tem a chave "Sem data de término" e os seletores Mês e Ano.
+    def abrir_termino(self):
+        self.clicar(self.com_data("escolher_termino"))
+        dlg = self.abertos()[-1]
+        self.assertEqual(dlg.data, "dialogo_termino")
+        chave = next(c for c in percorrer(dlg.content) if isinstance(c, ft.Switch))
+        mes, ano = [c for c in percorrer(dlg.content) if isinstance(c, ft.Dropdown)]
+        return dlg, chave, mes, ano
+
+    def mudar_chave(self, chave, valor):
+        chave.value = valor
+        chave.on_change(Evento(self.pagina, chave))
+
+    def acao_do_dialogo(self, dlg, texto):
+        self.clicar(next(b for b in dlg.actions if b.content == texto))
+
+    def definir_termino(self, mes, ano):
+        dlg, chave, campo_mes, campo_ano = self.abrir_termino()
+        self.mudar_chave(chave, False)
+        campo_mes.value, campo_ano.value = str(mes), str(ano)
+        campo_mes.on_select(Evento(self.pagina, campo_mes))
+        campo_ano.on_select(Evento(self.pagina, campo_ano))
+        self.acao_do_dialogo(dlg, "Confirmar")
+
+    def consultar(self, sql, args=()):
+        con = db.conectar()
+        try:
+            return con.execute(sql, args).fetchall()
+        finally:
+            con.close()
+
 
 class TestAbertura(Base):
     def test_conta_comum_e_unica_selecionadas_por_padrao(self):
@@ -329,22 +360,64 @@ class TestModalidades(Base):
             self.assertEqual(self.campo(self.rotulo_do_valor()).value, "149,90")
 
     def test_termino_no_dialogo_cancelar_e_confirmar(self):
+        # 6.13: o padrão é "Sem data de término"; Cancelar nunca muda o formulário.
         self.tipo("mensal")
-        self.assertEqual(self.campo("Término da recorrência").value, "Até setembro de 2026")
-        self.clicar(self.com_data("escolher_termino"))
-        dlg = self.abertos()[-1]
-        chave = next(c for c in percorrer(dlg.content) if isinstance(c, ft.Switch))
-        chave.value = True
-        chave.on_change(Evento(self.pagina, chave))
-        self.clicar(next(b for b in dlg.actions if b.content == "Cancelar"))
-        self.assertEqual(self.campo("Término da recorrência").value, "Até setembro de 2026")
-        self.clicar(self.com_data("escolher_termino"))
-        dlg = self.abertos()[-1]
-        chave = next(c for c in percorrer(dlg.content) if isinstance(c, ft.Switch))
-        chave.value = True
-        chave.on_change(Evento(self.pagina, chave))
-        self.clicar(next(b for b in dlg.actions if b.content == "Confirmar"))
         self.assertEqual(self.campo("Término da recorrência").value, "Sem data de término")
+        dlg, chave, mes, ano = self.abrir_termino()
+        self.mudar_chave(chave, False)
+        mes.value = "12"
+        mes.on_select(Evento(self.pagina, mes))
+        self.acao_do_dialogo(dlg, "Cancelar")
+        self.assertEqual(self.campo("Término da recorrência").value, "Sem data de término")
+        dlg, chave, mes, ano = self.abrir_termino()
+        self.assertTrue(chave.value)                     # o rascunho cancelado não ficou guardado
+        self.assertEqual((mes.value, ano.value), ("9", "2026"))
+        self.acao_do_dialogo(dlg, "Cancelar")
+        self.definir_termino(12, 2026)
+        self.assertEqual(self.campo("Término da recorrência").value, "Até dezembro de 2026")
+        dlg, chave, mes, ano = self.abrir_termino()
+        self.assertFalse(chave.value)
+        self.assertEqual((mes.value, ano.value, mes.disabled, ano.disabled), ("12", "2026", False, False))
+        self.mudar_chave(chave, True)
+        self.acao_do_dialogo(dlg, "Cancelar")
+        self.assertEqual(self.campo("Término da recorrência").value, "Até dezembro de 2026")
+        dlg, chave, mes, ano = self.abrir_termino()
+        self.mudar_chave(chave, True)
+        self.acao_do_dialogo(dlg, "Confirmar")
+        self.assertEqual(self.campo("Término da recorrência").value, "Sem data de término")
+
+    def test_nova_recorrencia_comeca_sem_termino(self):
+        for tipo in ("mensal", "anual"):
+            for comportamento in ("fixo", "variavel"):
+                with self.subTest(tipo=tipo, comportamento=comportamento):
+                    self.tipo(tipo)
+                    self.clicar(self.com_data(f"comportamento_{comportamento}"))
+                    self.assertEqual(self.campo("Término da recorrência").value, "Sem data de término")
+                    self.assertNotIn("Até", self.campo("Término da recorrência").value)
+
+    def test_dialogo_mes_e_ano_visiveis_e_desabilitados_com_sem_termino(self):
+        for tipo in ("mensal", "anual"):
+            with self.subTest(tipo=tipo):
+                self.tipo(tipo)
+                dlg, chave, mes, ano = self.abrir_termino()
+                linha = next(c for c in dlg.content.controls if mes in getattr(c, "controls", []))
+                self.assertTrue(chave.value)
+                self.assertTrue(linha.visible)
+                self.assertEqual((mes.disabled, ano.disabled, linha.opacity), (True, True, 0.45))
+                self.mudar_chave(chave, False)
+                self.assertEqual((mes.disabled, ano.disabled, linha.opacity), (False, False, 1.0))
+                self.mudar_chave(chave, True)
+                self.assertEqual((mes.disabled, ano.disabled, linha.opacity), (True, True, 0.45))
+                self.assertTrue(linha.visible)
+                self.acao_do_dialogo(dlg, "Cancelar")
+
+    def test_dialogo_estreito_tambem_desabilita(self):
+        self.pagina.width = 380
+        self.tipo("anual")
+        dlg, chave, mes, ano = self.abrir_termino()
+        linha = next(c for c in dlg.content.controls if mes in getattr(c, "controls", []))
+        self.assertIsInstance(linha, ft.Column)
+        self.assertEqual((linha.visible, mes.disabled, ano.disabled), (True, True, True))
 
 
 class TestGravacaoIgualA612(Base):
@@ -371,12 +444,7 @@ class TestGravacaoIgualA612(Base):
         self.tipo("mensal")
         self.clicar(self.com_data("comportamento_variavel"))
         self.preencher()
-        self.clicar(self.com_data("escolher_termino"))
-        dlg = self.abertos()[-1]
-        mes, ano = [c for c in percorrer(dlg.content) if isinstance(c, ft.Dropdown)]
-        mes.value = "12"
-        mes.on_select(Evento(self.pagina, mes))
-        self.clicar(next(b for b in dlg.actions if b.content == "Confirmar"))
+        self.definir_termino(12, 2026)
         self.salvar()
         con = db.conectar()
         try:
@@ -388,9 +456,112 @@ class TestGravacaoIgualA612(Base):
         self.assertEqual(linhas, [("2026-09-20", 149.9, 0), ("2026-10-20", 0, 1), ("2026-11-20", 0, 1),
                                   ("2026-12-20", 0, 1)])
 
+    # ---------------------------------------------- 6.13: término padrão
+    def series(self):
+        return self.consultar("SELECT id, frequencia, data_termino, horizonte_gerado_ate FROM series_recorrencia "
+                              "ORDER BY id")
+
+    def ocorrencias(self, serie_id):
+        return [d for (d,) in self.consultar("SELECT data_vencimento FROM contas WHERE serie_id = ? "
+                                             "ORDER BY data_vencimento", (serie_id,))]
+
+    def test_sem_termino_salvo_e_geracao_limitada_ao_horizonte_inicial(self):
+        # Sem término: só o horizonte inicial de 12 meses da 6.12 (5.3/CT07), nunca uma geração aberta.
+        esperado = {"mensal": 13, "anual": 2}
+        for tipo in ("mensal", "anual"):
+            for comportamento in ("fixo", "variavel"):
+                with self.subTest(tipo=tipo, comportamento=comportamento):
+                    if self.existe("salvar_nova_conta") is False:
+                        self.clicar(self.com_data("nova_conta"))
+                    self.tipo(tipo)
+                    self.clicar(self.com_data(f"comportamento_{comportamento}"))
+                    self.preencher(nome=f"{tipo} {comportamento}")
+                    self.salvar()
+                    serie_id, frequencia, termino, horizonte = self.series()[-1]
+                    self.assertEqual((frequencia, termino), (tipo, None))
+                    datas = self.ocorrencias(serie_id)
+                    self.assertEqual(len(datas), esperado[tipo])
+                    self.assertEqual((datas[0], datas[-1], horizonte), ("2026-09-20", "2027-09-20", "2027-09-20"))
+                    self.assertEqual(db.serie_variavel(serie_id), comportamento == "variavel")
+                    pendentes = {c for (c,) in self.consultar(f"SELECT conta_id FROM {db.TABELA_VALOR_PENDENTE}")}
+                    ids = [i for (i,) in self.consultar("SELECT id FROM contas WHERE serie_id = ? "
+                                                        "ORDER BY data_vencimento", (serie_id,))]
+                    self.assertEqual(pendentes & set(ids), set(ids[1:]) if comportamento == "variavel" else set())
+        # Pedir um período distante gera só o que falta, uma vez (sob demanda, idempotente).
+        serie_id = self.series()[0][0]
+        db.gerar_ocorrencias_sob_demanda(serie_id, "2027-12")
+        db.gerar_ocorrencias_sob_demanda(serie_id, "2027-12")
+        self.assertEqual(len(self.ocorrencias(serie_id)), 16)
+
+    def test_termino_definido_salvo(self):
+        for tipo, ate, quantidade in (("mensal", (3, 2027), 7), ("anual", (9, 2029), 4)):
+            with self.subTest(tipo=tipo):
+                if not self.existe("salvar_nova_conta"):
+                    self.clicar(self.com_data("nova_conta"))
+                self.tipo(tipo)
+                self.preencher(nome=f"Com término {tipo}")
+                self.definir_termino(*ate)
+                self.salvar()
+                serie_id, frequencia, termino, _ = self.series()[-1]
+                self.assertEqual((frequencia, termino), (tipo, f"{ate[1]:04d}-{ate[0]:02d}"))
+                self.assertEqual(len(self.ocorrencias(serie_id)), quantidade)
+                db.gerar_ocorrencias_sob_demanda(serie_id, "2035-12")   # com término não gera mais nada
+                self.assertEqual(len(self.ocorrencias(serie_id)), quantidade)
+
+    def test_contas_existentes_preservadas_e_edicao_mostra_o_salvo(self):
+        com = db.criar_serie_recorrente(self.usuario_id, "Seguro", 80.0, "2026-09-10", "mensal",
+                                        data_termino="2026-12")
+        sem = db.criar_serie_recorrente(self.usuario_id, "Internet", 99.9, "2026-09-12", "anual")
+        antes = (self.series(), self.consultar("SELECT * FROM contas ORDER BY id"))
+        # Uma nova recorrência com o padrão novo não toca nas existentes.
+        self.tipo("mensal")
+        self.preencher(nome="Streaming")
+        self.salvar()
+        self.assertEqual(self.series()[:2], antes[0])
+        self.assertEqual(self.consultar("SELECT * FROM contas WHERE id <= ? ORDER BY id",
+                                        (max(r[0] for r in antes[1]),)), antes[1])
+        self.assertEqual([r[2] for r in self.series()], ["2026-12", None, None])
+        # A edição mostra o término efetivamente salvo, sem trocar pelo padrão novo.
+        for nome, frase in (("Seguro", main.frase_recorrencia("mensal", "2026-12")),
+                            ("Internet", main.frase_recorrencia("anual", None))):
+            with self.subTest(nome=nome):
+                linha = next(c for c in self.controles(ft.Container)
+                             if c.data in ("linha_conta", "linha_conta_empilhada")
+                             and nome in [t.value for t in percorrer(c) if isinstance(t, ft.Text)])
+                self.clicar(linha)
+                self.clicar(next(c for c in self.controles((ft.Button, ft.OutlinedButton, ft.TextButton))
+                                 if c.content == "Editar"))
+                self.assertEqual(self.campo("Recorrência").value, frase)
+                self.mostrar_principal()
+        self.assertEqual(self.series()[:2], antes[0])
+        self.assertTrue(com and sem)
+
+    def mostrar_principal(self):
+        for _ in range(4):                       # Editar ("Cancelar" não salva) -> tela principal
+            if self.existe("nova_conta"):
+                return
+            self.clicar(next(c for c in self.controles((ft.Button, ft.TextButton, ft.OutlinedButton))
+                             if c.content in ("Cancelar", "Voltar")))
+        self.fail("não voltou à tela principal")
+
+    def test_demais_modalidades_nao_mudam(self):
+        self.preencher(nome="Única")
+        self.salvar()
+        self.clicar(self.com_data("nova_conta"))
+        self.tipo("parcelada")
+        self.preencher(nome="Parcelada", valor="100,00")
+        self.escrever("Quantidade de parcelas", "3")
+        self.salvar()
+        self.acao_do_dialogo(self.abertos()[-1], "Salvar conta")
+        # A parcelada usa uma série mensal com término na última parcela (regra da 6.12, inalterada).
+        self.assertEqual([r[1:3] for r in self.series()], [("mensal", "2026-11")])
+        self.assertEqual(self.contagem("contas"), 4)
+        self.assertFalse(self.existe("termino_nova_conta"))
+
     def test_termino_anterior_recusado_como_na_612(self):
         self.tipo("anual")
         self.preencher()
+        self.definir_termino(9, 2026)
         self.data(2027, 3, 1)
         self.salvar()
         self.assertEqual(self.erro(), "O término não pode ser anterior à data de vencimento inicial.")

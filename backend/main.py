@@ -8016,8 +8016,10 @@ def main(page: ft.Page):
         modo = {"valor": "comum"}
         data_selecionada = {"valor": None}
         hoje = date.today()
-        # Mesmos valores iniciais da 6.12: Única; Fixo; término no mês e ano atuais; 2 parcelas.
-        recorrencia = {"tipo": "unica", "sem_termino": False, "mes": str(hoje.month), "ano": str(hoje.year),
+        # Valores iniciais: Única; Fixo; 2 parcelas. Decisão da 6.13: nova recorrência começa
+        # "Sem data de término" (antes, término no mês e ano atuais). Mês/Ano continuam guardados
+        # com o mês e ano atuais, como ponto de partida se a pessoa ativar um término no diálogo.
+        recorrencia = {"tipo": "unica", "sem_termino": True, "mes": str(hoje.month), "ano": str(hoje.year),
                        "parcelas": OPCOES_DE_PARCELAS[0], "variavel": False}
 
         def sair():
@@ -8274,14 +8276,23 @@ def main(page: ft.Page):
             estreita = isinstance(page.width, (int, float)) and 0 < page.width < 600
             if estreita:
                 campo_mes.expand = campo_ano.expand = False
-            linha_mes_ano = (ft.Column(spacing=12, controls=[campo_mes, campo_ano], visible=not rascunho["sem_termino"],
+            # 6.13: Mês e Ano ficam sempre visíveis; com "Sem data de término" ativado, desabilitados.
+            linha_mes_ano = (ft.Column(spacing=12, controls=[campo_mes, campo_ano],
                                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
                              if estreita else
-                             ft.Row(spacing=8, controls=[campo_mes, campo_ano], visible=not rascunho["sem_termino"]))
+                             ft.Row(spacing=8, controls=[campo_mes, campo_ano]))
+
+            def habilitar_mes_ano():
+                inativos = bool(rascunho["sem_termino"])
+                campo_mes.disabled = campo_ano.disabled = inativos
+                # As cores dos campos são explícitas; a opacidade deixa claro que estão inativos.
+                linha_mes_ano.opacity = 0.45 if inativos else 1.0
+
+            habilitar_mes_ano()
 
             def ao_mudar_sem_termino(ev):
                 rascunho["sem_termino"] = sem_termino.value
-                linha_mes_ano.visible = not sem_termino.value
+                habilitar_mes_ano()
                 page.update()
 
             def ao_mudar_mes(ev):
