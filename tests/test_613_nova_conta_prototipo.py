@@ -144,35 +144,123 @@ class TestAbertura(Base):
             self.assertIsInstance(self.com_data(data), ft.Button)
 
     def test_limites_de_nome_e_descricao(self):
-        self.assertEqual(self.campo("Nome da conta").counter, main.texto_contador("", 30))
-        self.assertEqual(self.campo("Descrição (opcional)").counter, main.texto_contador("", 250))
+        # 2ª rodada: o contador fica dentro do campo, à direita (suffix_icon), e não embaixo.
+        for rotulo, chave, limite in (("Nome da conta", "nome_conta", 30), ("Descrição (opcional)", "descricao", 250)):
+            campo = self.campo(rotulo)
+            contador = self.com_data(f"contador_{chave}_nova_conta")
+            self.assertIn(contador, list(percorrer(campo.suffix_icon)))
+            self.assertIsNone(campo.counter)
+            self.assertEqual(contador.value, f"0/{limite}")
+            self.escrever(rotulo, "a" * limite)
+            self.assertEqual((contador.value, campo.helper), (f"{limite}/{limite}", None))
+            self.escrever(rotulo, "a" * (limite + 1))  # recusado inteiro, como na 6.12
+            self.assertEqual((campo.value, contador.value), ("a" * limite, f"{limite}/{limite}"))
+            self.assertEqual(campo.helper, main.MENSAGEM_LIMITE_ATINGIDO)
+            self.escrever(rotulo, "")
+            self.assertEqual(contador.value, f"0/{limite}")
 
 
 class TestModalidades(Base):
     def test_parcelada(self):
+        # 2ª rodada: Nome | Categoria, Valor total | Quantidade, Primeiro vencimento | Valor por parcela.
         self.tipo("parcelada")
         self.assertEqual(self.rotulos(), ["Nome da conta", "Categoria", "Valor total da conta",
-                                          "Quantidade de parcelas", "Primeiro vencimento", "Descrição (opcional)"])
-        self.assertEqual([o.key for o in self.campo("Quantidade de parcelas").options],
-                         [str(n) for n in range(2, 37)])
-        # Resumo logo depois de Primeiro vencimento e Categoria, antes da Descrição.
+                                          "Quantidade de parcelas", "Primeiro vencimento",
+                                          "Valor por parcela (estimado)", "Descrição (opcional)"])
+        self.assertIsInstance(self.campo("Quantidade de parcelas"), ft.TextField)
+        self.assertFalse(self.existe("resumo_parcelas_nova_conta"))
+        estimado = self.com_data("valor_por_parcela_estimado")
+        self.assertTrue(estimado.read_only)
         grade = self.com_data("grade_nova_conta")
-        ordem = [getattr(cel.content, "data", None) or getattr(cel.content, "label", None)
-                 for cel in grade.controls]
-        self.assertEqual(ordem.index("resumo_parcelas_nova_conta"), ordem.index("data_nova_conta") + 1)
+        ordem = [getattr(cel.content, "data", None) for cel in grade.controls]
+        self.assertEqual(ordem.index("valor_por_parcela_estimado"), ordem.index("data_nova_conta") + 1)
+        self.assertEqual(grade.controls[ordem.index("data_nova_conta")].col, {"xs": 12, "sm": 6})
+        self.assertEqual(grade.controls[ordem.index("valor_por_parcela_estimado")].col, {"xs": 12, "sm": 6})
+
+    def informacao(self, data):
+        antes = len(self.pagina.dialogos)
+        self.clicar(self.com_data(data))
+        novos = self.pagina.dialogos[antes:]
+        self.assertEqual(len(novos), 1)
+        self.assertIsInstance(novos[0], ft.SnackBar)
+        return novos[0].content.value
 
     def test_resumo_usa_o_mesmo_calculo_do_banco(self):
         self.tipo("parcelada")
         self.escrever("Valor total da conta", "100,00")
-        self.escolher("Quantidade de parcelas", "3")
+        self.escrever("Quantidade de parcelas", "3")
         valores = db.dividir_em_parcelas(10000, 3)
         self.assertEqual(valores, [3334, 3333, 3333])
-        self.assertEqual(self.com_data("valor_por_parcela_estimado").value, "R$ 33,33")
-        self.assertIn("a 1ª de R$ 33,34 e as demais de R$ 33,33", self.com_data("frase_das_parcelas").value)
+        # Nunca "3 parcelas de R$ 33,33": o campo e o "i" mostram a 1ª diferente (D3).
+        self.assertEqual(self.com_data("valor_por_parcela_estimado").value, "R$ 33,33 (1ª: R$ 33,34)")
+        self.assertEqual(self.informacao("info_parcelas_nova_conta"),
+                         "Serão registradas 3 parcelas, com vencimento mensal: a 1ª de R$ 33,34 e as demais "
+                         "de R$ 33,33.")
         self.escrever("Valor total da conta", "1.798,80")
-        self.escolher("Quantidade de parcelas", "12")
-        self.assertEqual(self.com_data("frase_das_parcelas").value,
+        self.escrever("Quantidade de parcelas", "12")
+        self.assertEqual(self.com_data("valor_por_parcela_estimado").value, "R$ 149,90")
+        self.assertEqual(self.informacao("info_parcelas_nova_conta"),
                          "Serão registradas 12 parcelas de R$ 149,90, com vencimento mensal.")
+
+    def test_quantidade_digitada_e_pelas_setas(self):
+        self.tipo("parcelada")
+        self.escrever("Valor total da conta", "120,00")
+        campo = self.campo("Quantidade de parcelas")
+        mais, menos = self.com_data("aumentar_parcelas"), self.com_data("diminuir_parcelas")
+        self.assertEqual(campo.value, "2")
+        self.assertTrue(menos.disabled)
+        self.assertFalse(mais.disabled)
+        self.clicar(mais)
+        self.assertEqual(campo.value, "3")
+        self.assertEqual(self.com_data("valor_por_parcela_estimado").value, "R$ 40,00")
+        self.assertFalse(menos.disabled)
+        self.escrever("Quantidade de parcelas", "35")
+        self.clicar(mais)
+        self.assertEqual(campo.value, "36")
+        self.assertTrue(mais.disabled)
+        self.clicar(mais)  # já no limite: continua 36
+        self.assertEqual(campo.value, "36")
+        self.clicar(menos)
+        self.assertEqual(campo.value, "35")
+        # Fora dos limites as setas voltam para dentro deles.
+        self.escrever("Quantidade de parcelas", "50")
+        self.assertTrue(mais.disabled)
+        self.clicar(menos)
+        self.assertEqual(campo.value, "36")
+        self.escrever("Quantidade de parcelas", "1")
+        self.clicar(mais)
+        self.assertEqual(campo.value, "2")
+
+    def test_quantidade_vazia_nao_numerica_e_fora_dos_limites(self):
+        self.tipo("parcelada")
+        self.escrever("Valor total da conta", "120,00")
+        campo = self.campo("Quantidade de parcelas")
+        self.escrever("Quantidade de parcelas", "12")
+        for digitado in ("", "abc", "1", "0", "37", "99", " 12a"):
+            self.escrever("Quantidade de parcelas", digitado)
+            self.assertEqual(self.com_data("valor_por_parcela_estimado").value, "—")
+            self.assertEqual(self.informacao("info_parcelas_nova_conta"), db.MENSAGEM_QUANTIDADE_DE_PARCELAS)
+        # Vazio ao sair volta ao último número válido (12); fora dos limites, o campo avisa.
+        self.escrever("Quantidade de parcelas", "")
+        campo.on_blur(Evento(self.pagina, campo))
+        self.assertEqual((campo.value, campo.error), ("12", None))
+        self.assertEqual(self.com_data("valor_por_parcela_estimado").value, "R$ 10,00")
+        self.escrever("Quantidade de parcelas", "40")
+        campo.on_blur(Evento(self.pagina, campo))
+        self.assertEqual(campo.error, db.MENSAGEM_QUANTIDADE_DE_PARCELAS)
+        self.escrever("Quantidade de parcelas", "6")
+        self.assertIsNone(campo.error)
+        self.assertEqual(self.com_data("valor_por_parcela_estimado").value, "R$ 20,00")
+        # Só aceita até dois algarismos (o filtro também barra letras ao digitar ou colar).
+        self.assertEqual(campo.input_filter.regex_string, r"^[0-9]{0,2}$")
+
+    def test_funcoes_da_quantidade(self):
+        self.assertEqual([main.quantidade_de_parcelas(t) for t in ("2", "36", " 12 ", "1", "37", "", None, "x", "²")],
+                         [2, 36, 12, None, None, None, None, None, None])
+        self.assertEqual(main.passo_de_parcelas("36", 10, 1), 36)
+        self.assertEqual(main.passo_de_parcelas("2", 10, -1), 2)
+        self.assertEqual(main.passo_de_parcelas("", 10, 1), 11)
+        self.assertEqual(main.passo_de_parcelas("abc", 10, -1), 9)
 
     def test_resumo_sem_valor_e_valor_pequeno(self):
         self.assertEqual(main.resumo_estimado_das_parcelas(None, 3)["valor"], None)
@@ -181,22 +269,57 @@ class TestModalidades(Base):
         self.assertIsNone(main.resumo_estimado_das_parcelas(100, 37)["valor"])
 
     def test_mensal_fixo_por_padrao_e_variavel(self):
+        # 2ª rodada: Tipo de valor | Valor do primeiro mês, Primeiro vencimento | Término.
         self.tipo("mensal")
         self.assertTrue(self.selecionado(self.com_data("comportamento_fixo")))
         self.assertFalse(self.selecionado(self.com_data("comportamento_variavel")))
-        self.assertEqual(self.rotulos(), ["Nome da conta", "Categoria", "Valor por ocorrência (mensal)",
+        self.assertEqual(self.rotulos(), ["Nome da conta", "Categoria", "Valor do primeiro mês",
                                           "Primeiro vencimento", "Término da recorrência", "Descrição (opcional)"])
-        self.assertFalse(self.com_data("ajuda_valor_variavel").visible)
+        grade = self.com_data("grade_nova_conta")
+        ordem = [getattr(cel.content, "data", None) or getattr(cel.content, "label", None) for cel in grade.controls]
+        i = ordem.index("linha_comportamento_valor")
+        self.assertEqual(ordem[i:i + 4], ["linha_comportamento_valor", "valor_nova_conta", "data_nova_conta",
+                                          "termino_nova_conta"])
+        self.assertTrue(all(grade.controls[i + k].col == {"xs": 12, "sm": 6} for k in range(4)))
+        self.assertFalse(self.existe("ajuda_valor_variavel"))
         self.clicar(self.com_data("comportamento_variavel"))
         self.assertTrue(self.selecionado(self.com_data("comportamento_variavel")))
-        self.assertIn("Valor da primeira ocorrência", self.rotulos())
-        self.assertTrue(self.com_data("ajuda_valor_variavel").visible)
+        self.assertFalse(self.selecionado(self.com_data("comportamento_fixo")))
+        self.assertIn("Valor do primeiro mês", self.rotulos())
+
+    def test_informacao_do_tipo_de_valor_nao_muda_a_escolha(self):
+        for tipo, fixo, variavel in (("mensal", "O mesmo valor todos os meses.", "O valor pode mudar a cada mês."),
+                                     ("anual", "O mesmo valor todos os anos.", "O valor pode mudar a cada ano.")):
+            self.tipo(tipo)
+            self.clicar(self.com_data("comportamento_fixo"))
+            self.assertEqual(self.informacao("info_comportamento_variavel"), variavel)
+            self.assertTrue(self.selecionado(self.com_data("comportamento_fixo")))
+            self.clicar(self.com_data("comportamento_variavel"))
+            self.assertEqual(self.informacao("info_comportamento_fixo"), fixo)
+            self.assertTrue(self.selecionado(self.com_data("comportamento_variavel")))
+            self.assertNotIn("ocorrência", fixo + variavel)
 
     def test_anual_segue_a_mensal(self):
         self.tipo("anual")
-        self.assertIn("Valor por ocorrência (anual)", self.rotulos())
+        self.assertIn("Valor do primeiro ano", self.rotulos())
         self.assertIn("Conta recorrente anual", [c.value for c in self.controles(ft.Text)])
         self.assertTrue(self.selecionado(self.com_data("comportamento_fixo")))
+        self.assertTrue(self.existe("linha_comportamento_valor"))
+
+    def test_disposicao_do_tipo_de_valor_por_largura(self):
+        esperado = {320: (False, "empilhada"), 380: (False, "empilhada"), 560: (False, "com_icone"),
+                    720: (True, "com_icone"), 760: (False, "compacta"), 1000: (False, "com_icone"),
+                    1300: (False, "com_icone"), None: (False, "com_icone"), mock.MagicMock(): (False, "com_icone")}
+        for largura, disposicao in esperado.items():
+            self.assertEqual(main.disposicao_tipo_de_valor(largura), disposicao, largura)
+        # Meia coluna estreita (720 px): Tipo de valor e Término na linha toda; nenhuma meia coluna vazia.
+        self.pagina.width = 720
+        self.tipo("mensal")
+        grade = self.com_data("grade_nova_conta")
+        cols = {getattr(cel.content, "data", None): cel.col for cel in grade.controls}
+        self.assertEqual(cols["linha_comportamento_valor"], 12)
+        self.assertEqual(cols["termino_nova_conta"], 12)
+        self.assertEqual(cols["valor_nova_conta"], {"xs": 12, "sm": 6})
 
     def test_valores_digitados_continuam_ao_trocar_de_tipo(self):
         self.preencher()
@@ -273,10 +396,20 @@ class TestGravacaoIgualA612(Base):
         self.assertEqual(self.erro(), "O término não pode ser anterior à data de vencimento inicial.")
         self.assertEqual(self.contagem("contas"), 0)
 
+    def test_quantidade_fora_dos_limites_nao_grava(self):
+        self.tipo("parcelada")
+        self.preencher(valor="100,00")
+        for digitado in ("", "1", "37", "x"):
+            self.escrever("Quantidade de parcelas", digitado)
+            self.salvar()
+            self.assertEqual(self.erro(), db.MENSAGEM_QUANTIDADE_DE_PARCELAS)
+            self.assertEqual(self.abertos(), [])
+            self.assertEqual(self.contagem("contas"), 0)
+
     def test_parcelada_previa_e_so_o_confirmar_grava(self):
         self.tipo("parcelada")
         self.preencher(valor="100,00")
-        self.escolher("Quantidade de parcelas", "3")
+        self.escrever("Quantidade de parcelas", "3")
         self.salvar()
         dlg = self.abertos()[-1]
         self.assertEqual(dlg.data, "dialogo_previa_parcelamento")

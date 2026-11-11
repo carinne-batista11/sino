@@ -789,6 +789,74 @@ def tipos_da_conta_empilhados(largura_pagina):
     return isinstance(largura_pagina, (int, float)) and 0 < largura_pagina < LARGURA_TIPOS_EMPILHADOS
 
 
+# Protótipo 6.13 (2ª rodada, referência tela_mensal_anual.png): Tipo de valor como um campo, com
+# Valor fixo | Valor variável dentro dele e um "i" em cada opção. Textos sem "ocorrência".
+TEXTOS_TIPO_DE_VALOR = {
+    "mensal": {"fixo": "O mesmo valor todos os meses.", "variavel": "O valor pode mudar a cada mês."},
+    "anual": {"fixo": "O mesmo valor todos os anos.", "variavel": "O valor pode mudar a cada ano."},
+}
+ROTULO_VALOR_RECORRENTE = {"mensal": "Valor do primeiro mês", "anual": "Valor do primeiro ano"}
+# Medidas do formulário da Nova conta usadas para saber a largura de um campo. A margem lateral
+# real é 44 px de cada lado (medida nas capturas: 20 do Container da tela + 24 da vista da página).
+MARGEM_NOVA_CONTA = 44
+ESPACO_COLUNAS_NOVA_CONTA = 12
+INICIO_DUAS_COLUNAS = 576  # breakpoint "sm" do ResponsiveRow
+# Largura mínima do campo Tipo de valor para as duas opções lado a lado: com o ícone do campo
+# e, abaixo disso, sem ele. Menor que a compacta, uma opção fica sobre a outra.
+LARGURA_TIPO_DE_VALOR_COM_ICONE = 400
+LARGURA_TIPO_DE_VALOR_COMPACTA = 330
+
+
+def disposicao_tipo_de_valor(largura_pagina):
+    """(linha_inteira, forma) do campo Tipo de valor; forma: "com_icone", "compacta" ou "empilhada".
+
+    Em duas colunas, se a meia coluna não comporta as opções lado a lado, o campo ocupa a linha
+    inteira (nunca fica mais alto que o vizinho). Largura desconhecida conta como larga.
+    """
+    if not isinstance(largura_pagina, (int, float)) or largura_pagina <= 0:
+        return False, "com_icone"
+    util = largura_pagina - 2 * MARGEM_NOVA_CONTA
+    linha_inteira = False
+    campo = util
+    if largura_pagina >= INICIO_DUAS_COLUNAS:
+        campo = (util - ESPACO_COLUNAS_NOVA_CONTA) / 2
+        if campo < LARGURA_TIPO_DE_VALOR_COMPACTA:
+            campo, linha_inteira = util, True
+    if campo >= LARGURA_TIPO_DE_VALOR_COM_ICONE:
+        return linha_inteira, "com_icone"
+    return linha_inteira, "compacta" if campo >= LARGURA_TIPO_DE_VALOR_COMPACTA else "empilhada"
+
+
+def quantidade_de_parcelas(texto):
+    """Quantidade digitada, se for um número de 2 a 36; senão None (vazio, não numérico, fora dos limites)."""
+    texto = (texto or "").strip()
+    if not (texto.isascii() and texto.isdigit()):
+        return None
+    quantidade = int(texto)
+    return quantidade if database.MINIMO_PARCELAS <= quantidade <= database.MAXIMO_PARCELAS else None
+
+
+def base_das_setas_de_parcelas(texto, ultimo_valido):
+    """Número de onde as setas partem: o digitado (mesmo fora dos limites) ou, sem número, o último válido."""
+    texto = (texto or "").strip()
+    return int(texto) if texto.isascii() and texto.isdigit() else ultimo_valido
+
+
+def passo_de_parcelas(texto, ultimo_valido, delta):
+    """Quantidade depois de uma seta (+1 ou -1), sempre dentro de 2 a 36."""
+    base = base_das_setas_de_parcelas(texto, ultimo_valido)
+    return max(database.MINIMO_PARCELAS, min(database.MAXIMO_PARCELAS, base + delta))
+
+
+def valor_do_campo_estimado(resumo):
+    """Texto do campo Valor por parcela (estimado): o valor das parcelas e, se a 1ª for diferente (D3), ela."""
+    if resumo["valor"] is None:
+        return "—"
+    if resumo["primeira"] is None:
+        return formatar_moeda(resumo["valor"])
+    return f"{formatar_moeda(resumo['valor'])} (1ª: {formatar_moeda(resumo['primeira'])})"
+
+
 def resumo_estimado_das_parcelas(valor_total, quantidade):
     """PROTÓTIPO 6.13: valor por parcela mostrado na Nova conta (Parcelada), só cálculo.
 
@@ -7992,9 +8060,33 @@ def main(page: ft.Page):
             )
 
         # ------------------------------------------------------------------ conta comum
+        def mostrar_informacao(mensagem):
+            # Mesmo padrão dos rótulos do comparativo: toque no "i" mostra o texto num aviso curto.
+            page.show_dialog(ft.SnackBar(ft.Text(mensagem, color=cores.fundo_card), bgcolor=cores.texto_principal,
+                                         data="informacao_nova_conta"))
+            page.update()
+
+        def ligar_contador_interno(campo, chave, limite):
+            """Contador dentro do campo, à direita, na linha do conteúdo (suffix_icon fica sempre visível
+            e o texto nunca passa por baixo dele). Limite, recusa, "Limite atingido" e som continuam os
+            de `LimiteDoCampo`; só o contador de baixo (que reservava uma linha) fica desligado."""
+            contador = ft.Text(texto_contador(campo.value, limite), size=12, color=cores.texto_secundario,
+                               data=f"contador_{chave}_nova_conta")
+            # Largura fixa para o maior contador do limite ("250/250"): sem ela, o alinhamento faria o
+            # Container ocupar a largura toda e espremer o texto; com ela, o contador fica centrado na
+            # altura do campo, à direita, e o texto quebra antes dele.
+            largura = 8 * len(f"{limite}/{limite}") + 16
+            campo.suffix_icon = ft.Container(content=contador, width=largura, padding=ft.Padding(0, 0, 12, 0),
+                                             alignment=ft.Alignment.CENTER_RIGHT)
+
+            def ao_mudar(e):
+                contador.value = texto_contador(campo.value, limite)
+
+            ligar_contador_de_limite(campo, chave, limite, ao_mudar=ao_mudar, mostrar_contador=False)
+            return contador
+
         campo_nome = ft.TextField(
             label="Nome da conta", hint_text="Ex: Aluguel, Internet...", color=cores.texto_principal,
-            counter=texto_contador("", limites.LIMITE_NOME_CONTA),
             **estilo_criacao(ft.Icons.DESCRIPTION_OUTLINED),
         )
         campo_valor = ft.TextField(
@@ -8005,11 +8097,10 @@ def main(page: ft.Page):
         campo_descricao = ft.TextField(
             label="Descrição (opcional)", hint_text=f"Até {limites.LIMITE_DESCRICAO} caracteres",
             multiline=True, min_lines=2, max_lines=8, color=cores.texto_principal,
-            counter=texto_contador("", limites.LIMITE_DESCRICAO),
             **estilo_criacao(ft.Icons.NOTES),
         )
-        ligar_contador_de_limite(campo_nome, "nome_conta", limites.LIMITE_NOME_CONTA)
-        ligar_contador_de_limite(campo_descricao, "descricao", limites.LIMITE_DESCRICAO)
+        ligar_contador_interno(campo_nome, "nome_conta", limites.LIMITE_NOME_CONTA)
+        ligar_contador_interno(campo_descricao, "descricao", limites.LIMITE_DESCRICAO)
 
         def ao_escolher_data(e):
             if e.control.value:
@@ -8060,51 +8151,91 @@ def main(page: ft.Page):
 
         campo_categoria.on_select = ao_mudar_categoria
 
-        # Parcelada: quantidade de 2 a 36 (D4), na mesma lista da 6.12.
-        campo_parcelas = ft.Dropdown(
+        # Parcelada: quantidade de 2 a 36 (D4), digitada ou pelas setas (referência novaconta_parcela.png).
+        # `recorrencia["parcelas"]` guarda o último número válido; Salvar confere o que está digitado.
+        def seta_de_parcelas(icone, nome, delta, data):
+            return ft.IconButton(
+                icon=icone_com_nome(icone, nome, cores.texto_secundario, 18), icon_size=18,
+                icon_color=cores.texto_secundario, data=data, width=34, height=22, padding=0,
+                size_constraints=ft.BoxConstraints(min_width=34, min_height=22, max_width=34, max_height=22),
+                style=ft.ButtonStyle(padding=0, shape=ft.RoundedRectangleBorder(radius=6)),
+                on_click=lambda e: mudar_parcelas_pela_seta(delta),
+            )
+
+        seta_mais = seta_de_parcelas(ft.Icons.KEYBOARD_ARROW_UP, "Aumentar a quantidade de parcelas", 1,
+                                     "aumentar_parcelas")
+        seta_menos = seta_de_parcelas(ft.Icons.KEYBOARD_ARROW_DOWN, "Diminuir a quantidade de parcelas", -1,
+                                      "diminuir_parcelas")
+        campo_parcelas = ft.TextField(
             label="Quantidade de parcelas", value=recorrencia["parcelas"], color=cores.texto_principal,
-            options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS], expand=True,
-            border_radius=RAIO_EDICAO, border_width=1, focused_border_width=2, text_size=15,
-            leading_icon=ft.Icon(ft.Icons.LAYERS_OUTLINED, size=20, color=cores.texto_secundario),
-            data="quantidade_parcelas_nova_conta", **estilo_lista(),
+            keyboard_type=ft.KeyboardType.NUMBER, data="quantidade_parcelas_nova_conta",
+            input_filter=ft.InputFilter(regex_string=r"^[0-9]{0,2}$", allow=True, replacement_string=""),
+            suffix_icon=ft.Container(padding=ft.Padding(0, 0, 6, 0), content=ft.Column(
+                spacing=0, tight=True, alignment=ft.MainAxisAlignment.CENTER, controls=[seta_mais, seta_menos])),
+            **estilo_criacao(ft.Icons.LAYERS_OUTLINED),
         )
 
-        # Resumo estimado (abaixo de Primeiro vencimento e Categoria): mesmo cálculo do banco (D3).
-        valor_parcela = texto("—", 22, True, cores.texto_sucesso, data="valor_por_parcela_estimado")
-        primeira_parcela = texto("", 12, cor=cores.texto_secundario, visible=False)
-        frase_parcelas = texto(TEXTO_SEM_ESTIMATIVA_PARCELAS, 13, data="frase_das_parcelas")
-        resumo_parcelas = ft.Container(
-            data="resumo_parcelas_nova_conta", bgcolor=cores.grafico_total_fundo, border_radius=12,
-            padding=ft.Padding(16, 12, 16, 12),
-            content=ft.ResponsiveRow(spacing=12, run_spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                                     controls=[
-                ft.Row(col={"xs": 12, "md": 5}, spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                       controls=[
-                    ft.Icon(ft.Icons.CALCULATE_OUTLINED, size=26, color=cores.grafico_total_icone),
-                    ft.Column(expand=True, spacing=0, controls=[
-                        texto("Valor por parcela (estimado)", 13, True), valor_parcela, primeira_parcela]),
-                ]),
-                ft.Row(col={"xs": 12, "md": 7}, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                       controls=[ft.Icon(ft.Icons.INFO_OUTLINE, size=22, color=cores.texto_secundario),
-                                 ft.Column(expand=True, controls=[frase_parcelas])]),
-            ]),
+        # Valor por parcela (estimado): campo informativo, do tamanho dos outros, com o mesmo cálculo
+        # do banco (D3: a diferença de centavos fica na 1ª parcela). O "i" mostra a distribuição.
+        frase_parcelas = {"valor": TEXTO_SEM_ESTIMATIVA_PARCELAS}
+        info_parcelas = ft.IconButton(
+            icon=icone_com_nome(ft.Icons.INFO_OUTLINE, "Como as parcelas serão registradas", cores.acao_primaria, 20),
+            icon_color=cores.acao_primaria, data="info_parcelas_nova_conta",
+            on_click=lambda e: mostrar_informacao(frase_parcelas["valor"]),
         )
+        estilo_estimado = estilo_criacao()
+        estilo_estimado.pop("text_size")
+        campo_valor_parcela = ft.TextField(
+            label="Valor por parcela (estimado)", value="—", read_only=True, can_request_focus=False,
+            multiline=True, min_lines=1, max_lines=2, data="valor_por_parcela_estimado",
+            filled=True, fill_color=cores.grafico_total_fundo, suffix_icon=info_parcelas,
+            prefix_icon=ft.Icon(ft.Icons.CALCULATE_OUTLINED, size=20, color=cores.grafico_total_icone),
+            text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD, color=cores.texto_sucesso),
+            **estilo_estimado,
+        )
+
+        def atualizar_setas_de_parcelas():
+            base = base_das_setas_de_parcelas(campo_parcelas.value, int(recorrencia["parcelas"]))
+            seta_mais.disabled = base >= database.MAXIMO_PARCELAS
+            seta_menos.disabled = base <= database.MINIMO_PARCELAS
 
         def atualizar_resumo_parcelas(e=None):
-            resumo = resumo_estimado_das_parcelas(parse_valor(campo_valor.value), int(recorrencia["parcelas"]))
-            valor_parcela.value = formatar_moeda(resumo["valor"]) if resumo["valor"] is not None else "—"
-            primeira_parcela.visible = resumo["primeira"] is not None
-            if resumo["primeira"] is not None:
-                primeira_parcela.value = f"1ª parcela: {formatar_moeda(resumo['primeira'])}"
-            frase_parcelas.value = resumo["frase"]
+            quantidade = quantidade_de_parcelas(campo_parcelas.value)
+            if quantidade is None:
+                resumo = {"valor": None, "primeira": None, "frase": database.MENSAGEM_QUANTIDADE_DE_PARCELAS}
+            else:
+                resumo = resumo_estimado_das_parcelas(parse_valor(campo_valor.value), quantidade)
+            campo_valor_parcela.value = valor_do_campo_estimado(resumo)
+            frase_parcelas["valor"] = resumo["frase"]
+            atualizar_setas_de_parcelas()
             if e is not None:
                 page.update()
 
-        def ao_mudar_parcelas(e):
-            recorrencia["parcelas"] = campo_parcelas.value
+        def ao_digitar_parcelas(e):
+            # Vazio ou fora de 2 a 36 durante a digitação: nada muda além do resumo ("—") e das setas.
+            quantidade = quantidade_de_parcelas(campo_parcelas.value)
+            if quantidade is not None:
+                recorrencia["parcelas"] = str(quantidade)
+                campo_parcelas.error = None
             atualizar_resumo_parcelas(e)
 
-        campo_parcelas.on_select = ao_mudar_parcelas
+        def ao_sair_das_parcelas(e):
+            # Vazio ao sair volta ao último número válido; fora dos limites, o campo avisa.
+            if not (campo_parcelas.value or "").strip():
+                campo_parcelas.value = recorrencia["parcelas"]
+            campo_parcelas.error = (None if quantidade_de_parcelas(campo_parcelas.value) is not None
+                                    else database.MENSAGEM_QUANTIDADE_DE_PARCELAS)
+            atualizar_resumo_parcelas(e)
+
+        def mudar_parcelas_pela_seta(delta):
+            novo = passo_de_parcelas(campo_parcelas.value, int(recorrencia["parcelas"]), delta)
+            campo_parcelas.value = recorrencia["parcelas"] = str(novo)
+            campo_parcelas.error = None
+            atualizar_resumo_parcelas()
+            page.update()
+
+        campo_parcelas.on_change = ao_digitar_parcelas
+        campo_parcelas.on_blur = ao_sair_das_parcelas
         campo_valor.on_change = atualizar_resumo_parcelas
 
         # Recorrências: término num campo do formulário; Mês e Ano no diálogo central (padrão de
@@ -8194,29 +8325,60 @@ def main(page: ft.Page):
         campo_termino.on_click = mostrar_dialogo_termino
         botao_termino.on_click = mostrar_dialogo_termino
 
-        # Tipo de valor (só Mensal e Anual): Fixo é o padrão, como na 6.12.
-        def cartao_valor(valor, titulo, subtitulo):
-            return ft.Button(col={"xs": 12, "sm": 6, "md": 5}, height=68, data=f"comportamento_{valor}",
-                             on_click=lambda e: escolher_comportamento(valor),
-                             content=ft.Row(spacing=10, controls=[
-                                 ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, size=22, color=cores.texto_secundario),
-                                 ft.Column(expand=True, spacing=0, alignment=ft.MainAxisAlignment.CENTER, controls=[
-                                     texto(titulo, 14, True), texto(subtitulo, 12, cor=cores.texto_secundario)]),
-                             ]))
+        # Tipo de valor (só Mensal e Anual): um campo com borda, rótulo na borda e a altura dos outros
+        # (caixa de 48 px), com Valor fixo | Valor variável dentro. Fixo é o padrão, como na 6.12.
+        # Cada opção é um botão (escolhe) e um "i" separado (só informa; não muda a escolha).
+        ALTURA_CAMPO = 48
 
-        cartoes_valor = [cartao_valor("fixo", "Valor fixo", "O mesmo valor em todas as ocorrências."),
-                         cartao_valor("variavel", "Valor variável", "O valor pode mudar a cada ocorrência.")]
-        ajuda_variavel = texto(TEXTO_AJUDA_VARIAVEL, 12, cor=cores.texto_secundario, data="ajuda_valor_variavel")
-        bloco_tipo_valor = ft.Column(data="linha_comportamento_valor", spacing=6, controls=[
-            ft.ResponsiveRow(spacing=10, run_spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
-                ft.Row(col={"xs": 12, "md": 2}, spacing=4, controls=[
-                    texto("Tipo de valor", 15, True),
-                    ft.Icon(ft.Icons.INFO_OUTLINE, size=18, color=cores.texto_secundario,
-                            tooltip=TEXTO_AJUDA_VARIAVEL)]),
-                *cartoes_valor,
-            ]),
-            ajuda_variavel,
-        ])
+        def opcao_de_valor(valor, rotulo, periodo, lado_a_lado):
+            ativo = (valor == "variavel") == recorrencia["variavel"]
+            mensagem = TEXTOS_TIPO_DE_VALOR[periodo][valor]
+            indicador = ft.Icon(ft.Icons.RADIO_BUTTON_CHECKED if ativo else ft.Icons.RADIO_BUTTON_UNCHECKED, size=18,
+                                color=cores.acao_primaria if ativo else cores.texto_secundario,
+                                semantics_label="Selecionado" if ativo else "Não selecionado")
+            escolher = ft.TextButton(
+                data=f"comportamento_{valor}", expand=True, height=34, on_click=lambda e: escolher_comportamento(valor),
+                style=ft.ButtonStyle(color=cores.texto_principal, padding=ft.Padding(8, 0, 2, 0),
+                                     alignment=ft.Alignment.CENTER_LEFT, shape=ft.RoundedRectangleBorder(radius=8)),
+                content=ft.Row(spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                    indicador, ft.Text(rotulo, size=13, weight=ft.FontWeight.BOLD, color=cores.texto_principal,
+                                       no_wrap=True)]),
+            )
+            info = ft.IconButton(
+                icon=icone_com_nome(ft.Icons.INFO_OUTLINE, f"Sobre {rotulo.lower()}", cores.texto_secundario, 18),
+                icon_size=18, icon_color=cores.texto_secundario, data=f"info_comportamento_{valor}",
+                width=30, height=30, padding=0, tooltip=mensagem,
+                size_constraints=ft.BoxConstraints(min_width=30, min_height=30, max_width=30, max_height=30),
+                on_click=lambda e: mostrar_informacao(mensagem),
+            )
+            return ft.Container(
+                expand=lado_a_lado, height=36, border_radius=8,
+                bgcolor=cores.grafico_total_fundo if ativo else cores.fundo_card,
+                border=ft.Border.all(1.5 if ativo else 1, cores.acao_primaria if ativo else cores.borda_suave),
+                padding=ft.Padding(0, 0, 2, 0), data=f"opcao_{valor}",
+                content=ft.Row(spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[escolher, info]),
+            )
+
+        def campo_tipo_de_valor(periodo, forma):
+            lado_a_lado = forma != "empilhada"
+            opcoes = [opcao_de_valor("fixo", "Valor fixo", periodo, lado_a_lado),
+                      opcao_de_valor("variavel", "Valor variável", periodo, lado_a_lado)]
+            miolo = (ft.Row(spacing=8, expand=True, controls=opcoes) if lado_a_lado else
+                     ft.Column(spacing=6, expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                               controls=opcoes))
+            icone = [ft.Icon(ft.Icons.PRICE_CHANGE_OUTLINED, size=20, color=cores.texto_secundario)] \
+                if forma == "com_icone" else []
+            caixa = ft.Container(
+                height=ALTURA_CAMPO if lado_a_lado else None, border=ft.Border.all(1, cores.borda_campo),
+                border_radius=RAIO_EDICAO,
+                padding=ft.Padding(12 if icone else 5, 5, 5, 5),
+                content=ft.Row(spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=icone + [miolo]),
+            )
+            # Rótulo na borda, como o rótulo flutuante dos campos (o fundo da página "corta" a linha).
+            rotulo = ft.Container(left=10, top=-8, padding=ft.Padding(4, 0, 4, 0), bgcolor=cores.fundo_pagina,
+                                  content=ft.Text("Tipo de valor", size=12, color=cores.texto_secundario))
+            return ft.Stack(data="linha_comportamento_valor", clip_behavior=ft.ClipBehavior.NONE,
+                            controls=[caixa, rotulo])
 
         def escolher_comportamento(valor):
             recorrencia["variavel"] = valor == "variavel"
@@ -8433,39 +8595,32 @@ def main(page: ft.Page):
             faixa_tipo.bgcolor, faixa_tipo.border_radius = cores.grafico_total_fundo, 12
             faixa_tipo.padding = ft.Padding(16, 12, 16, 12)
 
-            recorrente = tipo in ("mensal", "anual")
-            variavel = recorrente and recorrencia["variavel"]
-            for cartao in cartoes_valor:
-                ativo = cartao.data == ("comportamento_variavel" if recorrencia["variavel"] else "comportamento_fixo")
-                cartao.style = ft.ButtonStyle(
-                    bgcolor=cores.grafico_total_fundo if ativo else cores.fundo_card, color=cores.texto_principal,
-                    side=ft.BorderSide(2 if ativo else 1, cores.acao_primaria if ativo else cores.borda_suave),
-                    shape=ft.RoundedRectangleBorder(radius=12), padding=ft.Padding(12, 8, 12, 8), elevation=0)
-                cartao.content.controls[0] = ft.Icon(
-                    ft.Icons.RADIO_BUTTON_CHECKED if ativo else ft.Icons.RADIO_BUTTON_UNCHECKED, size=22,
-                    color=cores.acao_primaria if ativo else cores.texto_secundario,
-                    semantics_label="Selecionado" if ativo else "Não selecionado")
-            ajuda_variavel.visible = variavel
-
-            periodo = "mensal" if tipo == "mensal" else "anual"
+            # 2ª rodada: "Valor do primeiro mês/ano" (fixo e variável); o valor continua obrigatório.
             campo_valor.label = {"unica": "Valor da conta", "parcelada": "Valor total da conta"}.get(
-                tipo, "Valor da primeira ocorrência" if variavel else f"Valor por ocorrência ({periodo})")
+                tipo, ROTULO_VALOR_RECORRENTE.get(tipo))
             campo_data.label = "Data de vencimento" if tipo == "unica" else "Primeiro vencimento"
             campo_termino.value = texto_do_termino()
             atualizar_resumo_parcelas()
 
-            # Ordem aprovada: tipos, faixa, Nome | Categoria e os campos da modalidade, em duas colunas.
+            # Ordem aprovada: tipos, faixa, Nome | Categoria e os campos da modalidade, em duas colunas,
+            # sem meia coluna vazia; Descrição por último.
             controles = [celula(bloco_tipos), celula(faixa_tipo), celula(campo_nome, meia),
                          celula(ft.Row(controls=[campo_categoria]), meia)]
             if tipo == "unica":
                 controles += [celula(campo_valor, meia), celula(campo_data, meia)]
             elif tipo == "parcelada":
-                # Resumo abaixo de Primeiro vencimento e Categoria (decisão anterior), antes da Descrição.
-                controles += [celula(campo_valor, meia), celula(ft.Row(controls=[campo_parcelas]), meia),
-                              celula(campo_data, meia), celula(resumo_parcelas)]
+                controles += [celula(campo_valor, meia), celula(campo_parcelas, meia),
+                              celula(campo_data, meia), celula(campo_valor_parcela, meia)]
             else:
-                controles += [celula(bloco_tipo_valor), celula(campo_valor, meia), celula(campo_data, meia),
-                              celula(campo_termino, meia)]
+                linha_inteira, forma = disposicao_tipo_de_valor(page.width)
+                if linha_inteira:
+                    # Meia coluna estreita demais para as duas opções: Tipo de valor na linha toda,
+                    # Valor | Primeiro vencimento e Término na linha toda (nenhuma meia coluna vazia).
+                    controles += [celula(campo_tipo_de_valor(tipo, forma)), celula(campo_valor, meia),
+                                  celula(campo_data, meia), celula(campo_termino)]
+                else:
+                    controles += [celula(campo_tipo_de_valor(tipo, forma), meia), celula(campo_valor, meia),
+                                  celula(campo_data, meia), celula(campo_termino, meia)]
             grade.controls = controles + [celula(campo_descricao)]
             linha_botoes.controls = [botao_cancelar, botao_salvar]
 
@@ -8494,6 +8649,9 @@ def main(page: ft.Page):
                 erro.value = "Informe um valor válido."
             elif data_selecionada["valor"] is None:
                 erro.value = "Escolha a data de vencimento."
+            elif tipo == "parcelada" and quantidade_de_parcelas(campo_parcelas.value) is None:
+                # 2ª rodada: o que está digitado é o que vale; vazio ou fora de 2 a 36 não segue.
+                erro.value = database.MENSAGEM_QUANTIDADE_DE_PARCELAS
             elif tipo in ("mensal", "anual") and not recorrencia["sem_termino"]:
                 mes_termino = int(recorrencia["mes"])
                 ano_termino = int(recorrencia["ano"])
@@ -8511,7 +8669,7 @@ def main(page: ft.Page):
                 return
 
             if tipo == "parcelada":
-                mostrar_previa_do_parcelamento(nome, valor, int(recorrencia["parcelas"]),
+                mostrar_previa_do_parcelamento(nome, valor, quantidade_de_parcelas(campo_parcelas.value),
                                                data_selecionada["valor"].isoformat(), categoria_id, descricao)
                 return
 
@@ -8607,13 +8765,16 @@ def main(page: ft.Page):
                 controls=[cabecalho, cartoes_modo, grade],
             )),
         ])
-        forma_dos_tipos = {"valor": tipos_da_conta_empilhados(page.width)}
+        def forma_da_tela():
+            return tipos_da_conta_empilhados(page.width), disposicao_tipo_de_valor(page.width)
+
+        forma_dos_tipos = {"valor": forma_da_tela()}
 
         def ao_redimensionar(e):
-            # Só redesenha se os cartões de tipo mudarem de forma, e só com esta tela aberta.
+            # Só redesenha se os cartões de tipo ou o Tipo de valor mudarem de forma, e só com esta tela aberta.
             if not tela["ativa"]:
                 return
-            nova = tipos_da_conta_empilhados(page.width)
+            nova = forma_da_tela()
             if nova != forma_dos_tipos["valor"]:
                 forma_dos_tipos["valor"] = nova
                 aplicar()
