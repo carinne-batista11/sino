@@ -395,6 +395,13 @@ def montar_mensagem_alteracao(nome_antigo, nome_novo, valor_antigo, valor_novo, 
         )
     elif recorrencia_acao == "encerrar":
         frase_recorrencia_especial = "Você encerrou a recorrência desta conta."
+    elif recorrencia_acao == "alterar_termino":  # 6.13 (melhoria B)
+        if recorrencia_data_termino:
+            ano_t, mes_t = map(int, recorrencia_data_termino.split("-"))
+            frase_recorrencia_especial = (f"Você alterou o término da recorrência para "
+                                          f"{MESES_PT[mes_t - 1].lower()} de {ano_t}.")
+        else:
+            frase_recorrencia_especial = "Você deixou a recorrência sem data de término."
 
     frase_alterou = None
     if partes:
@@ -687,6 +694,30 @@ def filtrar_por_status(contas, filtro):
 
 
 TEXTO_NAO_RECORRENTE = "Esta conta não é recorrente."
+
+
+# 6.13 (melhoria B): textos do diálogo "Alterar término da recorrência".
+TEXTO_AVISO_RECRIACAO_TERMINO = ("Ao prorrogar ou remover o término, ocorrências que tinham sido excluídas "
+                                 "poderão voltar a ser geradas.")
+TEXTO_TERMINO_COM_VENCIMENTO_EM_DIANTE = (
+    "Não é possível mudar o vencimento em “Este mês em diante” junto com a alteração do término. "
+    "Salve uma alteração de cada vez: desfaça o término pendente ou escolha “Somente este mês”.")
+
+
+def texto_ocorrencias_excluidas_no_termino(quantidade):
+    if quantidade == 1:
+        return "1 ocorrência sem pagamentos depois do novo término será excluída ao salvar."
+    return f"{quantidade} ocorrências sem pagamentos depois do novo término serão excluídas ao salvar."
+
+
+def texto_ocorrencias_preservadas_no_termino(vencimentos):
+    """B3: os vencimentos (ISO) das que ficam além do novo término por histórico protegido."""
+    datas = ", ".join(date.fromisoformat(v).strftime("%d/%m/%Y") for v in vencimentos)
+    if len(vencimentos) == 1:
+        return ("Esta ocorrência tem pagamentos ou edição individual e continuará registrada depois "
+                f"do novo término: {datas}.")
+    return ("Estas ocorrências têm pagamentos ou edição individual e continuarão registradas depois "
+            f"do novo término: {datas}.")
 
 
 def resumo_curto_recorrencia(tipo, variavel=False, data_termino=None, parcelas=None):
@@ -1529,6 +1560,70 @@ def main(page: ft.Page):
             error_style=ft.TextStyle(color=cores.texto_erro),
             bgcolor=cores.fundo_dialogo,  # fundo do menu aberto
         )
+
+    def controle_quantidade_de_parcelas(estado, chave, ao_mudar, data, **estilo):
+        """6.13 (melhoria A): quantidade de parcelas de 2 a 36, digitada ou pelas setas -- o mesmo
+        controle em Nova conta, Parcelar esta conta e Alterar parcelamento. `estado[chave]` guarda o
+        último número válido (texto); `ao_mudar(e)` é chamado a cada mudança (o campo pode estar
+        vazio ou fora dos limites: quem chama confere com `quantidade_de_parcelas`). Nenhuma regra
+        financeira aqui: limites e cálculos continuam no banco."""
+        def seta(icone, nome, delta, chave_da_seta):
+            return ft.IconButton(
+                icon=icone_com_nome(icone, nome, cores.texto_secundario, 18), icon_size=18,
+                icon_color=cores.texto_secundario, data=chave_da_seta, width=34, height=22, padding=0,
+                size_constraints=ft.BoxConstraints(min_width=34, min_height=22, max_width=34, max_height=22),
+                style=ft.ButtonStyle(padding=0, shape=ft.RoundedRectangleBorder(radius=6)),
+                on_click=lambda e: mudar_pela_seta(delta),
+            )
+
+        seta_mais = seta(ft.Icons.KEYBOARD_ARROW_UP, "Aumentar a quantidade de parcelas", 1, "aumentar_parcelas")
+        seta_menos = seta(ft.Icons.KEYBOARD_ARROW_DOWN, "Diminuir a quantidade de parcelas", -1,
+                          "diminuir_parcelas")
+        campo = ft.TextField(
+            label="Quantidade de parcelas", value=estado[chave], color=cores.texto_principal,
+            keyboard_type=ft.KeyboardType.NUMBER, data=data,
+            input_filter=ft.InputFilter(regex_string=r"^[0-9]{0,2}$", allow=True, replacement_string=""),
+            suffix_icon=ft.Container(padding=ft.Padding(0, 0, 6, 0), content=ft.Column(
+                spacing=0, tight=True, alignment=ft.MainAxisAlignment.CENTER, controls=[seta_mais, seta_menos])),
+            **estilo,
+        )
+
+        def atualizar_setas():
+            base = base_das_setas_de_parcelas(campo.value, int(estado[chave]))
+            seta_mais.disabled = base >= database.MAXIMO_PARCELAS
+            seta_menos.disabled = base <= database.MINIMO_PARCELAS
+
+        def avisar(e):
+            atualizar_setas()
+            ao_mudar(e)
+
+        def ao_digitar(e):
+            # Vazio ou fora de 2 a 36 durante a digitação: o último válido não muda.
+            quantidade = quantidade_de_parcelas(campo.value)
+            if quantidade is not None:
+                estado[chave] = str(quantidade)
+                campo.error = None
+            avisar(e)
+
+        def ao_sair(e):
+            # Vazio ao sair volta ao último número válido; fora dos limites, o campo avisa.
+            if not (campo.value or "").strip():
+                campo.value = estado[chave]
+            campo.error = (None if quantidade_de_parcelas(campo.value) is not None
+                           else database.MENSAGEM_QUANTIDADE_DE_PARCELAS)
+            avisar(e)
+
+        def mudar_pela_seta(delta):
+            novo = passo_de_parcelas(campo.value, int(estado[chave]), delta)
+            campo.value = estado[chave] = str(novo)
+            campo.error = None
+            avisar(None)
+            page.update()
+
+        campo.on_change = ao_digitar
+        campo.on_blur = ao_sair
+        atualizar_setas()
+        return campo
 
     page.theme = tema_flet("claro")
     page.dark_theme = tema_flet("escuro")
@@ -3670,7 +3765,8 @@ def main(page: ft.Page):
                         termino_exibido = rascunho_recorrencia["data_termino"]
                     else:
                         frequencia_exibida = info_serie["frequencia"]
-                        termino_exibido = info_serie["data_termino"]
+                        termino_exibido = (rascunho_recorrencia["data_termino"]  # 6.13 (B): prévia do rascunho
+                                           if acao_pendente == "alterar_termino" else info_serie["data_termino"])
                     variavel_exibida = (rascunho_recorrencia["variavel"] if acao_pendente == "transformar"
                                         else eh_variavel)
                     texto_recorrencia = resumo_curto_recorrencia(frequencia_exibida, variavel_exibida,
@@ -3680,10 +3776,13 @@ def main(page: ft.Page):
                     # Ajustes pós-validação manual (D): "Alterar tipo de valor" (R3/R4) é uma ação
                     # separada de "Encerrar" e só aparece sem nenhuma decisão pendente (nunca as duas
                     # na mesma gravação).
-                    acoes_recorrencia = [] if acao_pendente == "transformar" else [
-                        *([item_recorrencia("Alterar tipo de valor", lambda e: acao_imediata_de_recorrencia(
-                            lambda: mostrar_dialogo_comportamento_valor(ao_concluir=voltar_aos_detalhes_atualizados)))]
-                          if acao_pendente is None else []),
+                    # 6.13 (melhoria B, B5/B6): "Alterar término da recorrência" só numa série ativa
+                    # (parcelada tem o próprio ramo acima) e sem nenhuma decisão pendente; com um
+                    # término pendente, só "Desfazer" (nada de tipo de valor nem Encerrar junto).
+                    acoes_recorrencia = [] if acao_pendente is not None else [
+                        item_recorrencia("Alterar tipo de valor", lambda e: acao_imediata_de_recorrencia(
+                            lambda: mostrar_dialogo_comportamento_valor(ao_concluir=voltar_aos_detalhes_atualizados))),
+                        item_recorrencia("Alterar término da recorrência", lambda e: mostrar_dialogo_alterar_termino()),
                         item_recorrencia("Encerrar recorrência", lambda e: mostrar_dialogo_encerrar_recorrencia()),
                     ]
                 else:
@@ -3860,18 +3959,24 @@ def main(page: ft.Page):
                         erro_parcelar.value = str(recusa)
 
                 def ao_mudar_quantidade(e):
-                    escolha["quantidade"] = campo_quantidade.value
-                    atualizar_previa()
-                    page.update()
+                    # 6.13 (melhoria A): digitada ou pelas setas; fora de 2 a 36, sem prévia e com o aviso.
+                    if quantidade_de_parcelas(campo_quantidade.value) is None:
+                        lista_previa.controls = []
+                        erro_parcelar.value = database.MENSAGEM_QUANTIDADE_DE_PARCELAS
+                    else:
+                        atualizar_previa()
+                    if e is not None:
+                        page.update()
 
-                campo_quantidade = ft.Dropdown(
-                    label="Quantidade de parcelas", color=cores.texto_principal, value=escolha["quantidade"],
-                    options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS],
-                    data="quantidade_parcelas_parcelar", **estilo_lista(),
-                )
-                campo_quantidade.on_select = ao_mudar_quantidade
+                campo_quantidade = controle_quantidade_de_parcelas(
+                    escolha, "quantidade", ao_mudar_quantidade, "quantidade_parcelas_parcelar",
+                    **estilo_campo_texto())
 
                 def confirmar(e):
+                    if quantidade_de_parcelas(campo_quantidade.value) is None:
+                        erro_parcelar.value = database.MENSAGEM_QUANTIDADE_DE_PARCELAS
+                        page.update()
+                        return  # nada é gravado com a quantidade digitada fora de 2 a 36
                     try:
                         database.transformar_unica_em_parcelada(conta["id"], int(escolha["quantidade"]))
                     except database.ParcelamentoRecusadoError as recusa:
@@ -3912,11 +4017,10 @@ def main(page: ft.Page):
                     prefix=ft.Text("R$ ", color=cores.texto_secundario), keyboard_type=ft.KeyboardType.NUMBER,
                     color=cores.texto_principal, data="total_alterar_parcelamento", **estilo_campo_texto(),
                 )
-                campo_quantidade = ft.Dropdown(
-                    label="Quantidade de parcelas", color=cores.texto_principal, value=escolha["quantidade"],
-                    options=[ft.dropdown.Option(key=n, text=n) for n in OPCOES_DE_PARCELAS],
-                    data="quantidade_alterar_parcelamento", **estilo_lista(),
-                )
+                # 6.13 (melhoria A): o mesmo controle digitável com setas da Nova conta.
+                campo_quantidade = controle_quantidade_de_parcelas(
+                    escolha, "quantidade", lambda e: atualizar_previa(e), "quantidade_alterar_parcelamento",
+                    **estilo_campo_texto())
                 lista_previa = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO)
                 erro_alterar = ft.Text(value="", color=cores.texto_erro, size=12)
                 # Ajustes pós-validação manual (B): "Aplicar" cinza e desabilitado enquanto a prévia
@@ -3934,6 +4038,8 @@ def main(page: ft.Page):
                     lista_previa.controls = []
                     if total is None:
                         erro_alterar.value = database.MENSAGEM_VALOR_TOTAL_INVALIDO
+                    elif quantidade_de_parcelas(campo_quantidade.value) is None:
+                        erro_alterar.value = database.MENSAGEM_QUANTIDADE_DE_PARCELAS  # 6.13 (A)
                     else:
                         try:
                             resultado = database.previa_alteracao_parcelamento(
@@ -3958,11 +4064,6 @@ def main(page: ft.Page):
                     if e is not None:
                         page.update()
 
-                def ao_mudar_quantidade(e):
-                    escolha["quantidade"] = campo_quantidade.value
-                    atualizar_previa(e)
-
-                campo_quantidade.on_select = ao_mudar_quantidade
                 campo_total.on_change = atualizar_previa
 
                 def fechar(e=None):
@@ -3973,8 +4074,9 @@ def main(page: ft.Page):
                     if botao_aplicar.disabled:
                         return  # bloqueio funcional, não só visual
                     total = parse_valor(campo_total.value)
-                    if total is None:
-                        erro_alterar.value = database.MENSAGEM_VALOR_TOTAL_INVALIDO
+                    if total is None or quantidade_de_parcelas(campo_quantidade.value) is None:
+                        erro_alterar.value = (database.MENSAGEM_VALOR_TOTAL_INVALIDO if total is None
+                                              else database.MENSAGEM_QUANTIDADE_DE_PARCELAS)
                         atualizar_botao_aplicar()
                         page.update()
                         return
@@ -4594,6 +4696,124 @@ def main(page: ft.Page):
                 )
                 page.show_dialog(dialogo)
 
+            def mostrar_dialogo_alterar_termino():
+                """6.13 (melhoria B): término da série ativa (mensal ou anual, fixa ou variável), com
+                a configuração salva; Confirmar só guarda o rascunho, gravado no Salvar por
+                `database.alterar_termino_recorrencia`. A prévia (B1/B3/B4) é a do próprio banco."""
+                referencia = vencimento_pendente["valor"].isoformat()
+                try:
+                    inicial = database.previa_alteracao_termino(conta["id"], None, referencia)
+                except database.TerminoRecusadoError as recusa:
+                    mostrar_aviso_pagamentos(str(recusa), titulo="Não é possível alterar o término")
+                    return
+                atual = inicial["atual"]
+                ano_min, mes_min = map(int, inicial["minimo"].split("-"))
+                ano_ini, mes_ini = map(int, (atual or inicial["minimo"]).split("-"))
+                sem_termino = ft.Switch(value=atual is None, active_color=cores.acao_primaria,
+                                        data="sem_termino_alterar")
+                campo_mes = ft.Dropdown(
+                    label="Mês", color=cores.texto_principal, expand=True, value=str(mes_ini),
+                    options=[ft.dropdown.Option(key=str(i), text=MESES_PT[i - 1]) for i in range(1, 13)],
+                    data="mes_termino_alterar", **estilo_lista(),
+                )
+                campo_ano = ft.Dropdown(
+                    label="Ano", color=cores.texto_principal, expand=True, value=str(ano_ini),
+                    options=[ft.dropdown.Option(key=str(a), text=str(a))
+                             for a in range(min(ano_min, ano_ini), max(ano_min + 10, ano_ini) + 1)],
+                    data="ano_termino_alterar", **estilo_lista(),
+                )
+                # Em telas estreitas, Mês e Ano um sobre o outro (como em Transformar e na Nova conta).
+                if isinstance(page.width, (int, float)) and 0 < page.width < 600:
+                    campo_mes.expand = campo_ano.expand = False
+                    linha_termino = ft.Column(spacing=12, controls=[campo_mes, campo_ano],
+                                              horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                                              data="termino_alterar")
+                else:
+                    linha_termino = ft.Row(spacing=8, controls=[campo_mes, campo_ano], data="termino_alterar")
+
+                def caixa_de_aviso(dado):
+                    return ft.Container(data=dado, bgcolor=cores.aviso_fundo, border_radius=10, padding=12,
+                                        visible=False, content=ft.Text("", size=13, color=cores.aviso_texto))
+
+                aviso_exclusao = ft.Text("", size=13, color=cores.texto_secundario, visible=False,
+                                         data="aviso_exclusao_termino")
+                aviso_preservadas = caixa_de_aviso("aviso_preservadas_termino")   # B3
+                aviso_recriacao = caixa_de_aviso("aviso_recriacao_termino")       # B4
+                erro = ft.Text("", size=12, color=cores.texto_erro, data="erro_termino")
+                botao_confirmar = ft.Button(content="Confirmar", data="confirmar_alterar_termino")
+
+                def termino_escolhido():
+                    if sem_termino.value:
+                        return None
+                    return f"{int(campo_ano.value):04d}-{int(campo_mes.value):02d}"
+
+                def atualizar(e=None):
+                    inativos = bool(sem_termino.value)
+                    campo_mes.disabled = campo_ano.disabled = inativos
+                    linha_termino.opacity = 0.45 if inativos else 1.0
+                    try:
+                        previa = database.previa_alteracao_termino(conta["id"], termino_escolhido(), referencia)
+                        erro.value = ""
+                    except database.TerminoRecusadoError as recusa:
+                        previa = None
+                        erro.value = str(recusa)
+                    aviso_exclusao.visible = bool(previa and previa["removidas"])
+                    if aviso_exclusao.visible:
+                        aviso_exclusao.value = texto_ocorrencias_excluidas_no_termino(previa["removidas"])
+                    aviso_preservadas.visible = bool(previa and previa["preservadas"])
+                    if aviso_preservadas.visible:
+                        aviso_preservadas.content.value = texto_ocorrencias_preservadas_no_termino(previa["preservadas"])
+                    aviso_recriacao.visible = bool(previa and previa["recriacao"])
+                    aviso_recriacao.content.value = TEXTO_AVISO_RECRIACAO_TERMINO
+                    # Recusado: "Confirmar" cinza e desabilitado (a mesma recusa do banco).
+                    botao_confirmar.disabled = previa is None
+                    botao_confirmar.bgcolor = cores.botao_desabilitado_fundo if previa is None else cores.acao_primaria
+                    botao_confirmar.color = cores.botao_desabilitado_texto if previa is None else cores.texto_sobre_acao
+                    if e is not None:
+                        page.update()
+
+                sem_termino.on_change = atualizar
+                campo_mes.on_select = atualizar
+                campo_ano.on_select = atualizar
+
+                def confirmar(e):
+                    if botao_confirmar.disabled:
+                        return  # bloqueio funcional, não só visual
+                    novo = termino_escolhido()
+                    # Recorrência como rascunho: nada é gravado aqui; o mesmo término salvo = nada pendente.
+                    rascunho_recorrencia["acao"] = None if novo == atual else "alterar_termino"
+                    rascunho_recorrencia["frequencia"] = None
+                    rascunho_recorrencia["data_termino"] = None if novo == atual else novo
+                    rascunho_recorrencia["variavel"] = False
+                    page.pop_dialog()
+                    atualizar_bloco_recorrencia()
+                    gatilho_estado_salvar["chamar"]()
+
+                botao_confirmar.on_click = confirmar
+                atualizar()
+                page.show_dialog(ft.AlertDialog(
+                    modal=True, bgcolor=cores.fundo_dialogo, data="dialogo_alterar_termino",
+                    title=ft.Text("Alterar término da recorrência", color=cores.texto_principal),
+                    # Sem rolagem própria (como Transformar): uma Column rolável faria o diálogo
+                    # ocupar a altura toda da janela.
+                    content=ft.Column(tight=True, spacing=12, width=480, controls=[
+                        ft.Text(f"O término pode ser a partir de {MESES_PT[mes_min - 1].lower()} de {ano_min}. "
+                                "As ocorrências que já venceram não mudam.", color=cores.texto_principal,
+                                data="minimo_termino_alterar"),
+                        ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
+                            ft.Text("Sem data de término", size=13, color=cores.texto_principal),
+                            sem_termino,
+                        ]),
+                        linha_termino, aviso_exclusao, aviso_preservadas, aviso_recriacao, erro,
+                    ]),
+                    actions=[
+                        ft.TextButton(content="Cancelar", on_click=lambda e: page.pop_dialog(),
+                                      style=ft.ButtonStyle(color=cores.acao_primaria)),
+                        botao_confirmar,
+                    ],
+                ))
+                page.update()
+
             def mostrar_dialogo_encerrar_recorrencia():
                 # RF29 revisado (5.8, D7): contextual à ocorrência sendo editada
                 # (conta["data_vencimento"]), nunca à data atual do sistema --
@@ -5068,6 +5288,8 @@ def main(page: ft.Page):
                             conta["serie_id"] = novo_serie_id
                         elif acao == "encerrar":
                             database.encerrar_recorrencia(conta["id"])
+                        elif acao == "alterar_termino":  # 6.13 (B): uma transação, rollback integral
+                            database.alterar_termino_recorrencia(conta["id"], rascunho_recorrencia["data_termino"])
                     except ValueError:
                         return False
                     return True
@@ -5099,6 +5321,17 @@ def main(page: ft.Page):
                     if erro_edit.value:
                         page.update()
                         return
+
+                    if rascunho_recorrencia["acao"] == "alterar_termino":
+                        # 6.13 (B5): a mesma conferência do banco (B1 com o vencimento que será salvo),
+                        # antes de gravar qualquer campo -- recusada, nada é gravado.
+                        try:
+                            database.previa_alteracao_termino(conta["id"], rascunho_recorrencia["data_termino"],
+                                                              data_selecionada["valor"].isoformat())
+                        except database.TerminoRecusadoError as recusa:
+                            erro_edit.value = str(recusa)
+                            page.update()
+                            return
 
                     situacao_edit = situacao_pagamento["atual"]
                     if (valor != valor_original_edit and situacao_edit and situacao_edit["ativos"]
@@ -5401,6 +5634,11 @@ def main(page: ft.Page):
                         concluir_salvamento(mensagem_alteracao, dialogo_alvo=dialogo)
 
                     def aplicar_este_mes_em_diante(e):
+                        if rascunho_recorrencia["acao"] == "alterar_termino" and "data_vencimento" in campos_alterados:
+                            # 6.13 (B5): novo vencimento em "Este mês em diante" redefine a grade da série --
+                            # não combina com um término pendente na mesma gravação. Nada é gravado.
+                            mostrar_recusa(TEXTO_TERMINO_COM_VENCIMENTO_EM_DIANTE)
+                            return
                         try:
                             sucesso = database.editar_conta_serie(conta["id"], **campos_alterados)
                         except (limites.LimiteDeCaracteresError,
@@ -8208,27 +8446,10 @@ def main(page: ft.Page):
 
         # Parcelada: quantidade de 2 a 36 (D4), digitada ou pelas setas (referência novaconta_parcela.png).
         # `recorrencia["parcelas"]` guarda o último número válido; Salvar confere o que está digitado.
-        def seta_de_parcelas(icone, nome, delta, data):
-            return ft.IconButton(
-                icon=icone_com_nome(icone, nome, cores.texto_secundario, 18), icon_size=18,
-                icon_color=cores.texto_secundario, data=data, width=34, height=22, padding=0,
-                size_constraints=ft.BoxConstraints(min_width=34, min_height=22, max_width=34, max_height=22),
-                style=ft.ButtonStyle(padding=0, shape=ft.RoundedRectangleBorder(radius=6)),
-                on_click=lambda e: mudar_parcelas_pela_seta(delta),
-            )
-
-        seta_mais = seta_de_parcelas(ft.Icons.KEYBOARD_ARROW_UP, "Aumentar a quantidade de parcelas", 1,
-                                     "aumentar_parcelas")
-        seta_menos = seta_de_parcelas(ft.Icons.KEYBOARD_ARROW_DOWN, "Diminuir a quantidade de parcelas", -1,
-                                      "diminuir_parcelas")
-        campo_parcelas = ft.TextField(
-            label="Quantidade de parcelas", value=recorrencia["parcelas"], color=cores.texto_principal,
-            keyboard_type=ft.KeyboardType.NUMBER, data="quantidade_parcelas_nova_conta",
-            input_filter=ft.InputFilter(regex_string=r"^[0-9]{0,2}$", allow=True, replacement_string=""),
-            suffix_icon=ft.Container(padding=ft.Padding(0, 0, 6, 0), content=ft.Column(
-                spacing=0, tight=True, alignment=ft.MainAxisAlignment.CENTER, controls=[seta_mais, seta_menos])),
-            **estilo_criacao(ft.Icons.LAYERS_OUTLINED),
-        )
+        # 6.13 (melhoria A): o controle é o mesmo de Parcelar esta conta e Alterar parcelamento.
+        campo_parcelas = controle_quantidade_de_parcelas(
+            recorrencia, "parcelas", lambda e: atualizar_resumo_parcelas(e), "quantidade_parcelas_nova_conta",
+            **estilo_criacao(ft.Icons.LAYERS_OUTLINED))
 
         # Valor por parcela (estimado): campo informativo, do tamanho dos outros, com o mesmo cálculo
         # do banco (D3: a diferença de centavos fica na 1ª parcela). O "i" mostra a distribuição.
@@ -8249,11 +8470,6 @@ def main(page: ft.Page):
             **estilo_estimado,
         )
 
-        def atualizar_setas_de_parcelas():
-            base = base_das_setas_de_parcelas(campo_parcelas.value, int(recorrencia["parcelas"]))
-            seta_mais.disabled = base >= database.MAXIMO_PARCELAS
-            seta_menos.disabled = base <= database.MINIMO_PARCELAS
-
         def atualizar_resumo_parcelas(e=None):
             quantidade = quantidade_de_parcelas(campo_parcelas.value)
             if quantidade is None:
@@ -8262,35 +8478,9 @@ def main(page: ft.Page):
                 resumo = resumo_estimado_das_parcelas(parse_valor(campo_valor.value), quantidade)
             campo_valor_parcela.value = valor_do_campo_estimado(resumo)
             frase_parcelas["valor"] = resumo["frase"]
-            atualizar_setas_de_parcelas()
             if e is not None:
                 page.update()
 
-        def ao_digitar_parcelas(e):
-            # Vazio ou fora de 2 a 36 durante a digitação: nada muda além do resumo ("—") e das setas.
-            quantidade = quantidade_de_parcelas(campo_parcelas.value)
-            if quantidade is not None:
-                recorrencia["parcelas"] = str(quantidade)
-                campo_parcelas.error = None
-            atualizar_resumo_parcelas(e)
-
-        def ao_sair_das_parcelas(e):
-            # Vazio ao sair volta ao último número válido; fora dos limites, o campo avisa.
-            if not (campo_parcelas.value or "").strip():
-                campo_parcelas.value = recorrencia["parcelas"]
-            campo_parcelas.error = (None if quantidade_de_parcelas(campo_parcelas.value) is not None
-                                    else database.MENSAGEM_QUANTIDADE_DE_PARCELAS)
-            atualizar_resumo_parcelas(e)
-
-        def mudar_parcelas_pela_seta(delta):
-            novo = passo_de_parcelas(campo_parcelas.value, int(recorrencia["parcelas"]), delta)
-            campo_parcelas.value = recorrencia["parcelas"] = str(novo)
-            campo_parcelas.error = None
-            atualizar_resumo_parcelas()
-            page.update()
-
-        campo_parcelas.on_change = ao_digitar_parcelas
-        campo_parcelas.on_blur = ao_sair_das_parcelas
         campo_valor.on_change = atualizar_resumo_parcelas
 
         # Recorrências: término num campo do formulário; Mês e Ano no diálogo central (padrão de

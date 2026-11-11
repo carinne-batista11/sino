@@ -20,7 +20,16 @@ import main  # noqa: E402
 import pagamentos  # noqa: E402
 
 
+# 6.13 (melhoria B): "Alterar término da recorrência" entre "Alterar tipo de valor" e "Encerrar".
+MENU_SERIE = ["Alterar tipo de valor", "Alterar término da recorrência", "Encerrar recorrência"]
+
+
 class Base(BaseTelas):
+    def digitar(self, controle, texto):
+        """6.13 (melhoria A): a quantidade de parcelas é digitada (on_change), não escolhida."""
+        controle.value = texto
+        controle.on_change(Evento(self.pagina, controle))
+
     def abrir_detalhes(self, nome):
         self.entrar()
         linha = next(c for c in self.controles(ft.Container)
@@ -85,10 +94,10 @@ class TestResumoNoEditar(Base):
         esperado = {
             "Escola": ("Única · Sem repetição", ["Transformar em recorrente", "Parcelar esta conta"]),
             "Sofá": ("Parcelada · 11 parcelas", ["Alterar parcelamento"]),
-            "Aluguel": ("Mensal · Fixo · Sem término", ["Alterar tipo de valor", "Encerrar recorrência"]),
-            "Luz": ("Mensal · Variável · Sem término", ["Alterar tipo de valor", "Encerrar recorrência"]),
-            "IPVA": ("Anual · Fixo · Sem término", ["Alterar tipo de valor", "Encerrar recorrência"]),
-            "Seguro": ("Mensal · Fixo · Até set/2027", ["Alterar tipo de valor", "Encerrar recorrência"]),
+            "Aluguel": ("Mensal · Fixo · Sem término", MENU_SERIE),
+            "Luz": ("Mensal · Variável · Sem término", MENU_SERIE),
+            "IPVA": ("Anual · Fixo · Sem término", MENU_SERIE),
+            "Seguro": ("Mensal · Fixo · Até set/2027", MENU_SERIE),
         }
         antes = (self.series(), self.contas())
         for nome, (resumo, itens) in esperado.items():
@@ -243,7 +252,7 @@ class TestParcelarEmEditar(Base):
         antes = self.contas()
         self.escolher_item("Parcelar esta conta")
         self.assertEqual(self.dlg().data, "dialogo_parcelar")
-        self.escolher(self.no_dialogo("quantidade_parcelas_parcelar"), "3")
+        self.digitar(self.no_dialogo("quantidade_parcelas_parcelar"), "3")
         linhas = [t for t in self.textos_do_dialogo() if t.startswith("Parcela ")]
         self.assertEqual(linhas, ["Parcela 1 de 3 · 30/09/2026 · R$ 33,34", "Parcela 2 de 3 · 30/10/2026 · R$ 33,33",
                                   "Parcela 3 de 3 · 30/11/2026 · R$ 33,33"])
@@ -255,7 +264,7 @@ class TestParcelarEmEditar(Base):
         conta = db.criar_conta_unica(self.usuario_id, "Geladeira", 100.0, "2026-09-30")
         self.abrir_editar("Geladeira")
         self.escolher_item("Parcelar esta conta")
-        self.escolher(self.no_dialogo("quantidade_parcelas_parcelar"), "3")
+        self.digitar(self.no_dialogo("quantidade_parcelas_parcelar"), "3")
         self.clicar(self.acao("Parcelar"))
         serie_id = self.consultar("SELECT serie_id FROM contas WHERE id = ?", (conta,))[0][0]
         self.assertEqual(db.obter_identificacao(serie_id, conta), {"tipo": "parcela", "posicao": 1, "total": 3})

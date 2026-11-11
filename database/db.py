@@ -4077,6 +4077,51 @@ def _criar_serie_recorrente_no_cursor(cursor, usuario_id, nome, valor, data_venc
     return serie_id, ids_ocorrencias
 
 
+def _proximas_vagas(frequencia, dia_ancora, mes_ancora, a_partir_de, limite_ano, limite_mes):
+    """Vagas da grade da série depois de `a_partir_de` (sem incluí-la) até o limite, inclusive --
+    o passo de `gerar_ocorrencias_sob_demanda` (dia/mês-âncora fixos, sem arrasto), separado em
+    6.13 para ser reaproveitado por `alterar_termino_recorrencia`."""
+    avancar = (
+        (lambda ano, mes: _somar_mes(ano, mes, dia_ancora))
+        if frequencia == "mensal"
+        else (lambda ano, mes: _somar_ano(ano, mes_ancora, dia_ancora))
+    )
+    return _avancar_ate_limite(avancar, a_partir_de, limite_ano, limite_mes)
+
+
+def _vagas_livres(cursor, serie_id, datas, ignorar_ids=()):
+    """As `datas` cuja competência ainda não está ocupada no segmento atual da série
+    (posição >= `posicao_ancora`), desconsiderando `ignorar_ids` (ocorrências que a
+    mesma operação vai excluir antes de inserir)."""
+    (posicao_ancora,) = cursor.execute(
+        "SELECT posicao_ancora FROM series_recorrencia WHERE id = ?", (serie_id,)).fetchone()
+    cursor.execute("SELECT id, data_prevista FROM contas WHERE serie_id = ? AND posicao > ?",
+                   (serie_id, posicao_ancora - 1))
+    ocupadas = {_competencia(prevista) for conta_id, prevista in cursor.fetchall() if conta_id not in ignorar_ids}
+    return [d for d in datas if _competencia(d) not in ocupadas]
+
+
+def _inserir_vagas_no_cursor(cursor, serie_id, datas):
+    """Insere, no cursor (transação) de quem chama, as ocorrências das `datas` ainda livres,
+    copiando o modelo da série; numa série variável elas nascem com valor pendente; depois
+    renumera o segmento. É o miolo de `gerar_ocorrencias_sob_demanda` (sem mudança de
+    comportamento), separado em 6.13 para `alterar_termino_recorrencia`. Retorna os ids novos."""
+    usuario_id, nome, valor, categoria_id, descricao, posicao_ancora = cursor.execute(
+        "SELECT usuario_id, nome, valor, categoria_id, descricao, posicao_ancora "
+        "FROM series_recorrencia WHERE id = ?", (serie_id,)).fetchone()
+    ocupadas = _competencias_ocupadas(cursor, serie_id, posicao_ancora - 1)
+    ids_novos = [
+        _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
+                            data_ocorrencia, descricao)
+        for data_ocorrencia in datas
+        if _competencia(data_ocorrencia) not in ocupadas
+    ]
+    if _serie_variavel_no_cursor(cursor, serie_id):  # Sino 6.12 (Etapa 8): nascem pendentes
+        _marcar_valor_pendente(cursor, ids_novos)
+    _renumerar_segmento(cursor, serie_id, posicao_ancora)
+    return ids_novos
+
+
 def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
     """
     Gera as ocorrências que faltam para cobrir `ate_data` ("AAAA-MM") de
@@ -4140,12 +4185,8 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
             return []
 
         limite_ano, limite_mes = map(int, ate_data.split("-"))
-        avancar = (
-            (lambda ano, mes: _somar_mes(ano, mes, dia_ancora))
-            if frequencia == "mensal"
-            else (lambda ano, mes: _somar_ano(ano, mes_ancora, dia_ancora))
-        )
-        novas_datas = _avancar_ate_limite(avancar, horizonte_gerado_ate, limite_ano, limite_mes)
+        novas_datas = _proximas_vagas(frequencia, dia_ancora, mes_ancora, horizonte_gerado_ate,
+                                      limite_ano, limite_mes)
 
         if not novas_datas:
             return []
@@ -4156,16 +4197,7 @@ def gerar_ocorrencias_sob_demanda(serie_id, ate_data):
         try:
             cursor.execute("BEGIN;")
 
-            ocupadas = _competencias_ocupadas(cursor, serie_id, posicao_ancora - 1)
-            ids_novos = [
-                _inserir_ocorrencia(cursor, usuario_id, categoria_id, serie_id, nome, valor,
-                                    data_ocorrencia, descricao)
-                for data_ocorrencia in novas_datas
-                if _competencia(data_ocorrencia) not in ocupadas
-            ]
-            if _serie_variavel_no_cursor(cursor, serie_id):  # Sino 6.12 (Etapa 8): nascem pendentes
-                _marcar_valor_pendente(cursor, ids_novos)
-            _renumerar_segmento(cursor, serie_id, posicao_ancora)
+            ids_novos = _inserir_vagas_no_cursor(cursor, serie_id, novas_datas)
 
             cursor.execute(
                 "UPDATE series_recorrencia SET horizonte_gerado_ate = ? WHERE id = ?",
@@ -6527,6 +6559,160 @@ def encerrar_recorrencia(conta_id):
 
     return {"serie_id": serie_id, "ocorrencias_removidas": ocorrencias_removidas}
 
+
+
+# ------------------------------------------------------------------
+#  Sino 6.13 (protótipo, melhoria B): "Alterar término da recorrência".
+#
+#  Decisões da autora (11/11/2026), B1-B7:
+#  - B1: o novo término nunca é anterior ao mês mais recente entre o da
+#    ocorrência em edição e o mês atual -- nada que já venceu é excluído;
+#  - B2/B3: depois do novo término, só são excluídas as ocorrências SEM
+#    histórico protegido, com a mesma proteção de `encerrar_recorrencia`
+#    (pagamentos ativos ou estornados, pagas antes da 6.10 -- status 'pago'
+#    ou data de pagamento --, editadas individualmente); as protegidas
+#    continuam registradas além do término e contando (D4);
+#  - B4: prorrogar ou remover o término volta a gerar a grade da série
+#    (inclusive meses antes excluídos), pelas mesmas funções da geração;
+#  - B5: uma só transação, com ROLLBACK integral em qualquer falha;
+#  - B6: só séries ativas, mensais ou anuais, fixas ou variáveis (parcelada não);
+#  - B7: o mês do término é o limite inclusivo, como na criação.
+#  Sem coluna nova nem migração: `data_termino` já existe.
+# ------------------------------------------------------------------
+MENSAGEM_TERMINO_SO_RECORRENCIA_ATIVA = "Só uma recorrência mensal ou anual ativa pode ter o término alterado."
+MENSAGEM_TERMINO_INVALIDO = "Escolha um mês e um ano válidos para o término."
+_MESES_DO_TERMINO = ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
+                     "setembro", "outubro", "novembro", "dezembro")
+_FORMATO_TERMINO = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
+
+
+class TerminoRecusadoError(ValueError):
+    """6.13 (B): alteração de término recusada antes de qualquer gravação."""
+
+
+def mensagem_termino_minimo(minimo):
+    ano, mes = map(int, minimo.split("-"))
+    return f"O término não pode ser anterior a {_MESES_DO_TERMINO[mes - 1]} de {ano}."
+
+
+def _somar_meses_a_competencia(competencia, meses):
+    ano, mes = map(int, competencia.split("-"))
+    total = ano * 12 + (mes - 1) + meses
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"
+
+
+def _plano_do_termino(cursor, conta_id, novo_termino, referencia=None):
+    """Só leitura: o que `alterar_termino_recorrencia` faria. `referencia` (ISO) é o vencimento
+    ainda não salvo da ocorrência em edição, se houver (B1); sem ela, o vencimento gravado."""
+    linha = cursor.execute("SELECT serie_id, posicao, data_vencimento FROM contas WHERE id = ?",
+                           (conta_id,)).fetchone()
+    if linha is None or linha[0] is None or _serie_parcelada_no_cursor(cursor, linha[0]):
+        raise TerminoRecusadoError(MENSAGEM_TERMINO_SO_RECORRENCIA_ATIVA)
+    serie_id, posicao, vencimento = linha
+    ativa, atual, horizonte, frequencia, dia_ancora, mes_ancora = cursor.execute(
+        "SELECT ativa, data_termino, horizonte_gerado_ate, frequencia, dia_ancora, mes_ancora "
+        "FROM series_recorrencia WHERE id = ?", (serie_id,)).fetchone()
+    if ativa != 1 or frequencia not in ("mensal", "anual"):
+        raise TerminoRecusadoError(MENSAGEM_TERMINO_SO_RECORRENCIA_ATIVA)
+    if novo_termino is not None and not (isinstance(novo_termino, str) and _FORMATO_TERMINO.match(novo_termino)):
+        raise TerminoRecusadoError(MENSAGEM_TERMINO_INVALIDO)
+
+    hoje = date.today().isoformat()
+    minimo = max(_competencia(referencia or vencimento), _competencia(hoje))           # B1
+    if novo_termino is not None and novo_termino < minimo:
+        raise TerminoRecusadoError(mensagem_termino_minimo(minimo))
+
+    removidas, preservadas = [], []
+    if novo_termino is not None:
+        # Depois do novo término: as SEGUINTES à ocorrência em edição (posição lógica, Etapa 2b)
+        # com vaga e vencimento além do término e ainda por vencer. Proteção = encerrar_recorrencia.
+        cursor.execute(
+            f"""
+            SELECT id, data_vencimento,
+                   (status = 'pago' OR data_pagamento IS NOT NULL OR editado_individualmente != 0
+                    OR id IN ({_sql_contas_com_pagamentos(cursor)}))
+            FROM contas
+            WHERE serie_id = ? AND posicao > ?
+              AND substr(data_prevista, 1, 7) > ? AND substr(data_vencimento, 1, 7) > ?
+              AND data_vencimento > ?
+            ORDER BY posicao
+            """,
+            (serie_id, posicao, novo_termino, novo_termino, hoje),
+        )
+        for ocorrencia_id, vencimento_ocorrencia, protegida in cursor.fetchall():
+            if protegida:
+                preservadas.append(vencimento_ocorrencia)                              # B2/B3
+            else:
+                removidas.append(ocorrencia_id)
+
+    # Grade: antecipar recua o horizonte para a última vaga que fica dentro do novo término;
+    # prorrogar/remover gera, a partir do horizonte, até o novo término (ou 12 meses, B4).
+    base = horizonte
+    if novo_termino is not None and _competencia(horizonte) > novo_termino:
+        marcas = ",".join("?" * len(removidas)) or "NULL"
+        (ultima_dentro,) = cursor.execute(
+            f"SELECT MAX(data_prevista) FROM contas WHERE serie_id = ? "
+            f"AND substr(data_prevista, 1, 7) <= ? AND id NOT IN ({marcas})",
+            (serie_id, novo_termino, *removidas)).fetchone()
+        base = ultima_dentro or horizonte
+    limite = novo_termino if novo_termino is not None else _somar_meses_a_competencia(minimo, 12)
+    grade = _proximas_vagas(frequencia, dia_ancora, mes_ancora, base, *map(int, limite.split("-")))
+    return {
+        "serie_id": serie_id, "minimo": minimo, "atual": atual, "novo": novo_termino,
+        "sem_mudanca": novo_termino == atual,
+        "removidas": removidas, "preservadas": preservadas,
+        "grade": grade, "novas": _vagas_livres(cursor, serie_id, grade, set(removidas)),
+        "horizonte": grade[-1] if grade else base,
+        # B4: prorrogar ou remover um término existente pode recriar meses antes excluídos.
+        "recriacao": atual is not None and (novo_termino is None or novo_termino > atual),
+    }
+
+
+def previa_alteracao_termino(conta_id, novo_termino, referencia=None):
+    """6.13 (B), só leitura: término mínimo (B1), quantas ocorrências seriam excluídas, os
+    vencimentos das que ficam além do novo término por histórico protegido (B3), quantas seriam
+    geradas e se meses antes excluídos podem voltar (B4). Recusa com `TerminoRecusadoError`."""
+    conexao = conectar()
+    try:
+        plano = _plano_do_termino(conexao.cursor(), conta_id, novo_termino, referencia)
+    finally:
+        conexao.close()
+    return {chave: plano[chave] for chave in ("minimo", "atual", "novo", "sem_mudanca", "preservadas",
+                                              "recriacao")} | {"removidas": len(plano["removidas"]),
+                                                              "novas": len(plano["novas"])}
+
+
+def alterar_termino_recorrencia(conta_id, novo_termino):
+    """6.13 (B): define o término ("AAAA-MM", inclusivo) ou o remove (`None`) numa série ativa,
+    mensal ou anual, a partir da ocorrência em edição. Uma transação só (B5): exclui as
+    seguintes sem histórico protegido além do novo término, gera a grade que faltar até o
+    término (ou 12 meses, sem término) e grava `data_termino`/`horizonte_gerado_ate`.
+    Qualquer falha desfaz tudo. Retorna {serie_id, removidas, preservadas, novas}."""
+    conexao = sqlite3.connect(NOME_DO_BANCO)
+    conexao.isolation_level = None  # controle explícito de transação (BEGIN/COMMIT/ROLLBACK)
+    conexao.execute("PRAGMA foreign_keys = ON;")
+    cursor = conexao.cursor()
+    try:
+        cursor.execute("BEGIN IMMEDIATE;")
+        try:
+            plano = _plano_do_termino(cursor, conta_id, novo_termino)
+            ids_novos = []
+            if not plano["sem_mudanca"]:
+                if plano["removidas"]:
+                    marcas = ",".join("?" * len(plano["removidas"]))
+                    _apagar_complementos_de_contas(cursor, f"id IN ({marcas})", plano["removidas"])
+                    cursor.execute(f"DELETE FROM contas WHERE id IN ({marcas})", plano["removidas"])
+                ids_novos = _inserir_vagas_no_cursor(cursor, plano["serie_id"], plano["grade"])
+                cursor.execute("UPDATE series_recorrencia SET data_termino = ?, horizonte_gerado_ate = ? "
+                               "WHERE id = ?", (novo_termino, plano["horizonte"], plano["serie_id"]))
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+    finally:
+        conexao.close()
+    return {"serie_id": plano["serie_id"], "removidas": plano["removidas"],
+            "preservadas": plano["preservadas"], "novas": ids_novos}
 
 if __name__ == "__main__":
     criar_tabelas()
