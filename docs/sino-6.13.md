@@ -144,6 +144,7 @@ Anexo da [ERS v7.0](ERS_Controle_de_Contas_v7.0.md) (seção 5.56). Registra o q
 
 - **Suíte completa no estado integrado:** 2.050 testes, executados num sandbox sem rede, com bancos temporários. Resultado `failures=6` e `errors=46`.
   - As 52 falhas são **preexistentes**: as mesmas, comparadas pelo nome do teste, nas execuções de referência do protótipo.
+    - *Correção (12/11/2026, Sino 6.13.1):* a comparação olhou o nome e o tipo da exceção. Nos 5 testes de legibilidade, o ponto de interrupção mudou no commit `05bfd54` (de "Recorrência" para o "+" de Início), e o contraste de Nova conta, Categorias, Gráfico, Ajustes e documentos não foi verificado automaticamente nesta versão. As 52 eram testes desatualizados e foram recuperadas na [Sino 6.13.1](sino-6.13.1.md).
   - Elas vêm de testes antigos acoplados a estruturas de tela substituídas desde as primeiras rodadas do protótipo.
   - Nenhuma regressão nova e nenhuma falha a menos. Nenhum teste foi removido ou alterado para esconder falhas.
 - **Testes novos da 6.13** (todos aprovados):

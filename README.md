@@ -73,9 +73,14 @@ A [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md) é o plano em andamento, divid
     - Início, Ver status, Contas em atraso, Categorias e Gráfico modernizados, com foco visível pelo teclado e telas estreitas corrigidas;
     - o novo logotipo no login, na recuperação de senha, na confirmação do código e em Início.
   - **Banco de dados:** sem mudança (continua na versão 11).
-  - **Testes:** 2.050 testes automáticos, com 52 falhas preexistentes e nenhuma regressão nova; 156 testes novos aprovados; validação visual da autora aprovada.
+  - **Testes:** 2.050 testes automáticos, com 52 falhas preexistentes e nenhuma regressão nova; 156 testes novos aprovados; validação visual da autora aprovada. *As 52 foram recuperadas na Sino 6.13.1.*
   - **Ressalvas:** margem de 24 px depois do login, rótulos da Evolução em 320 px, filtros de Ver status sem foco pelo teclado e leitor de tela não testado.
   - **Documentação:** [anexo da 6.13](docs/sino-6.13.md) e [notas da versão](docs/notas-da-versao.md). Fora das entregas E1–E18 (5.56 da ERS v7.0). As Supercontas (F1) continuam futuras.
+- **Sino 6.13.1** *(publicada no GitHub em 12/11/2026; [notas da versão](docs/notas-da-versao.md))*: versão de correção da 6.13.
+  - **O que traz:** testes das 52 ocorrências atualizados, verificação automática de legibilidade restaurada e cor explícita nos cartões de tipo da Nova conta e no campo "Valor por parcela (estimado)", sem mudança visual.
+  - **Banco de dados:** sem mudança (continua na versão 11).
+  - **Testes:** 2.052 testes automáticos, sem falhas nem erros.
+  - **Documentação:** [anexo da 6.13.1](docs/sino-6.13.1.md).
 - **E14–E15 pendentes:** preparação e piloto da disponibilização para outras pessoas.
 - **E16–E18 pendentes:** comprovantes em imagem e backup completo.
 - **Faturas (M13):** proposta ainda candidata, sem aprovação.
@@ -201,7 +206,7 @@ Com o ambiente virtual `.venv` ativado e as dependências instaladas (veja "Como
 python3 -m unittest discover tests
 ```
 
-A suíte (879 testes na entrega da v6.0; 1070 na Sino 6.3; 1.595 na Sino 6.10; 1.615 na Sino 6.11; 1.894 na Sino 6.12; 2.050 na Sino 6.13, com 52 falhas preexistentes) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
+A suíte (879 testes na entrega da v6.0; 1070 na Sino 6.3; 1.595 na Sino 6.10; 1.615 na Sino 6.11; 1.894 na Sino 6.12; 2.050 na Sino 6.13, com 52 falhas preexistentes; 2.052 na Sino 6.13.1, sem falhas) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
 
 Os testes do serviço de códigos (`servidor/`; 151 testes na v6.0, 260 na Sino 6.3) usam Node.js 24 e rodam localmente, sem conta em serviços externos:
 

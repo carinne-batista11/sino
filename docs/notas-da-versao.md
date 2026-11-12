@@ -5,6 +5,18 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.13.1 — manutenção da suíte de testes e cores explícitas (12/11/2026)
+
+**Publicada no GitHub em 12/11/2026** (etiqueta `sino-6.13.1`). Versão de correção da 6.13, sem funcionalidade nova. Detalhes no anexo [sino-6.13.1.md](sino-6.13.1.md).
+
+- **Suíte de testes recuperada:** as 52 ocorrências deixadas pela 6.13 (6 failures e 46 errors) eram testes desatualizados, que procuravam estruturas da Nova conta substituídas de propósito. Nenhuma indicava defeito. Os testes foram atualizados com os mesmos nomes e as mesmas verificações.
+- **Verificação de legibilidade restaurada:** o percurso automático de contraste voltou a passar por todas as telas, nos temas Claro e Escuro, incluindo cada estado da Nova conta e o diálogo do término.
+- **Cores explícitas (RNF09):** nos quatro cartões de tipo da Nova conta e no campo "Valor por parcela (estimado)". **A aparência não muda:** capturas antes e depois idênticas.
+- **Foco do diálogo de término:** conferido. Ao abrir, vai para "Sem data de término"; ao fechar, volta para o campo.
+- **Testes:** 2.052 testes automáticos, **sem falhas nem erros**, sem rede e com bancos temporários.
+- **Sem mudanças** no banco de dados (v11, sem migração), nas regras, nos Termos de Uso ou na Política de Privacidade.
+- **Continua pendente:** as ressalvas da 6.13 abaixo; leitor de tela não testado.
+
 ## Sino 6.13 — modernização visual, Nova conta e logotipo (12/11/2026)
 
 **Publicada no GitHub em 12/11/2026** (etiqueta `sino-6.13`):
@@ -65,6 +77,7 @@ A versão fica fora das entregas E1–E18 do planejamento. O detalhamento está 
 
 - **Testes automáticos:** 2.050, no estado integrado, sem rede e com bancos temporários: `failures=6` e `errors=46`.
   - As 52 falhas são **preexistentes**: as mesmas, comparadas pelo nome do teste, da referência do protótipo. Vêm de testes antigos acoplados a estruturas de tela substituídas.
+    - *Correção (12/11/2026, Sino 6.13.1):* nos 5 testes de legibilidade, o ponto de interrupção mudou no commit `05bfd54`; a verificação de contraste ficou interrompida. As 52 foram recuperadas na 6.13.1.
   - Nenhuma regressão nova.
 - **Testes novos da 6.13:** 156, todos aprovados.
 - **Validação visual da autora:** aprovada em 12/11/2026, com capturas em 320, 380 e 1000 px, nos temas Claro e Escuro.
