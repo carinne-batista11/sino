@@ -5,6 +5,80 @@ Política de Privacidade. Regras completas na
 [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) e, para as entregas a partir da
 Sino 6.1, nas mudanças descritas na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md).
 
+## Sino 6.13 — modernização visual, Nova conta e logotipo (12/11/2026)
+
+**Publicada no GitHub em 12/11/2026** (etiqueta `sino-6.13`):
+- aprovada integralmente pela autora depois da validação visual;
+- integrada à `main` por fast-forward da branch `integracao/sino-6.13`, que recebeu por cherry-pick os 16 commits do protótipo isolado.
+
+A versão fica fora das entregas E1–E18 do planejamento. O detalhamento está no anexo [sino-6.13.md](sino-6.13.md) e na [ERS v7.0](ERS_Controle_de_Contas_v7.0.md), seção 5.56. **Sem mudança no banco de dados** (continua na versão 11, sem migração). Os Termos de Uso e a Política de Privacidade não mudam.
+
+**Funcionalidades e telas**
+
+- **Nova conta:**
+  - cartões "Conta comum" e "Superconta";
+  - os quatro tipos no próprio formulário, cada um com uma faixa explicativa;
+  - contadores dentro dos campos;
+  - "Valor por parcela (estimado)" e Tipo de valor (Fixo ou Variável) como campos;
+  - uma recorrência nova começa "Sem data de término".
+  - A **Superconta é só visual**: nada nela grava, e a funcionalidade continua futura.
+- **Quantidade de parcelas:** de 2 a 36, digitável ou pelas setas, em Nova conta, "Parcelar esta conta" e "Alterar parcelamento".
+- **Editar conta e Detalhes:**
+  - resumo curto da Recorrência em Editar;
+  - "Transformar em recorrente" começa sem término;
+  - "Parcelar esta conta" passou para o menu da Recorrência em Editar;
+  - Cancelar em uma linha a 320 px.
+- **"Alterar término da recorrência"** (novo, nas séries mensais e anuais ativas):
+  - preserva as ocorrências com pagamentos, estornos ou edições;
+  - nunca exclui o que já venceu;
+  - é gravado no Salvar, numa única transação com os demais campos.
+- **16 categorias predefinidas para usuários novos:**
+  - 7 nomes atualizados;
+  - as novas Mercado, Lanches, Animais, Compras e Finanças.
+  - Quem já tem conta mantém as suas categorias.
+- **Início, Ver status e Contas em atraso:**
+  - cartão do mês em degradê com Total do mês, Pago e Pendente;
+  - alertas lado a lado em janela larga;
+  - linhas com o ícone da categoria quando há espaço;
+  - "+", "Ver status", "Ver essas contas" e as abas com foco visível pelo teclado;
+  - aba ativa em pílula verde.
+- **Categorias:**
+  - banner com "Nova categoria";
+  - ícones maiores e mais legíveis;
+  - em 320 e 380 px, os três botões ficam inteiros embaixo do nome.
+- **Gráfico:**
+  - resumo em degradê (Total, Total pago, Pendente);
+  - Evolução e Gastos por categoria lado a lado em janela larga;
+  - legenda compacta (6 maiores + "Outras") com "Ver todas as categorias";
+  - comparativo com todas as categorias;
+  - comparação com o mês anterior numa faixa compacta.
+- **Logotipo:** a nova imagem do Sino no login, na recuperação de senha, na confirmação do código e ao lado da saudação em Início.
+
+**O que não muda**
+
+- os cálculos, os totais, os valores pendentes e o agrupamento por categoria;
+- as regras de contas, parcelamentos, recorrências, pagamentos e estornos da 6.12;
+- a autenticação, os códigos e o serviço de e-mails;
+- os dados existentes.
+
+**Testes e validação**
+
+- **Testes automáticos:** 2.050, no estado integrado, sem rede e com bancos temporários: `failures=6` e `errors=46`.
+  - As 52 falhas são **preexistentes**: as mesmas, comparadas pelo nome do teste, da referência do protótipo. Vêm de testes antigos acoplados a estruturas de tela substituídas.
+  - Nenhuma regressão nova.
+- **Testes novos da 6.13:** 156, todos aprovados.
+- **Validação visual da autora:** aprovada em 12/11/2026, com capturas em 320, 380 e 1000 px, nos temas Claro e Escuro.
+
+**Ressalvas e pendências** (sem correção nesta versão)
+
+- **Margem de 24 px:** fica em todas as telas depois do login (limitação do Flet 0.86).
+- **Gráfico de Evolução em 320 px:** os rótulos dos meses vazios se sobrepõem.
+- **Filtros de Ver status:** não recebem foco pelo teclado.
+- **Emoji de Animais:** o contraste depende da fonte de emoji do sistema; reavaliar se ainda for pertinente.
+- **Texto da Superconta:** fala em "próxima versão", o que não corresponde à situação das Supercontas (F1), que continuam futuras.
+- **Leitor de tela:** Orca e AT-SPI não foram testados.
+- **Pendências da 6.12:** as melhorias D7 e D8 e as demais ainda não tratadas continuam abertas.
+
 ## Sino 6.12 — tipos de conta, parcelamentos e valores variáveis (10/11/2026)
 
 **Publicada no GitHub em 10/11/2026** (etiqueta `sino-6.12`):

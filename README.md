@@ -23,10 +23,10 @@ A **v6.0**, descrita na [ERS v6.0](docs/ERS_Controle_de_Contas_v6.0.md), está *
 - **Edição e exclusão com escopo**: em contas recorrentes, você escolhe entre "Somente este mês" e "Este mês em diante", inclusive para categoria e descrição.
 - **Recorrência flexível**: transforme uma conta avulsa em recorrente, altere a frequência ou encerre a recorrência sem perder o histórico. *Na Sino 6.12 (publicada em 10/11/2026):* só a conta Única muda de tipo; "Alterar frequência" sai (Mensal ↔ Anual bloqueado), e para outra frequência basta encerrar a série e transformar uma ocorrência que ficou avulsa.
 - **Pagamentos** com data efetiva e status de atraso calculado automaticamente. *Na Sino 6.10 (publicada no GitHub em 30/10/2026):* pagamentos **parciais**, com total pago, saldo devedor, histórico e estorno sem apagar nada.
-- **Tela Principal** com o total do mês, todas as contas do mês, atalho para editar e aviso de contas em atraso; tela **"Ver status"** com filtros.
+- **Tela Principal** com o total do mês, todas as contas do mês, atalho para editar e aviso de contas em atraso; tela **"Ver status"** com filtros. *Na Sino 6.13 (publicada em 12/11/2026):* Início, Categorias e Gráfico com visual modernizado, Nova conta com os tipos no próprio formulário, "Alterar término da recorrência" em Editar conta e o novo logotipo.
 - **Detalhes da conta** com emoji e cor da categoria, status ao lado do pagamento e sempre os mesmos campos: valor, vencimento, categoria, parcela ("Parcela 3 de 12"), recorrência e descrição. *Na Sino 6.12 (publicada em 10/11/2026):* "Parcela X de Y" só nas parceladas e "Ocorrência X de Y" nas recorrências.
 - **Gráfico** mensal e anual: total do período, total pago, evolução dos gastos, distribuição por categoria e comparação com o período anterior.
-- **Categorias** com emoji e cor própria: 11 prontas para usar e até 30 por usuário.
+- **Categorias** com emoji e cor própria: 11 prontas para usar e até 30 por usuário. *Na Sino 6.13 (publicada em 12/11/2026):* 16 prontas para quem se cadastra (quem já tem conta mantém as suas).
 - **Ajustes**: nome, e-mail, senha, tema **Claro ou Escuro**, Termos de Uso e Política de Privacidade, sair e **excluir a conta**.
 - **Contas de usuário** com aceite dos Termos, senha mínima de 8 caracteres armazenada com PBKDF2 e confirmação do e-mail por **código** (cadastro, alteração de e-mail e "Esqueci minha senha").
 - **Fechamento seguro**: fechar a janela enquanto um cadastro, uma alteração de e-mail ou uma recuperação de senha é gravado espera o fim da gravação.
@@ -65,6 +65,17 @@ A [ERS v7.0](docs/ERS_Controle_de_Contas_v7.0.md) é o plano em andamento, divid
     - o leitor de tela não foi testado;
     - a responsividade em 320 px e outros ajustes visuais ficam para a Sino 6.13.
   - **Documentação:** regras no [anexo da 6.12](docs/sino-6.12-regras.md) e nas [notas da versão](docs/notas-da-versao.md). Fora das entregas E1–E18 (5.55 da ERS v7.0).
+- **Sino 6.13** *(publicada no GitHub em 12/11/2026; [notas da versão](docs/notas-da-versao.md))*: modernização visual, Nova conta e logotipo.
+  - **O que traz:**
+    - Nova conta com os quatro tipos no próprio formulário (a Superconta aparece só como visual, sem gravar nada);
+    - quantidade de parcelas digitável, resumo curto da Recorrência em Editar e "Alterar término da recorrência", gravado numa única transação;
+    - 16 categorias predefinidas para usuários novos;
+    - Início, Ver status, Contas em atraso, Categorias e Gráfico modernizados, com foco visível pelo teclado e telas estreitas corrigidas;
+    - o novo logotipo no login, na recuperação de senha, na confirmação do código e em Início.
+  - **Banco de dados:** sem mudança (continua na versão 11).
+  - **Testes:** 2.050 testes automáticos, com 52 falhas preexistentes e nenhuma regressão nova; 156 testes novos aprovados; validação visual da autora aprovada.
+  - **Ressalvas:** margem de 24 px depois do login, rótulos da Evolução em 320 px, filtros de Ver status sem foco pelo teclado e leitor de tela não testado.
+  - **Documentação:** [anexo da 6.13](docs/sino-6.13.md) e [notas da versão](docs/notas-da-versao.md). Fora das entregas E1–E18 (5.56 da ERS v7.0). As Supercontas (F1) continuam futuras.
 - **E14–E15 pendentes:** preparação e piloto da disponibilização para outras pessoas.
 - **E16–E18 pendentes:** comprovantes em imagem e backup completo.
 - **Faturas (M13):** proposta ainda candidata, sem aprovação.
@@ -190,7 +201,7 @@ Com o ambiente virtual `.venv` ativado e as dependências instaladas (veja "Como
 python3 -m unittest discover tests
 ```
 
-A suíte (879 testes na entrega da v6.0; 1070 na Sino 6.3; 1.595 na Sino 6.10; 1.615 na Sino 6.11; 1.894 na Sino 6.12) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
+A suíte (879 testes na entrega da v6.0; 1070 na Sino 6.3; 1.595 na Sino 6.10; 1.615 na Sino 6.11; 1.894 na Sino 6.12; 2.050 na Sino 6.13, com 52 falhas preexistentes) precisa do `.venv`: o cliente do serviço de códigos usa o `cryptography`, instalado pelo `requirements.txt`. Ela cobre a camada de dados (recorrência e geração de ocorrências, edição e exclusão com escopo, pagamentos, categorias e autenticação), as telas e o cliente do serviço de códigos. Cada teste de dados roda em um banco SQLite temporário e isolado, sem tocar nos dados reais do aplicativo. Nenhum teste acessa a rede externa; alguns usam conexões locais em `127.0.0.1` e os comandos `git`, `tar` e `ss` (Linux).
 
 Os testes do serviço de códigos (`servidor/`; 151 testes na v6.0, 260 na Sino 6.3) usam Node.js 24 e rodam localmente, sem conta em serviços externos:
 

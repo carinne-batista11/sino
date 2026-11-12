@@ -309,6 +309,20 @@ Em resumo:
   * RF29 (encerrar recorrência): sem mudança (R7);
   * RF32 e RF33 (descrição): limite de 250 (5.45).
 
+## 5.56 Modernização visual, Nova conta e logotipo [v7 novo, Sino 6.13; completa 5.15, 5.18, 5.55 e RF14]
+
+Também fora das melhorias M1–M14 e das entregas E1–E18, por decisão da autora (10 a 12/11/2026). Desenvolvida num protótipo isolado e integrada na branch `integracao/sino-6.13`. O detalhamento está no anexo versionado [sino-6.13.md](sino-6.13.md), referência desta seção, que não o repete.
+
+Em resumo:
+
+* **Nova conta:** os quatro tipos da 6.12 no próprio formulário, em cartões compactos, ao lado do cartão "Superconta", que é **só visual** (não grava nada e não implementa a F1). Uma recorrência nova começa "Sem data de término"; a quantidade de parcelas (2 a 36) é digitável ou ajustada pelas setas.
+* **Editar conta e Detalhes:** resumo curto da Recorrência; "Parcelar esta conta" passou dos Detalhes para o menu da Recorrência em Editar; novo **"Alterar término da recorrência"** (decisões B1–B7 da autora, 11/11/2026, no anexo), gravado no Salvar numa única transação com os demais campos.
+* **Categorias predefinidas (RF14):** o catálogo passa de 11 para **16** categorias, só para usuários novos. Os usuários já cadastrados mantêm as suas, sem migração. O limite de 30 e o cinza reservado não mudam.
+* **Início, Ver status, Contas em atraso, Categorias e Gráfico:** visual modernizado, com cartões de resumo em degradê, foco visível pelo teclado nos principais botões e nas abas, linhas e botões que cabem em 320 e 380 px e legenda compacta no Gráfico ("Outras" é só apresentação). Os cálculos não mudam.
+* **Logotipo:** a imagem aprovada pela autora no login, na recuperação de senha, na confirmação do código e ao lado da saudação em Início. Ícone da janela e lançador sem mudança.
+* **Dados:** sem migração (o banco continua na v11). Regras da 6.12 (5.55) preservadas.
+* **Pendências:** em 13.4 e no anexo, seção 7.
+
 ---
 
 # 6. Requisitos Funcionais [v7]
@@ -370,6 +384,7 @@ Em resumo:
 * **Detalhes:** botão "Ver comprovante" quando houver (5.50); "Registrar pagamento parcial", total pago, saldo devedor e histórico de pagamentos com lápis e lixeira (5.54).
 * **Gráfico:** cartão "Comparativo por categoria" (5.48); total pago com os parciais (5.54).
 * **Login, Cadastro, Ajustes:** 5.41, 5.42, 5.46; tela de novo aceite (5.53).
+* **Sino 6.13 (5.56, publicada em 12/11/2026):** Nova conta com os tipos no formulário e a Superconta só visual; resumo curto da Recorrência e "Alterar término da recorrência" em Editar; Início, Ver status, Contas em atraso, Categorias e Gráfico modernizados; logotipo no login, na recuperação de senha, na confirmação do código e em Início. Detalhes no anexo [sino-6.13.md](sino-6.13.md).
 
 ---
 
@@ -705,6 +720,15 @@ Sem o envio real validado em ambiente restrito (E4), o escopo **não** é declar
     * (k) categoria "Cartão de crédito" sem lixeira, sem diagnóstico;
     * (l) leitor de tela não testado;
     * (m) comentário de `preparar_banco` ainda citando a v10.
+* **Sino 6.13 (12/11/2026, publicada):** pendências abertas, **sem correção nesta versão**; a lista completa está no anexo [sino-6.13.md](sino-6.13.md), seção 7:
+  * (a) margem de 24 px depois do login em todas as telas (no Flet 0.86, `page.padding = 0` não chega ao cliente depois do login; os layouts novos a descontam);
+  * (b) rótulos "R$ 0,00" dos meses vazios sobrepostos na Evolução do Gráfico em 320 px (anterior à 6.13);
+  * (c) filtros de Ver status sem foco pelo teclado;
+  * (d) contraste do emoji de Animais (🐾 sobre `#FBC02D`), dependente da fonte de emoji local; reavaliar se ainda for pertinente;
+  * (e) o texto da Superconta na Nova conta fala em "próxima versão", o que não corresponde à situação da F1;
+  * (f) comentários do código ainda citando "Protótipo 6.13";
+  * as pendências da 6.12 acima, inclusive D7 e D8, continuam abertas. No item (d) da 6.12, a 6.13 corrigiu e conferiu por capturas as quebras de Início, Categorias e Gráfico em 320 e 380 px; Ajustes e os filtros de Ver status não foram tratados;
+  * leitor de tela (Orca, AT-SPI) não testado.
 * **M13 (Faturas):** conflito C1–C4 e decisões G1–G7 abertos; inclusão no escopo a aprovar.
 * ~~**L1:** limpeza das contas antigas de teste.~~ Resolvida em 06/10/2026 pela reinicialização do banco da instalação principal (backup de recuperação e ref6).
 
@@ -797,6 +821,11 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
       * etiqueta anotada `sino-6.12` no commit que registra a publicação (6D).
       * *Atualização (10/11/2026):* publicação conferida no GitHub (`main`, `origin/main` e etiqueta `sino-6.12` no mesmo commit); banco pessoal na v11, íntegro e sem alteração nos dados desde a migração; sete backups automáticos e quatro cópias de recuperação preservados. Pendências em 13.4 (D7 e D8 para a 6.13). **Implantação encerrada.**
     * **Sequência aprovada (D6B-1):** 6C, integração local e migração controlada do banco pessoal; depois 6D, publicação.
+  * **Sino 6.13** — **Publicada no GitHub em 12/11/2026**, etiqueta anotada `sino-6.13` (5.56; anexo [sino-6.13.md](sino-6.13.md)). Modernização visual (Início, Ver status, Contas em atraso, Categorias e Gráfico), nova organização da Nova conta com a Superconta só visual, resumo da Recorrência e "Alterar término da recorrência" em Editar, 16 categorias predefinidas para usuários novos e o novo logotipo. Sem migração (banco na v11).
+    * **Origem:** protótipo isolado (clone sem remoto, a partir de `sino-6.12`, banco fictício). Os 16 commits foram trazidos por cherry-pick (`-x`) para a branch `integracao/sino-6.13`, sobre `ad6fbcd`, e levados à `main` por fast-forward.
+    * **Aprovação da autora:** cada etapa validada visualmente entre 11 e 12/11/2026; versão aprovada integralmente em 12/11/2026.
+    * **Testes:** suíte de 2.050 testes no estado integrado, com as **52 falhas preexistentes** (6 failures e 46 errors; as mesmas, pelo nome, da referência do protótipo) e nenhuma regressão nova; 156 testes novos da 6.13 aprovados.
+    * **Fora do escopo:** F1 (Supercontas), D7 e D8.
 * Cada entrega com código publicada recebe a próxima versão **menor**:
   * a primeira entrega com código publicada recebe a Sino 6.1; as seguintes recebem 6.2, 6.3, e assim por diante, **na ordem em que forem publicadas**, mesmo que a ordem da tabela mude;
   * uma correção sem funcionalidade nova recebe uma versão de **correção** (por exemplo, 6.3.1).
@@ -833,6 +862,13 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 * ~~**Ainda não feito:** integração na `main`, migração do banco pessoal, etiqueta e publicação.~~ *Atualização (10/11/2026):* concluídos a integração na `main` (fast-forward), a migração do banco pessoal (38/38, com backup automático), a etiqueta e a publicação.
 * **Pendências:** registradas em 13.4.
 
+**Fora das entregas (12/11/2026): Sino 6.13, modernização visual, Nova conta e logotipo** (5.56, anexo [sino-6.13.md](sino-6.13.md))
+* **Situação:** **Publicada no GitHub em 12/11/2026** (etiqueta `sino-6.13`), depois da aprovação integral da autora.
+* **Testes técnicos:** suíte de 2.050 testes no estado integrado, com as 52 falhas preexistentes (6 failures e 46 errors), comparadas pelo nome, e nenhuma regressão nova; 156 testes novos aprovados.
+* **Dados:** sem migração; banco pessoal na v11, sem alteração. A versão não precisou abrir o banco pessoal para ser publicada.
+* **F1 (Supercontas):** continua futura e fora da 6.13; a Superconta aparece só como visual na Nova conta.
+* **Pendências:** registradas em 13.4.
+
 **Situação geral após a Sino 6.12 (10/11/2026; registro de continuidade, sem nova decisão e sem nova ordem de prioridade):**
 * **Última versão publicada:** **Sino 6.12**, publicada no GitHub e com a implantação encerrada em 10/11/2026.
   * Commit de publicação `ca1ea139747bed96bd9e717dad16371bec731864`, com a etiqueta anotada `sino-6.12`, que fica nesse commit.
@@ -845,7 +881,7 @@ Uma entrega só começa com a autorização da autora. Uma entrega que só regis
 * **Banco pessoal:** na **v11** desde 10/11/2026, migrado por chamada explícita a `migrar_schema_v11` (38/38, com backup automático pré-v11). Íntegro e sem alteração nos dados desde a migração. Os sete backups automáticos e as quatro cópias de recuperação, mantidas fora do repositório, estão preservados. Conferência final de proteção (fora do repositório): **63/63** itens protegidos e **5/5** complementares.
 * **Testes e validação:** suíte **1.894/1.894**; validação manual da autora **24/24** (banco fictício, 08/11/2026) e **14/14** (banco pessoal, 10/11/2026).
 * **Continuam pendentes** (registros já existentes, sem mudança de decisão; nada aqui é dado como implementado):
-  * **Sino 6.13** (15.2): interface, organização visual, responsividade, acessibilidade e padronização dos botões; avaliação das melhorias **D7** e **D8** e das demais pendências da 6.12 (13.4; anexo, seção 14). Não iniciada.
+  * **Sino 6.13** (15.2): interface, organização visual, responsividade, acessibilidade e padronização dos botões; avaliação das melhorias **D7** e **D8** e das demais pendências da 6.12 (13.4; anexo, seção 14). ~~Não iniciada.~~ *Atualização (12/11/2026):* **publicada no GitHub em 12/11/2026** (ver "Fora das entregas (12/11/2026)" abaixo); D7 e D8 não foram tratadas e continuam pendentes.
     * *Orientação da autora (10/11/2026):* priorizar a modernização e a organização das telas existentes. A interface pode ser preparada gradualmente para receber as Supercontas no futuro, **sem implementar nem ativar** a funcionalidade.
   * **F1 — Supercontas e contas descendentes** (15.1; relacionada à M13, candidata): não iniciada na versão oficial e sem regras aprovadas nesta ERS. A indicação "Sino 6.14", registrada em 15.2 e no anexo da 6.12 (07 e 08/11/2026), é uma **previsão histórica sujeita a revisão**, e não um compromisso de versão. Pela regra de 15.2, o número acompanha a ordem de publicação.
     * *Orientação da autora (10/11/2026):* a implementação funcional das Supercontas fica para uma das últimas fases do sistema.
@@ -881,6 +917,7 @@ Legenda:
 | Versão | Data | Descrição |
 |---|---|---|
 | 6.0 | 23/09/2026 – 04/10/2026 | Ver a [ERS v6.0](ERS_Controle_de_Contas_v6.0.md) (preservada sem alterações). |
+| 7.0 (revisão) | 12/11/2026 (publicação da Sino 6.13) | **Sino 6.13 publicada** no GitHub em 12/11/2026, com a etiqueta anotada `sino-6.13`.<br>• Nova 5.56 e anexo versionado [sino-6.13.md](sino-6.13.md): modernização visual de Início, Ver status, Contas em atraso, Categorias e Gráfico; Nova conta com os tipos no formulário e a Superconta só visual; "Alterar término da recorrência" (B1–B7) com salvamento atômico; 16 categorias predefinidas para usuários novos (RF14); logotipo.<br>• Seção 8, 13.4 (pendências da 6.13), 15.2 e 15.3 atualizadas; atualização datada no registro de continuidade da 6.12.<br>• Sem migração (v11). F1 continua futura. Registros anteriores preservados. Só documentação. |
 | 7.0 (revisão) | 10/11/2026 (continuidade após a Sino 6.12) | **Registro de continuidade** em 15.3 ("Situação geral após a Sino 6.12"): última versão publicada, commits de publicação e de encerramento, etiqueta `sino-6.12`, resumo funcional da 6.12, banco pessoal v11, testes e validações. Lista do que continua pendente (Sino 6.13 com D7 e D8; F1 (indicação "Sino 6.14" tratada como previsão sujeita a revisão), com a revisão das regras diante da 6.12; orientações da autora de 10/11/2026 (telas primeiro; Supercontas em uma das últimas fases, com preparação gradual da interface sem ativar a funcionalidade); E13 suspensa; E14–E15; E16–E18 com v12; M13; 13.4), sem nova decisão e sem nova ordem de prioridade. Registros anteriores preservados. Só documentação. |
 | 7.0 (revisão) | 10/11/2026 (encerramento da implantação da Sino 6.12) | **Implantação da Sino 6.12 encerrada.**<br>• Publicada no GitHub com a etiqueta anotada `sino-6.12`; `main` e `origin/main` sincronizadas no mesmo commit.<br>• Integração por fast-forward e migração controlada do banco pessoal para a v11 (`migrar_schema_v11`, 38/38, com backup automático).<br>• Testes automáticos 1.894/1.894; validação manual da autora 24/24 (banco fictício) e 14/14 (banco pessoal).<br>• Banco pessoal na v11, íntegro e sem alteração nos dados desde a migração; sete backups automáticos e quatro cópias de recuperação preservados.<br>• Pendências em 13.4, inclusive D7 e D8, para avaliação na Sino 6.13.<br>ERS v7.0 (15.2, 15.3 e histórico) e notas da versão. Registros anteriores preservados. Só documentação; etiqueta `sino-6.12` inalterada. |
 | 7.0 (revisão) | 10/11/2026 (publicação da Sino 6.12) | **Sino 6.12 publicada** no GitHub em 10/11/2026.<br>• A branch `integracao/sino-6.12` foi levada à `main` por fast-forward (13 commits, sem merge).<br>• Banco pessoal migrado da v10 para a v11 por chamada explícita a `migrar_schema_v11` (38/38), com backup automático pré-v11.<br>• Primeira abertura com o banco pessoal aprovada pela autora (14/14), sem alteração nos dados.<br>• Etiqueta anotada `sino-6.12` no commit que registra a publicação.<br>Situação atualizada em 13.4, 15.2 e 15.3, com os registros anteriores preservados. Só documentação. |
