@@ -1322,6 +1322,28 @@ LARGURA_MINIMA_NOME_NA_LINHA = 100
 # pendência registrada no LEIA-ME, porque corrigir mudaria todas as telas). Os
 # cálculos de largura das telas modernizadas descontam essa margem dos dois lados;
 # antes, a linha de 380 px deixava ~62 px para o nome ("Academi/a").
+# 6.13 (logotipo): imagem aprovada pela autora (cópia byte a byte do arquivo aprovado,
+# 1254 x 1254 px), usada no login, na recuperação de senha, na confirmação do código do
+# cadastro (opção A, 12/11; mesmo tamanho do login) e ao lado da saudação em Início. O quadrado
+# arredondado ocupa 55..1197 px da imagem (fora dele, preto); o enquadramento recorta
+# 8 px para dentro (63..1189) e arredonda os cantos em 27% do lado, sem sobra preta e
+# sem tocar no texto "$ino" (215..1090 x 375..835). Proporção 1:1 preservada.
+CAMINHO_DO_LOGOTIPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo_sino.png")
+LOGOTIPO_LADO_ORIGINAL = 1254
+LOGOTIPO_RECORTE_INICIO = 63
+LOGOTIPO_RECORTE_LADO = 1126
+LOGOTIPO_RAIO_RELATIVO = 0.27
+LOGOTIPO_LADO_LOGIN = 104
+LOGOTIPO_LADO_INICIO = 46
+
+
+def origem_do_logotipo():
+    """Caminho absoluto do PNG do logotipo, ou None se o arquivo não existir. O Flet 0.86
+    (desktop) exibe arquivos locais pelo caminho; a imagem enviada em bytes (1,3 MB) não
+    chega a aparecer no cliente."""
+    return CAMINHO_DO_LOGOTIPO if os.path.isfile(CAMINHO_DO_LOGOTIPO) else None
+
+
 MARGEM_DA_PAGINA = 24
 _MARGENS_DA_LINHA = 2 * MARGEM_DA_PAGINA + 2 * 20 + 2 * 12 + 4
 _LARGURA_VALOR_STATUS = 92
@@ -2024,10 +2046,29 @@ def main(page: ft.Page):
             bgcolor=cores.fundo_cabecalho_destaque, padding=8, border_radius=8,
         )]
 
-    def logo_sino():
+    def logotipo_sino(lado, data="logotipo_sino"):
+        """6.13 (logotipo): a imagem aprovada, enquadrada no quadrado arredondado (ver
+        LOGOTIPO_*). Sem o arquivo, volta à marca em texto anterior."""
+        imagem = origem_do_logotipo()
+        if imagem is None:
+            return ft.Container(
+                data=data, content=ft.Text("$ino", size=round(lado * 0.3), weight=ft.FontWeight.BOLD,
+                                           color=cores.texto_marca),
+                bgcolor=cores.fundo_marca, width=lado, height=lado, border_radius=lado / 2,
+                alignment=ft.Alignment.CENTER,
+            )
+        escala = lado / LOGOTIPO_RECORTE_LADO
+        inteira = LOGOTIPO_LADO_ORIGINAL * escala
         return ft.Container(
-            content=ft.Text("$ino", size=28, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
-            bgcolor=cores.fundo_marca, width=80, height=80, border_radius=40, alignment=ft.Alignment.CENTER,
+            data=data, width=lado, height=lado, bgcolor=cores.fundo_marca,
+            border_radius=round(lado * LOGOTIPO_RAIO_RELATIVO, 1), clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+            content=ft.Stack(width=lado, height=lado, controls=[ft.Image(
+                src=imagem, width=inteira, height=inteira, fit=ft.BoxFit.FILL,
+                left=-LOGOTIPO_RECORTE_INICIO * escala, top=-LOGOTIPO_RECORTE_INICIO * escala,
+                filter_quality=ft.FilterQuality.HIGH, anti_alias=True,
+                cache_width=round(inteira * 3), cache_height=round(inteira * 3),
+                semantics_label="Sino",
+            )]),
         )
 
     class EtapaCodigo:
@@ -2334,14 +2375,7 @@ def main(page: ft.Page):
         modo_cadastro = [False]
         estado_cadastro = {"controle": None}
 
-        logo = ft.Container(
-            content=ft.Text("$ino", size=28, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
-            bgcolor=cores.fundo_marca,
-            width=80,
-            height=80,
-            border_radius=40,
-            alignment=ft.Alignment.CENTER,
-        )
+        logo = logotipo_sino(LOGOTIPO_LADO_LOGIN, data="logotipo_login")  # 6.13 (logotipo)
 
         titulo = ft.Text("Bem-vindo de volta", size=20, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
         subtitulo = ft.Text("Suas contas, sob controle.", size=13, color=cores.texto_secundario)
@@ -2605,7 +2639,7 @@ def main(page: ft.Page):
             )
             controle.ao_falhar = etapa.terminar
             page.controls.clear()
-            page.add(etapa.tela(logo_sino()))
+            page.add(etapa.tela(logotipo_sino(LOGOTIPO_LADO_LOGIN, data="logotipo_codigo")))  # 6.13 (logotipo, opção A)
             page.update()
             iniciar_contador(etapa.contador, operacao)
 
@@ -2946,7 +2980,8 @@ def main(page: ft.Page):
         page.add(ft.Column(
             data="tela_recuperacao",
             horizontal_alignment=ft.CrossAxisAlignment.CENTER, **ROLAGEM_DE_TELA,
-            controls=[*aviso_demonstracao(), ft.Container(height=20), logo_sino(), ft.Container(height=16),
+            controls=[*aviso_demonstracao(), ft.Container(height=20),
+                      logotipo_sino(LOGOTIPO_LADO_LOGIN, data="logotipo_recuperacao"), ft.Container(height=16),
                       titulo, explicacao, ft.Container(height=16), campo_email, campo_cod, campo_nova, campo_confirmacao,
                       ft.Container(height=8), botao, mensagem, botao_reenviar, botao_voltar],
         ))
@@ -3485,14 +3520,7 @@ def main(page: ft.Page):
         hoje = date.today()
         mes_atual = list(mes_inicial) if mes_inicial else [hoje.year, hoje.month]
 
-        avatar = ft.Container(
-            content=ft.Text("$", size=18, weight=ft.FontWeight.BOLD, color=cores.texto_marca),
-            bgcolor=cores.fundo_marca,
-            width=40,
-            height=40,
-            border_radius=20,
-            alignment=ft.Alignment.CENTER,
-        )
+        avatar = logotipo_sino(LOGOTIPO_LADO_INICIO, data="logotipo_inicio")  # 6.13 (logotipo)
 
         nome_usuario = ft.Text(usuario_atual["nome"] or "", size=16, weight=ft.FontWeight.BOLD, color=cores.texto_principal)
 
