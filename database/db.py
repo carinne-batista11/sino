@@ -3423,20 +3423,30 @@ def definir_tema(usuario_id, tema):
 
 
 # RF14/5.11: catálogo pré-criado, disponível "desde o primeiro acesso... não é
-# necessário criá-las manualmente". Emoji = primeira sugestão de cada linha da
-# tabela 5.12 (proposta inicial de UX, não valor imutável da ERS).
+# necessário criá-las manualmente". Emoji = primeira sugestão de cada linha de
+# SUGESTOES_EMOJI_CATEGORIA (backend/main.py).
+# 6.13 (E1, catálogo aprovado pela autora em 11/11): 16 categorias -- 7 renomeadas
+# (Casa -> Moradia, Automóvel -> Transporte, Faculdade -> Estudos, Academia ->
+# Esportes, Streaming -> Assinaturas, Creche -> Crianças, Outro -> Outros), ícones
+# revistos e 5 novas no fim (Mercado, Lanches, Animais, Compras, Finanças). Vale
+# para usuários novos; categorias já gravadas não mudam por esta lista.
 CATEGORIAS_PRE_CRIADAS = [
-    ("Casa", "🏡"),
-    ("Automóvel", "🚗"),
-    ("Lazer", "🎡"),
-    ("Faculdade", "📚"),
-    ("Academia", "🏋🏻‍♀️"),
-    ("Saúde", "🏥"),
-    ("Cartão de crédito", "💳"),
-    ("Beleza", "💄"),
-    ("Streaming", "📽️"),
-    ("Creche", "👶"),
-    ("Outro", "💕"),
+    ("Moradia", "\U0001F3E0"),            # 🏠
+    ("Transporte", "\U0001F697"),         # 🚗
+    ("Lazer", "\U0001F3A1"),              # 🎡
+    ("Estudos", "\U0001F4DA"),            # 📚
+    ("Esportes", "\U0001F3CB\uFE0F"),     # 🏋️
+    ("Saúde", "\U0001F3E5"),              # 🏥
+    ("Cartão de crédito", "\U0001F4B3"),  # 💳
+    ("Beleza", "\U0001F484"),             # 💄
+    ("Assinaturas", "\U0001F4FA"),        # 📺
+    ("Crianças", "\U0001F476"),           # 👶
+    ("Outros", "\U0001F4E6"),             # 📦
+    ("Mercado", "\U0001F6D2"),            # 🛒
+    ("Lanches", "\U0001F354"),            # 🍔
+    ("Animais", "\U0001F43E"),            # 🐾
+    ("Compras", "\U0001F6CD\uFE0F"),      # 🛍️
+    ("Finanças", "\U0001F4B0"),           # 💰
 ]
 
 # RF18/5.13: "paleta de até 30 cores... valores exatos não são fixados nesta
@@ -3447,9 +3457,9 @@ CATEGORIAS_PRE_CRIADAS = [
 # seletor de cores (montar_paleta() em backend/main.py) só filtra cores já
 # em uso, nunca reordena -- uma cor liberada por edição/exclusão de
 # categoria volta a aparecer exatamente nesta mesma posição, nunca no
-# início/fim da lista renderizada. As 11 cores de CORES_CATEGORIAS_PRE_CRIADAS
+# início/fim da lista renderizada. As 16 cores de CORES_CATEGORIAS_PRE_CRIADAS
 # (abaixo) são um subconjunto desta lista -- existe uma única paleta oficial
-# de 30 cores, e as categorias pré-criadas usam 11 delas.
+# de 30 cores, e as categorias pré-criadas usam 16 delas.
 PALETA_CORES_CATEGORIAS = [
     "#64B5F6", "#1976D2", "#0277BD", "#3F51B5", "#5C6BC0",
     "#A990D8", "#7E57C2", "#8E24AA", "#CE93D8", "#C2185B",
@@ -3459,7 +3469,7 @@ PALETA_CORES_CATEGORIAS = [
     "#00897B", "#80CBC4", "#77E3D3", "#0097A7", "#00ACC1",
 ]
 
-# Cor de cada uma das 11 categorias pré-criadas (5.11/5.13), definida
+# Cor de cada uma das 16 categorias pré-criadas (5.11/5.13), definida
 # EXPLICITAMENTE por categoria -- mesma ordem de CATEGORIAS_PRE_CRIADAS.
 # Cada valor aqui é uma das 30 cores de PALETA_CORES_CATEGORIAS (não uma cor
 # externa), mas a ASSOCIAÇÃO categoria->cor é deliberadamente desacoplada da
@@ -3468,17 +3478,22 @@ PALETA_CORES_CATEGORIAS = [
 # categorias já existentes no banco -- só rege a cor atribuída a usuários
 # novos via inicializar_categorias_padrao().
 CORES_CATEGORIAS_PRE_CRIADAS = [
-    "#96E199",  # Casa
-    "#FFD54F",  # Automóvel
+    "#96E199",  # Moradia
+    "#FFD54F",  # Transporte
     "#FFAB91",  # Lazer
-    "#64B5F6",  # Faculdade
-    "#CE93D8",  # Academia
+    "#64B5F6",  # Estudos
+    "#CE93D8",  # Esportes
     "#80CBC4",  # Saúde
     "#A990D8",  # Cartão de crédito
     "#F48FB1",  # Beleza
-    "#F3756A",  # Streaming
-    "#77E3D3",  # Creche
-    "#EF9A9A",  # Outro
+    "#F3756A",  # Assinaturas
+    "#77E3D3",  # Crianças
+    "#EF9A9A",  # Outros
+    "#43A047",  # Mercado
+    "#F57C00",  # Lanches
+    "#FBC02D",  # Animais
+    "#8E24AA",  # Compras
+    "#00897B",  # Finanças
 ]
 
 LIMITE_CATEGORIAS_POR_USUARIO = 30  # 5.11, contando as pré-criadas
@@ -3598,7 +3613,7 @@ def criar_categoria(usuario_id, nome, icone=None, cor=None):
 
 def inicializar_categorias_padrao(usuario_id):
     """
-    RF14 (5.11): cria as 11 categorias pré-criadas para um usuário, cada
+    RF14 (5.11): cria as 16 categorias pré-criadas para um usuário, cada
     uma com emoji sugerido (5.12) e cor própria da paleta (5.13). Pensada
     para ser chamada uma vez ao cadastrar o usuário (RF01) -- o catálogo
     fica disponível "desde o primeiro acesso... não é necessário

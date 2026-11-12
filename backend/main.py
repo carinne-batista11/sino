@@ -44,15 +44,32 @@ SENTINELA_NOVA_CATEGORIA = "__nova__"
 # quinta opção coerente (🛋️) para manter 5 sugestões por categoria, como o
 # restante da tabela já tem. Chaves normalizadas (minúsculas, sem espaços
 # nas bordas) -- ver sugestoes_emoji_para.
+# 6.13 (E1): chaves do catálogo de 16 categorias (a primeira sugestão é o ícone
+# padrão de CATEGORIAS_PRE_CRIADAS, em database/db.py), mais as do catálogo
+# anterior, inalteradas.
 SUGESTOES_EMOJI_CATEGORIA = {
-    "casa": ["🏡", "🏘️", "🏚️", "🏢", "🛋️"],
-    "automóvel": ["🚗", "🚕", "🏍️", "✈️", "🚃"],
+    "moradia": ["🏠", "🏡", "🏘️", "🏢", "🛋️"],
+    "transporte": ["🚗", "🚌", "🚕", "🏍️", "⛽"],
     "lazer": ["🎡", "🏟️", "🏖️", "🎮", "🎳"],
-    "faculdade": ["📚", "📋", "📝", "👩‍💻", "📖"],
-    "academia": ["🏋🏻‍♀️", "⛹🏻‍♂️", "🛹", "🏊🏻‍♂️", "🚴🏻‍♂️"],
+    "estudos": ["📚", "📝", "🎓", "💻", "📖"],
+    "esportes": ["🏋️", "⚽", "🏊", "🚴", "🎾"],
     "saúde": ["🏥", "💊", "🩺", "🩻", "💉"],
     "cartão de crédito": ["💳", "💵", "🪙", "💰", "🪪"],
     "beleza": ["💄", "💅🏻", "👗", "👟", "👜"],
+    "assinaturas": ["📺", "🎬", "🎵", "🎮", "▶️"],
+    "crianças": ["👶", "🧸", "🍼", "🎈", "🎒"],
+    "outros": ["📦", "⭐", "❤️", "📌", "🔔"],
+    "mercado": ["🛒", "🧺", "🥦", "🍎", "🥖"],
+    "lanches": ["🍔", "🍕", "🌭", "🍟", "☕"],
+    "animais": ["🐾", "🐕", "🐈", "🐇", "🦜"],
+    "compras": ["🛍️", "🎁", "👗", "👟", "👜"],
+    "finanças": ["💰", "💵", "🪙", "💳", "🏦"],
+    # Nomes do catálogo anterior (até a 6.12): usuários já cadastrados continuam com eles
+    # e mantêm as mesmas sugestões de antes.
+    "casa": ["🏡", "🏘️", "🏚️", "🏢", "🛋️"],
+    "automóvel": ["🚗", "🚕", "🏍️", "✈️", "🚃"],
+    "faculdade": ["📚", "📋", "📝", "👩‍💻", "📖"],
+    "academia": ["🏋🏻‍♀️", "⛹🏻‍♂️", "🛹", "🏊🏻‍♂️", "🚴🏻‍♂️"],
     "streaming": ["📽️", "🎥", "📺", "🍿", "🎬"],
     "creche": ["👶", "👧", "🧒", "🧸", "🚼"],
     "outro": ["💕", "🔨", "🐾", "🧳", "🛒"],

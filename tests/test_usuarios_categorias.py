@@ -67,13 +67,13 @@ class TestCategorias(TesteComBancoTemporario):
         super().setUp()
         self.usuario_id = self.criar_usuario()
 
-    def test_catalogo_inicial_de_11_categorias_com_cores_distintas(self):
+    def test_catalogo_inicial_de_16_categorias_com_cores_distintas(self):  # 6.13 (E1): eram 11
         ids = db.inicializar_categorias_padrao(self.usuario_id)
-        self.assertEqual(len(ids), 11)
+        self.assertEqual(len(ids), 16)
         categorias = db.listar_categorias(self.usuario_id)
         self.assertEqual({c["nome"] for c in categorias}, {nome for nome, _ in db.CATEGORIAS_PRE_CRIADAS})
         cores = [c["cor"] for c in categorias]
-        self.assertEqual(len(set(cores)), 11)
+        self.assertEqual(len(set(cores)), 16)
         self.assertTrue(set(cores) <= set(db.PALETA_CORES_CATEGORIAS))
         self.assertEqual(db.inicializar_categorias_padrao(self.usuario_id), [])
 
