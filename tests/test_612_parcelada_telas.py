@@ -55,7 +55,7 @@ class TestNovaContaParcelada(BaseTelas):
     def setUp(self):
         super().setUp()
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
 
     def configurar_parcelada(self, quantidade):
         self.clicar(self.campo("Recorrência").suffix_icon)

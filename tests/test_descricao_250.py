@@ -89,7 +89,7 @@ class BaseDescricao250(TesteComBancoTemporario):
 
     def abrir_nova_conta(self):
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
         self.assertIn("Nova conta", self.textos())
 
     def abrir_edicao_pelo_lapis(self):

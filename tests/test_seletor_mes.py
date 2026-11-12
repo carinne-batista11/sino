@@ -503,7 +503,11 @@ class TestNomesDasSetasDeInicio(BaseSeletor):
     def test_sem_semantics_externo_em_volta_das_setas(self):
         self.entrar()
         self.assertEqual([c for c in self.controles(ft.Semantics) if c.label], [])
-        self.assertEqual(self.controles(ft.MergeSemantics), [])
+        # 6.13 (E2/D4): as abas da barra inferior usam o mesmo padrão do seletor de mês
+        # (MergeSemantics + Semantics(selected) + botão); nenhum envolve as setas.
+        setas = [b for b in self.controles(ft.IconButton) if b.data in ("mes_anterior", "proximo_mes")]
+        self.assertFalse([m for m in self.controles(ft.MergeSemantics)
+                          if any(s in setas for s in percorrer(m))])
 
 
 class TestNomesDasSetasDeAno(BaseSeletor):

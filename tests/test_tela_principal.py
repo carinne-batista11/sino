@@ -56,6 +56,11 @@ class TestFuncoesDaTelaPrincipal(unittest.TestCase):
             self.assertEqual([c["status"] for c in main.filtrar_por_status(contas, filtro)], [status])
 
 
+def valor_no_cartao(textos, rotulo):
+    """6.13 (E2, D1): o valor exibido logo abaixo do rótulo no cartão de Início."""
+    return textos[textos.index(rotulo) + 1]
+
+
 class Evento:
     def __init__(self, pagina, controle=None):
         self.page = pagina
@@ -135,7 +140,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.criar_contas_de_outubro(12)
         self.entrar()
         self.ir_para_outubro()
-        fab = next(c for c in self.controles(ft.Container) if c.data == "nova_conta")
+        fab = next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta")
         rolagem = next(c for c in self.controles(ft.Column) if c.scroll == ft.ScrollMode.AUTO
                        and any(isinstance(t, ft.Text) and t.value == "Ver status" for t in percorrer(c)))
         self.assertNotIn(fab, list(percorrer(rolagem)))
@@ -143,7 +148,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         faixa = next(c for c in self.controles(ft.Container) if c.data == "faixa_nova_conta")
         corpo = next(c for c in self.controles(ft.Column) if faixa in c.controls)
         self.assertEqual(corpo.controls.index(rolagem), corpo.controls.index(faixa) - 1)
-        self.assertEqual((fab.width, fab.height, fab.border_radius), (52, 52, 26))   # mesmo estilo
+        self.assertEqual((fab.width, fab.height, type(fab.style.shape)), (52, 52, ft.CircleBorder))   # mesmo estilo
         self.clicar(fab)
         self.assertIn("Nova conta", self.textos())
 
@@ -169,8 +174,8 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         for rotulo in ("Todas", "Pendentes", "Pagas"):
             self.assertNotIn(rotulo, textos)
         self.assertEqual(self.valor_do_total(), "R$ 20,00")
-        self.assertIn("pago R$ 0,00", textos)
-        self.assertIn("pendente R$ 20,00", textos)
+        self.assertEqual(valor_no_cartao(textos, "Pago"), "R$ 0,00")
+        self.assertEqual(valor_no_cartao(textos, "Pendente"), "R$ 20,00")
 
     def test_pagamento_rapido_nao_altera_o_total(self):
         self.criar_contas_de_outubro(2)
@@ -180,8 +185,8 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
         self.clicar(self.icones("Marcar como paga")[0])
 
         self.assertEqual(self.valor_do_total(), "R$ 20,00")
-        self.assertIn("pago R$ 10,00", self.textos())
-        self.assertIn("pendente R$ 10,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 10,00")
+        self.assertEqual(valor_no_cartao(self.textos(), "Pendente"), "R$ 10,00")
         self.assertIn("Outubro 2026", self.textos())  # continua no mês
         self.assertNotIn("Editar conta", self.textos())
         self.assertFalse(self.na_tela_de_detalhes())
@@ -210,7 +215,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
             self.assertEqual([c for c in self.controles(ft.Container) if c.content in (lapis, pagamento)], [])
             self.assertIsNotNone(lapis.on_click)
             self.assertIsNotNone(pagamento.on_click)
-        self.assertFalse(main.linha_de_conta_empilhada(370, 2))
+        self.assertFalse(main.linha_de_conta_empilhada(418, 2))   # 6.13 (E2): + 48 px de margem real
         self.assertTrue(main.linha_de_conta_empilhada(369, 2))
 
         # as ações continuam as mesmas: o pagamento alterna e o lápis abre a edição
@@ -226,7 +231,10 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
                     and any(isinstance(t, ft.Text) and t.value == nome for t in percorrer(c)))
 
     def textos_da_linha(self, nome):
-        return [t.value for t in percorrer(self.linha_da_conta(nome)) if isinstance(t, ft.Text)]
+        avatar = [c for c in percorrer(self.linha_da_conta(nome)) if getattr(c, "data", None) == "avatar_categoria"]
+        decorativos = {id(t) for a in avatar for t in percorrer(a)}   # E2/D3: emoji decorativo, fora do texto
+        return [t.value for t in percorrer(self.linha_da_conta(nome)) if isinstance(t, ft.Text)
+                and id(t) not in decorativos]
 
     def test_vence_hoje_e_pendente_em_todas_as_listas(self):
         # hoje = 15/09/2026
@@ -270,7 +278,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
 
         # Contas em atraso: só a atrasada, sem "A vencer"
         self.clicar(next(b for b in self.controles(ft.IconButton) if getattr(b.icon, "icon", None) == ft.Icons.ARROW_BACK))
-        self.clicar(next(c for c in self.controles(ft.Container)
+        self.clicar(next(c for c in self.controles((ft.Container, ft.TextButton))
                          if isinstance(c.content, ft.Text) and c.content.value == "Ver essas contas"))
         self.assertIn("Contas em atraso", self.textos())
         self.assertNotIn("A vencer", self.textos())
@@ -351,7 +359,7 @@ class TestFluxoDaTelaPrincipal(TesteComBancoTemporario):
 
     # ---------------------------------------------------------------- Ver status
     def abrir_ver_status(self):
-        link = next(c for c in self.controles(ft.Container)
+        link = next(c for c in self.controles((ft.Container, ft.TextButton))
                     if isinstance(c.content, ft.Text) and c.content.value == "Ver status")
         self.clicar(link)
 

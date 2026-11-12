@@ -69,7 +69,7 @@ class TestNovaContaVariavel(BaseVariavelTelas):
     def setUp(self):
         super().setUp()
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
 
     def preencher(self, nome, valor):
         for c in self.controles(ft.TextField):
@@ -195,7 +195,7 @@ class TestValorPendenteNasTelas(BaseVariavelTelas):
         self.assertNotIn("R$ 0,00", [self.textos_da(self.linha("Luz"))[i] for i in range(2)])
 
     def test_contas_em_atraso(self):
-        self.clicar(next(c for c in self.controles(ft.Container)
+        self.clicar(next(c for c in self.controles((ft.Container, ft.TextButton))
                          if c.on_click and "Ver essas contas" in self.textos_da(c)))
         self.assertIn("Contas em atraso", self.textos())
         linhas = [self.textos_da(c) for c in self.controles(ft.Container)
@@ -288,7 +288,7 @@ class TestGraficoComPendentes(BaseVariavelTelas):
         self.entrar()
 
     def abrir_grafico(self):
-        self.clicar(next(c for c in self.controles(ft.Container) if c.on_click is not None and any(
+        self.clicar(next(c for c in self.controles((ft.Container, ft.TextButton)) if c.on_click is not None and any(
             isinstance(t, ft.Text) and t.value == "Gráfico" for t in percorrer(c))))
 
     def test_totais_barras_e_categorias(self):

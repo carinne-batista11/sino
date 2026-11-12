@@ -133,7 +133,7 @@ class TestCalendariosNaInterface(TesteComBancoTemporario):
 
     def test_nova_conta(self):  # CT135
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
         (seletor,) = self.seletores()
         self.assert_textos_em_portugues(seletor)
         self.escolher(seletor, datetime(2026, 10, 20))

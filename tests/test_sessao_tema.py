@@ -104,7 +104,7 @@ class TesteDeSessao(TesteComBancoTemporario):
         botao.on_click(Evento(pagina, botao))
 
     def abrir_aba(self, pagina, rotulo):
-        aba = next(c for c in self.controles(pagina, ft.Container)
+        aba = next(c for c in self.controles(pagina, (ft.Container, ft.TextButton))
                    if c.on_click is not None and any(isinstance(t, ft.Text) and t.value == rotulo
                                                      for t in percorrer(c)))
         aba.on_click(Evento(pagina, aba))

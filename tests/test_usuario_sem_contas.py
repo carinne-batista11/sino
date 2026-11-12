@@ -107,7 +107,7 @@ class TestInicioSemContas(TesteDeSessao):
         textos = self.textos(pagina)
         self.assertEqual(textos[textos.index("Total do mês") + 1], "R$ 0,00")   # total inalterado
         self.assertIn("Setembro 2026", textos)
-        self.assertTrue([c for c in self.controles(pagina, ft.Container) if c.data == "nova_conta"])  # "+" mantido
+        self.assertTrue([c for c in self.controles(pagina) if getattr(c, "data", None) == "nova_conta"])  # "+" mantido
 
     def test_u4_orientacao_sem_acao_de_clique(self):
         pagina, _ = self.abrir_inicio()

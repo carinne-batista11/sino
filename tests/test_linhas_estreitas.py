@@ -24,14 +24,16 @@ NOME_COM_EMOJI = "Escola 👩‍💻 das crianças"
 
 class TestRegraDeLargura(unittest.TestCase):
     def test_inicio_com_duas_acoes(self):
-        self.assertFalse(main.linha_de_conta_empilhada(380, 2))   # tamanho padrão: lado a lado
-        self.assertFalse(main.linha_de_conta_empilhada(370, 2))
-        self.assertTrue(main.linha_de_conta_empilhada(369, 2))
+        # 6.13 (E2): o cálculo desconta a margem real de 24 px da página (MARGEM_DA_PAGINA); a 380 px
+        # o nome teria ~62 px lado a lado, então a linha de Início empilha (nome com a largura toda).
+        self.assertTrue(main.linha_de_conta_empilhada(380, 2))
+        self.assertFalse(main.linha_de_conta_empilhada(418, 2))
+        self.assertTrue(main.linha_de_conta_empilhada(417, 2))
         self.assertTrue(main.linha_de_conta_empilhada(200, 2))
 
     def test_ver_status_e_atrasadas_sem_acoes(self):
-        self.assertFalse(main.linha_de_conta_empilhada(270, 0))
-        self.assertTrue(main.linha_de_conta_empilhada(269, 0))
+        self.assertFalse(main.linha_de_conta_empilhada(318, 0))   # 6.13 (E2): + 48 px de margem
+        self.assertTrue(main.linha_de_conta_empilhada(317, 0))
 
     def test_largura_desconhecida_conta_como_larga(self):
         for largura in (None, "380", object()):
@@ -100,7 +102,7 @@ class TestInicio(BaseLinhas):
         self.assert_nome_inteiro(next(l for l in linhas if NOME_COM_EMOJI in self.textos(l)), NOME_COM_EMOJI)
 
     def test_padrao_e_larga_continuam_lado_a_lado(self):
-        for largura in (380, 1200):
+        for largura in (418, 1200):   # 6.13 (E2): a 380 px Início empilha (margem real da página)
             with self.subTest(largura=largura):
                 for linha in self.linhas(self.abrir_com_largura(largura)):
                     self.assert_lado_a_lado(linha)
@@ -142,7 +144,7 @@ class TestInicio(BaseLinhas):
 
 class TestVerStatusEAtrasadas(BaseLinhas):
     def ver_status(self, pagina):
-        link = next(c for c in self.todos(pagina) if isinstance(c, ft.Container)
+        link = next(c for c in self.todos(pagina) if isinstance(c, (ft.Container, ft.TextButton))
                     and isinstance(c.content, ft.Text) and c.content.value == "Ver status")
         self.clicar(pagina, link)
 

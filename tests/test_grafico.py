@@ -239,7 +239,7 @@ class TestTelaGrafico(TesteComBancoTemporario):
         controle.on_click(Evento(self.pagina, controle))
 
     def clicavel_com_texto(self, texto):
-        return next(c for c in self.controles(ft.Container)
+        return next(c for c in self.controles((ft.Container, ft.TextButton))
                     if c.on_click is not None and any(isinstance(t, ft.Text) and t.value == texto for t in percorrer(c)))
 
     def entrar_e_abrir_grafico(self):
@@ -294,12 +294,15 @@ class TestTelaGrafico(TesteComBancoTemporario):
         self.assertIn("(R$ 550,00 a mais)", textos)
 
     def test_cartoes_de_totais_com_a_mesma_altura_e_comparacao_em_largura_total(self):
+        # 6.13 (E4): os dois cartões de totais viraram UM cartão de resumo em degradê (Total do mês,
+        # Total pago, Pendente e a barra); a comparação continua em largura total, agora numa faixa
+        # compacta. Mesmos textos e números de antes.
         self.entrar_e_abrir_grafico()
-        total = next(c for c in self.controles(ft.Container) if c.bgcolor == cores.grafico_total_fundo)
-        pago = next(c for c in self.controles(ft.Container) if c.bgcolor == cores.grafico_pago_fundo)
-        self.assertIsNotNone(total.height)
-        self.assertEqual(total.height, pago.height)
-        self.assertEqual((total.col, pago.col), ({"xs": 12, "md": 6}, {"xs": 12, "md": 6}))
+        resumo = next(c for c in self.controles(ft.Container) if c.data == "resumo_do_grafico")
+        textos = [t.value for t in percorrer(resumo) if isinstance(t, ft.Text)]
+        for rotulo in ("Total do mês", "Total pago", "Pendente"):
+            self.assertIn(rotulo, textos)
+        self.assertIsInstance(resumo.gradient, ft.LinearGradient)
 
         corpo = next(c for c in self.controles(ft.Column)
                      if c.horizontal_alignment == ft.CrossAxisAlignment.STRETCH and any(
@@ -307,15 +310,11 @@ class TestTelaGrafico(TesteComBancoTemporario):
                          for filho in c.controls))
         comparacao = next(c for c in corpo.controls if isinstance(c, ft.Container)
                           and c.bgcolor == cores.grafico_comparacao_fundo)
-        linha = comparacao.content
-        self.assertIsInstance(linha, ft.ResponsiveRow)  # empilha em janela estreita
-        texto, variacao = linha.controls
-        self.assertEqual((texto.col, variacao.col), ({"xs": 12, "sm": 8}, {"xs": 12, "sm": 4}))
-        self.assertIn("Comparado a agosto", [t.value for t in percorrer(texto) if isinstance(t, ft.Text)])
-        self.assertEqual([t.value for t in percorrer(variacao) if isinstance(t, ft.Text)],
-                         ["▲ 55%", "(R$ 550,00 a mais)"])
-        self.assertEqual(variacao.horizontal_alignment, ft.CrossAxisAlignment.END)
-
+        self.assertIs(corpo.controls[-1], comparacao)                         # largura total, por último
+        textos = [t.value for t in percorrer(comparacao) if isinstance(t, ft.Text)]
+        self.assertIn("Comparado a agosto", textos)
+        self.assertIn("▲ 55%", textos)
+        self.assertIn("(R$ 550,00 a mais)", textos)
     def legenda(self, nome):
         """(nome, valor, percentual) da linha da legenda com esse nome."""
         linha = next(c for c in self.controles(ft.Row)
@@ -323,6 +322,9 @@ class TestTelaGrafico(TesteComBancoTemporario):
         return linha.controls[1:]
 
     def test_legenda_em_colunas_proximas_e_rosca_maior_em_janela_larga(self):
+        # 6.13 (E4): em janela larga, "Gastos por categoria" divide a linha com "Evolução"; a legenda
+        # fica ao lado da rosca, com o nome ocupando o espaço livre. Nome nunca cortado, valor e
+        # percentual alinhados à direita em colunas de largura fixa.
         nome_longo = "Assinaturas e serviços online"[:30].ljust(30, "x")
         self.assertEqual(len(nome_longo), 30)
         categoria = db.criar_categoria(self.uid, nome_longo, "📺")
@@ -330,44 +332,48 @@ class TestTelaGrafico(TesteComBancoTemporario):
         self.entrar_e_abrir_grafico()
 
         rosca = self.controles(fch.PieChart)[0]
-        self.assertEqual((rosca.width, rosca.height), (320, 320))
+        tamanho = main.layout_do_grafico(self.pagina.width)["tamanho_rosca"]
+        self.assertEqual((rosca.width, rosca.height), (tamanho, tamanho))
         linhas = [self.legenda(nome) for nome in ("Casa", "Lazer", nome_longo, "Sem categoria")]
         for nome, valor, percentual in linhas:
-            self.assertEqual((nome.width, valor.width, percentual.width), (240, 130, 60))  # colunas alinhadas
-            self.assertFalse(nome.expand)
+            self.assertEqual((valor.width, percentual.width), (112, 56))   # colunas alinhadas
+            self.assertTrue(nome.expand)
             self.assertIsNone(nome.max_lines)  # nunca cortado: sem limite de linhas
             self.assertFalse(nome.no_wrap)     # e com quebra de linha permitida
             self.assertEqual(valor.text_align, ft.TextAlign.RIGHT)
         self.assertEqual(linhas[2][0].value, nome_longo)  # nome completo
-
     def test_janela_estreita_legenda_embaixo_com_quebra_de_linha(self):
-        self.pagina.width = 420
+        # 6.13 (E4): em janela estreita a legenda fica embaixo da rosca (Column), com o nome
+        # ocupando o espaço e quebrando linha.
+        self.pagina.width = 560   # cartão em largura total, legenda embaixo (abaixo de ~424 px, em duas linhas)
         self.entrar_e_abrir_grafico()
         rosca = self.controles(fch.PieChart)[0]
-        self.assertEqual(rosca.width, 300)
+        self.assertEqual(rosca.width, main.layout_do_grafico(560)["tamanho_rosca"])
+        self.assertFalse(main.layout_do_grafico(560)["legenda_ao_lado"])
         nome, valor, percentual = self.legenda("Casa")
         self.assertTrue(nome.expand)          # ocupa o espaço e quebra linha
         self.assertIsNone(nome.width)
         self.assertEqual((valor.width, percentual.width), (112, 56))
-        blocos = next(c for c in self.controles(ft.ResponsiveRow)
-                      if any(isinstance(x, ft.Container) and x.content is not None and rosca in percorrer(x.content)
-                             for x in c.controls))
-        self.assertEqual([x.col for x in blocos.controls], [{"xs": 12, "lg": 5}, {"xs": 12, "lg": 7}])
-
+        cartao = next(c for c in self.controles(ft.Column) if c.data == "gastos_por_categoria")
+        corpo = cartao.controls[1]
+        self.assertIsInstance(corpo, ft.Column)   # rosca em cima, legenda embaixo
+        self.assertIn(rosca, list(percorrer_tudo(corpo.controls[0])))
     def test_redimensionar_redesenha_so_quando_o_layout_muda(self):
+        # 6.13 (E4): redesenha só quando muda a disposição (layout_do_grafico); a rosca segue o
+        # tamanho da disposição.
         self.entrar_e_abrir_grafico()
-        self.assertEqual(self.controles(fch.PieChart)[0].width, 320)
+        largo = main.layout_do_grafico(self.pagina.width)
+        self.assertEqual(self.controles(fch.PieChart)[0].width, largo["tamanho_rosca"])
         self.pagina.width = 1000
         self.pagina.on_resize(Evento(self.pagina))
-        self.assertEqual(self.controles(fch.PieChart)[0].width, 320)
+        rosca_1000 = self.controles(fch.PieChart)[0]
+        self.assertEqual(rosca_1000.width, main.layout_do_grafico(1000)["tamanho_rosca"])
+        self.pagina.width = 1001                      # mesma disposição: nada é refeito
+        self.pagina.on_resize(Evento(self.pagina))
+        self.assertIs(self.controles(fch.PieChart)[0], rosca_1000)
         self.pagina.width = 400
         self.pagina.on_resize(Evento(self.pagina))
-        self.assertEqual(self.controles(fch.PieChart)[0].width, 300)
-        self.assertTrue(self.legenda("Casa")[0].expand)
-        self.pagina.width = 330
-        self.pagina.on_resize(Evento(self.pagina))
-        self.assertEqual(self.controles(fch.PieChart)[0].width, 240)
-
+        self.assertEqual(self.controles(fch.PieChart)[0].width, main.layout_do_grafico(400)["tamanho_rosca"])
     def test_layout_de_gastos_por_categoria(self):
         self.assertEqual(main.layout_gastos_por_categoria(1200)["largura_nome"], 240)
         self.assertEqual(main.layout_gastos_por_categoria(700)["tamanho_rosca"], 320)
@@ -762,7 +768,7 @@ class TestTelaGrafico(TesteComBancoTemporario):
         self.assertGreater(sum(g.width for g in graficos), 380)
         # Coluna, valor e rótulo continuam juntos, na ordem da rosca.
         secoes, nomes = self.rosca_e_legenda_completa()
-        self.assertEqual([(c.to_y, c.color) for c in colunas], secoes)
+        self.assertEqual([(main.formatar_moeda(c.to_y), c.color) for c in colunas], secoes)
         self.assertEqual(rotulos, nomes)
         self.assertEqual([c.tooltip.text for c in colunas], [main.formatar_moeda(c.to_y) for c in colunas])
         for botao, coluna in zip(botoes, colunas):
@@ -770,10 +776,14 @@ class TestTelaGrafico(TesteComBancoTemporario):
                              f"{botao.content.value}, {main.formatar_moeda(coluna.to_y)}")
 
     def rosca_e_legenda_completa(self):
-        rosca = self.controles(fch.PieChart)[0]
-        nomes = [t.value for t in self.controles(ft.Text)
-                 if t.value in {"Casa", "Lazer", "Sem categoria"} or str(t.value).startswith("Categoria fictícia")]
-        return [(s.value, s.color) for s in rosca.sections], nomes
+        """6.13 (E4): a rosca mostra a legenda compacta (6 + "Outras"); o detalhamento completo, com
+        todas as categorias na ordem e com as cores da rosca, fica em "Ver todas as categorias"."""
+        self.clicar(next(c for c in self.controles(ft.TextButton) if c.data == "ver_todas_as_categorias"))
+        dialogo = self.pagina.show_dialog.call_args[0][0]
+        linhas = [c for c in percorrer_tudo(dialogo.content)
+                  if isinstance(getattr(c, "data", None), tuple) and c.data[0] == "linha_legenda"]
+        detalhe = [(l.content.controls[2].value, l.content.controls[0].bgcolor) for l in linhas]
+        return detalhe, [l.content.controls[1].value for l in linhas]
 
     def test_rolagem_hibrida_so_quando_o_botao_nao_esta_inteiro(self):
         self.criar_muitas_categorias()

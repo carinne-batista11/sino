@@ -164,7 +164,8 @@ class TesteDeLegibilidade(TesteDeSessao):
         return botao
 
     def clicavel_com_texto(self, pagina, texto):
-        return next((c for c in self.todos(pagina) if isinstance(c, ft.Container) and c.on_click is not None
+        return next((c for c in self.todos(pagina) if isinstance(c, (ft.Container, ft.TextButton))
+                     and c.on_click is not None
                      and any(isinstance(t, ft.Text) and t.value == texto for t, _ in percorrer_com_fundo(c, "#000000"))),
                     None)
 
@@ -266,8 +267,10 @@ class TesteDeLegibilidade(TesteDeSessao):
 
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Categorias"))
         self.registrar(pagina, "Categorias", paleta)
-        for icone, local in ((ft.Icons.ADD_CIRCLE, "nova"), (ft.Icons.EDIT, "editar"), (ft.Icons.DELETE, "excluir")):
-            botao = next(c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and getattr(c.icon, "icon", None) == icone)
+        for icone, local in ((None, "nova"), (ft.Icons.EDIT, "editar"), (ft.Icons.DELETE, "excluir")):
+            botao = next(c for c in self.todos(pagina)
+                         if ((isinstance(c, ft.Button) and c.data == "nova_categoria") if icone is None
+                             else (isinstance(c, ft.IconButton) and getattr(c.icon, "icon", None) == icone)))
             self.clicar(pagina, botao)
             self.registrar(pagina, f"Categorias/{local}", paleta)
             self.fechar_dialogos(pagina)

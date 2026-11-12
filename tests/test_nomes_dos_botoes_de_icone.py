@@ -47,7 +47,10 @@ class BaseNomes(BaseSeletor):
 
     def assert_sem_semantics_externo(self):
         self.assertEqual([c for c in self.controles(ft.Semantics) if c.label], [])
-        self.assertEqual(self.controles(ft.MergeSemantics), [])
+        # 6.13 (E2/D4, E4): só abas e alternadores (botões de texto com estado "selecionado")
+        # usam MergeSemantics; nenhum botão de ícone é envolvido.
+        self.assertFalse([m for m in self.controles(ft.MergeSemantics)
+                          if any(isinstance(b, ft.IconButton) for b in percorrer(m))])
 
 
 class TestVoltarECalendario(BaseNomes):
@@ -136,14 +139,17 @@ class TestAcoesDasCategorias(BaseNomes):
         return [d for d in self.pagina.dialogos if d.open][-1]
 
     def assert_botoes(self, paleta):
-        nova = self.botao_de_icone(ft.Icons.ADD_CIRCLE)
-        self.assert_nome_no_icone(nova, "Nova categoria", 28, paleta["acento_sobre_destaque"])
+        # 6.13 (E3): "Nova categoria" é um botão com rótulo visível (o nome acessível é o próprio
+        # texto), com contorno no foco; mesma ação.
+        nova = next(c for c in self.controles(ft.Button) if c.data == "nova_categoria")
+        self.assertIn("Nova categoria", [t.value for t in percorrer(nova) if isinstance(t, ft.Text)])
+        self.assertIn(ft.ControlState.FOCUSED, nova.style.side)
         for nome in ("Casa", "Mercado"):
             adicionar, editar, excluir = self.linha(nome)
-            self.assert_nome_no_icone(adicionar, f"Nova conta na categoria {nome}", 18, paleta["acao_primaria"],
+            self.assert_nome_no_icone(adicionar, f"Nova conta na categoria {nome}", 20, paleta["acao_primaria"],
                                       dica="Nova conta nesta categoria")
-            self.assert_nome_no_icone(editar, f"Editar categoria {nome}", 18, paleta["texto_secundario"])
-            self.assert_nome_no_icone(excluir, f"Excluir categoria {nome}", 18, paleta["acao_destrutiva"])
+            self.assert_nome_no_icone(editar, f"Editar categoria {nome}", 20, paleta["texto_secundario"])
+            self.assert_nome_no_icone(excluir, f"Excluir categoria {nome}", 20, paleta["acao_destrutiva"])
             self.assertEqual([b.icon.icon for b in (adicionar, editar, excluir)],
                              [ft.Icons.ADD, ft.Icons.EDIT, ft.Icons.DELETE])
         self.assert_sem_semantics_externo()
@@ -159,7 +165,7 @@ class TestAcoesDasCategorias(BaseNomes):
 
     def test_acoes_continuam_as_mesmas(self):
         self.abrir_categorias()
-        self.clicar(self.botao_de_icone(ft.Icons.ADD_CIRCLE))
+        self.clicar(next(c for c in self.controles(ft.Button) if c.data == "nova_categoria"))   # 6.13 (E3)
         self.assertEqual(self.dialogo_aberto().title.value, "Nova categoria")
         self.pagina.pop_dialog()
         self.clicar(self.linha("Mercado")[1])
@@ -293,12 +299,18 @@ class TestAcoesDasLinhasDeInicio(BaseNomes):
         """(nome visível, nome do lápis, nome do pagamento) de cada linha, na ordem exibida."""
         resultado = []
         for linha in self.linhas():
-            visivel = next(t.value for t in percorrer(linha) if isinstance(t, ft.Text))
+            visivel = self.textos_da_linha(linha)[0]
             resultado.append((visivel, *[b.icon.semantics_label for b in self.acoes(linha)]))
         return resultado
 
     def valores(self):
-        return [[t.value for t in percorrer(linha) if isinstance(t, ft.Text)][2] for linha in self.linhas()]
+        return [self.textos_da_linha(linha)[2] for linha in self.linhas()]
+
+    def textos_da_linha(self, linha):
+        """6.13 (E2/D3): textos da linha sem o emoji decorativo do ícone da categoria."""
+        avatar = {id(t) for c in percorrer(linha) if getattr(c, "data", None) == "avatar_categoria"
+                  for t in percorrer(c)}
+        return [t.value for t in percorrer(linha) if isinstance(t, ft.Text) and id(t) not in avatar]
 
     def acao(self, nome_acessivel):
         return next(b for b in self.controles(ft.IconButton)

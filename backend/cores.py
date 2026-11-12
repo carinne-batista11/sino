@@ -135,6 +135,26 @@ PALETAS = {
         "variacao_aumento": "#A32D2D",
         "variacao_reducao": "#16795A",
         "categoria_cor_padrao": "#1D9E75",
+
+        # 6.13 (E2-E4): cartões de resumo em degradê (Início, Categorias, Gráfico). O
+        # `fim` é o tom mais claro: os textos são conferidos contra ele (pior caso).
+        "degrade_inicio": "#0A3B2B",
+        "degrade_fim": "#11704E",
+        "texto_sobre_degrade": "white",
+        "texto_secundario_degrade": "#D7EEE3",
+        "pago_sobre_degrade": "#9BF5C1",
+        "pendente_sobre_degrade": "#FFD98A",
+        "seletor_mes_fundo": "#DCEFE5",        # pílula do mês (Início)
+        "nav_ativo_fundo": "#E6F4EC",          # pílula da aba ativa (barra inferior)
+        "icone_neutro_fundo": "#ECEBE6",       # conta sem categoria (sem emoji)
+        "alerta_botao_fundo": "white",         # "Ver essas contas" sobre o alerta
+        "acao_suave_fundo": "#E3F1EA",         # fundo dos botões "+" (Categorias)
+        "edicao_suave_fundo": "#EFEEEA",       # fundo do lápis (Categorias)
+        "exclusao_suave_fundo": "#FBE9E9",     # fundo da lixeira (Categorias)
+        "grafico_outras": "#C9C2B0",           # fatia "Outras" da legenda compacta (não é o cinza reservado)
+        "decoracao_sobre_degrade": "white",    # formas e divisores translúcidos do cartão
+        "realce_avatar_categoria": "white",    # centro clareado do ícone da categoria
+        "sombra_icone_resumo": "#000000",      # quadrado translúcido dos ícones do cartão
     },
     # Tema Escuro (RF40, T3): base neutra esverdeada, verdes da marca
     # preservados (#1D9E75/#39D67C) e tons de status/avisos clareados para
@@ -238,6 +258,25 @@ PALETAS = {
         "variacao_aumento": "#F07A7A",
         "variacao_reducao": "#3DC08F",
         "categoria_cor_padrao": "#1D9E75",
+
+        # 6.13 (E2-E4)
+        "degrade_inicio": "#0B261C",
+        "degrade_fim": "#165B41",
+        "texto_sobre_degrade": "white",
+        "texto_secundario_degrade": "#D2E8DD",
+        "pago_sobre_degrade": "#9BF5C1",
+        "pendente_sobre_degrade": "#FFD98A",
+        "seletor_mes_fundo": "#1E3329",
+        "nav_ativo_fundo": "#1E3329",
+        "icone_neutro_fundo": "#2A322D",
+        "alerta_botao_fundo": "#4A2A2A",
+        "acao_suave_fundo": "#1C3329",
+        "edicao_suave_fundo": "#262E2A",
+        "exclusao_suave_fundo": "#3A2222",
+        "grafico_outras": "#6F6A5C",
+        "decoracao_sobre_degrade": "white",    # formas e divisores translúcidos do cartão
+        "realce_avatar_categoria": "white",    # centro clareado do ícone da categoria
+        "sombra_icone_resumo": "#000000",      # quadrado translúcido dos ícones do cartão
     },
 }
 

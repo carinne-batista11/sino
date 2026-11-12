@@ -125,7 +125,7 @@ class TestTelaDeDetalhes(TesteComBancoTemporario):
 
     def abrir_detalhes(self, nome):
         linha = next(c for c in self.controles(ft.Container)
-                     if c.on_click is not None and isinstance(c.content, ft.Row) and c.border is not None
+                     if c.on_click is not None and c.data in ("linha_conta", "linha_conta_empilhada") and c.border is not None
                      and any(isinstance(t, ft.Text) and t.value == nome for t in percorrer(c)))
         self.clicar(linha)
         self.assertTrue(self.na_tela_de_detalhes())

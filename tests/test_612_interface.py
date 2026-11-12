@@ -101,7 +101,7 @@ class TestAjustesDaEtapa11(BaseInterface):
         self.assertTrue(aviso.expand)
         self.assertIn("Total de R$ 280,00 · 1 conta com valor pendente", self.textos())     # Água + Sofá; Luz contada
         alerta = next(c for c in self.controles(ft.Row) if any(
-            isinstance(t, ft.Container) and "Ver essas contas" in self.textos_da(t) for t in c.controls))
+            isinstance(t, ft.TextButton) and "Ver essas contas" in self.textos_da(t) for t in c.controls))
         self.assertTrue(alerta.controls[0].expand)                            # o título quebra linha
         titulo = next(t for t in alerta.controls[0].controls if isinstance(t, ft.Text))
         self.assertTrue(titulo.expand)
@@ -130,7 +130,7 @@ class TestAjustesDaEtapa11(BaseInterface):
 class TestNovaContaPorTipo(BaseVariavelTelas):
     def test_campos_e_resumo_de_cada_tipo(self):
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
         casos = (("unica", False, False, False, "Valor", "Única"),
                  ("parcelada", True, False, False, "Valor total", "Parcelada em 2 parcelas"),
                  ("mensal", False, True, True, "Valor", "Mensal até setembro de 2026"),

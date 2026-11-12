@@ -56,7 +56,7 @@ class TestDialogoRecorrencia(Base):
     def setUp(self):
         super().setUp()
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
 
     # auxiliares
     def campo(self, rotulo, raizes=None):
@@ -407,7 +407,7 @@ class TestMesmoPadraoDeEditar(Base):
         self.assertEqual(editar.title.value, "Transformar em recorrente")
 
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
         campo = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência")
         self.clicar(campo.suffix_icon)
         novo = self.pagina.dialogos[-1]

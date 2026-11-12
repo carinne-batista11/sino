@@ -95,7 +95,7 @@ class TestDemaisContadoresVisiveis(TesteDeAjustes):
     def test_nova_conta_mantem_os_contadores(self):
         pagina, _ = self.abrir_ajustes()
         self.abrir_aba(pagina, "Início")
-        fab = next(c for c in self.controles(pagina, ft.Container) if c.data == "nova_conta")
+        fab = next(c for c in self.controles(pagina) if getattr(c, "data", None) == "nova_conta")
         self.clicar(pagina, fab)
         campos = self.campos_da_pagina(pagina)
         self.assertEqual(campos["Nome da conta"].counter, "0/30")

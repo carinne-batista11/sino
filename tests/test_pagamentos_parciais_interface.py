@@ -47,6 +47,11 @@ def contador_de(campo):
     return campo.counter
 
 
+def valor_no_cartao(textos, rotulo):
+    """6.13 (E2, D1): o valor exibido logo abaixo do rótulo no cartão de Início."""
+    return textos[textos.index(rotulo) + 1]
+
+
 class TesteInterfacePagamentos(TesteComBancoTemporario):
     def setUp(self):
         super().setUp()
@@ -273,8 +278,8 @@ class TestInicioEEditar(TesteInterfacePagamentos):
         self.entrar()
         self.assertTrue(any("Pago parcialmente" in (t or "") for t in self.textos()))
         self.assertIn("R$ 500,00", self.textos())
-        self.assertIn("pago R$ 150,00", self.textos())
-        self.assertIn("pendente R$ 350,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 150,00")
+        self.assertEqual(valor_no_cartao(self.textos(), "Pendente"), "R$ 350,00")
 
     def test_pagamento_rapido_com_parciais_pede_confirmacao(self):
         pagamentos.registrar_pagamento_parcial(self.conta, 150_00)
@@ -284,7 +289,7 @@ class TestInicioEEditar(TesteInterfacePagamentos):
         self.assertIn("R$ 250,00", self.dialogo().content.value)
         self.clicar(self.acao_do_dialogo("Pagar R$ 250,00"))
         self.assertEqual(sum(v for v, _, _ in self.linhas()), 400_00)
-        self.assertIn("pago R$ 400,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 400,00")
 
         botao = next(b for b in self.controles(ft.IconButton) if b.tooltip == "Marcar como pendente")
         self.clicar(botao)
@@ -292,8 +297,8 @@ class TestInicioEEditar(TesteInterfacePagamentos):
         self.assertEqual(self.consultar("SELECT status FROM contas"), [("pago",)])  # nada antes de confirmar
         self.clicar(self.opcao("ultimo"))
         self.clicar(self.acao_do_dialogo("Confirmar"))
-        self.assertIn("pago R$ 150,00", self.textos())
-        self.assertIn("pendente R$ 250,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 150,00")
+        self.assertEqual(valor_no_cartao(self.textos(), "Pendente"), "R$ 250,00")
 
     def test_editar_mostra_pago_e_saldo_e_o_valor_continua_editavel(self):
         pagamentos.registrar_pagamento_parcial(self.conta, 150_00)
@@ -395,7 +400,7 @@ class TestInicioEEditar(TesteInterfacePagamentos):
                          ["02/09/2026", "Pagamento parcial",
                           "Estornado em 15/09/2026", "R$ 250,00"])
         self.entrar()
-        self.assertIn("pago R$ 150,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 150,00")
 
     def test_aviso_de_vencimento_soma_o_saldo(self):
         pagamentos.registrar_pagamento_parcial(self.conta, 300_00)
@@ -646,8 +651,8 @@ class TestPagamentosRegistrados(TesteInterfacePagamentos):
         self.assertEqual(self.total_pago(), "Total pago: R$ 300,00")
         self.assertEqual(self.valor_ao_lado("Saldo devedor"), "R$ 100,00")
         self.entrar()
-        self.assertIn("pago R$ 300,00", self.textos())
-        self.assertIn("pendente R$ 100,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 300,00")
+        self.assertEqual(valor_no_cartao(self.textos(), "Pendente"), "R$ 100,00")
 
     def test_cancelar_edicao_de_pagamento_nao_muda_nada(self):
         pagamentos.registrar_pagamento_parcial(self.conta, 150_00, "2026-09-05")
@@ -690,7 +695,7 @@ class TestEtapa4Interface(TesteInterfacePagamentos):
         self.entrar()
         self.clicar(next(b for b in self.controles(ft.IconButton) if b.tooltip == "Marcar como paga"))
         self.assertEqual(self.linhas(), [(400_00, "2026-09-15", "integral")])
-        self.assertIn("pago R$ 400,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 400,00")
 
     def test_dialogo_da_diferenca(self):
         db.marcar_conta_como_paga(self.conta)
@@ -1017,8 +1022,8 @@ class TestGerenciamentoNosDetalhes(TesteInterfacePagamentos):
         self.assertIn("Total pago: R$ 0,00", self.textos())
         self.sem_quitadas_sem_registro()
         self.clicar(self.botao("Voltar"))
-        self.assertIn("pago R$ 0,00", self.textos())
-        self.assertIn("pendente R$ 400,00", self.textos())
+        self.assertEqual(valor_no_cartao(self.textos(), "Pago"), "R$ 0,00")
+        self.assertEqual(valor_no_cartao(self.textos(), "Pendente"), "R$ 400,00")
 
     def test_estornar_desatualizado_e_cancelar(self):
         self.quitar()

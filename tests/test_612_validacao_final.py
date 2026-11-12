@@ -125,7 +125,7 @@ class TestR4ACenarioDaValidacaoManual(BaseAjustes):
 class TestLimite250NaTela(BaseAjustes):
     def abrir_nova_conta(self):
         self.entrar()
-        self.clicar(next(c for c in self.controles(ft.Container) if c.data == "nova_conta"))
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
 
     def descricao(self):
         return self.campo("Descrição (opcional)")

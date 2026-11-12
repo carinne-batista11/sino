@@ -174,9 +174,9 @@ class TestEstadosLegiveis(TesteDeLegibilidade):
     def legenda_completa(self, pagina):
         """Cada fatia da rosca tem uma linha da legenda com nome, valor (R$) e percentual."""
         rosca = next(c for c in self.todos(pagina) if isinstance(c, fch.PieChart))
-        linhas = [c for c in self.todos(pagina) if isinstance(c, ft.Container) and c.border is not None
-                  and isinstance(c.content, ft.Row) and len(c.content.controls) == 4
-                  and isinstance(c.content.controls[0], ft.Container) and c.content.controls[0].width == 34]
+        # 6.13 (E4): linhas da legenda compacta (a mesma ordem das fatias, incluindo "Outras").
+        linhas = [c for c in self.todos(pagina) if isinstance(c, ft.Container)
+                  and isinstance(c.data, tuple) and c.data[0] == "linha_legenda"]
         self.assertEqual(len(linhas), len(rosca.sections))
         for linha, fatia in zip(linhas, rosca.sections):
             circulo, nome, valor, percentual = linha.content.controls
