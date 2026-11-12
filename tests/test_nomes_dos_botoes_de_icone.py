@@ -102,21 +102,42 @@ class TestVoltarECalendario(BaseNomes):
         self.clicar(self.assert_voltar())
         self.assertTrue(self.em_inicio())                               # o lápis volta para Início
 
+    def assert_voltar_da_nova_conta(self, paleta=CLARO):
+        """Sino 6.13.1: na Nova conta da 6.13, "Voltar" é um botão com o texto visível "Voltar" (que é
+        também o nome acessível) e a seta ao lado -- não mais um botão só de ícone. Focável, com as
+        cores do tema e o único controle com a seta de voltar na tela."""
+        voltar = next(c for c in self.controles() if getattr(c, "data", None) == "voltar_nova_conta")
+        self.assertIsInstance(voltar, ft.TextButton)                     # focável (Tab; Enter/Espaço)
+        self.assertEqual((voltar.content, voltar.icon), ("Voltar", ft.Icons.ARROW_BACK))
+        self.assertEqual((voltar.style.color, voltar.style.bgcolor),
+                         (paleta["acao_primaria"], paleta["grafico_total_fundo"]))
+        self.assertEqual([c for c in self.controles() if isinstance(c, ft.IconButton)
+                          and getattr(c.icon, "icon", None) == ft.Icons.ARROW_BACK], [])
+        return voltar
+
+    def assert_calendario_da_conta_comum(self):
+        # A Superconta (só visual) tem um calendário próprio no overlay; o "Escolher data" da conta
+        # comum abre o primeiro, que preenche "Data de vencimento".
+        principal = next(o for o in self.pagina.overlay if isinstance(o, ft.DatePicker))
+        self.assertIs(self.pagina.dialogos[-1], principal)
+
     def test_nova_conta(self):
         self.entrar()
         self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
         self.assertIn("Nova conta", self.textos())
         self.assert_sem_semantics_externo()
         self.assert_calendario_abre_o_seletor()
-        self.clicar(self.assert_voltar())
+        self.assert_calendario_da_conta_comum()
+        self.clicar(self.assert_voltar_da_nova_conta())
         self.assertTrue(self.em_inicio())
 
     def test_nova_conta_no_escuro(self):  # RNF09: as cores seguem o tema
         db.definir_tema(self.usuario_id, "escuro")
         self.entrar()
         self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
-        self.assert_voltar(ESCURO)
+        self.assert_voltar_da_nova_conta(ESCURO)
         self.assert_calendario_abre_o_seletor(ESCURO)
+        self.assert_calendario_da_conta_comum()
 
 
 class TestAcoesDasCategorias(BaseNomes):

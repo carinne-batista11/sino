@@ -71,42 +71,43 @@ class TestNovaContaVariavel(BaseVariavelTelas):
         self.entrar()
         self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
 
+    # Sino 6.13.1: Nova conta da 6.13 -- tipo nos cartões e "Tipo de valor" (Valor fixo | Valor
+    # variável) no formulário, só em Mensal e Anual; cada opção tem um "i" que só informa.
     def preencher(self, nome, valor):
-        for c in self.controles(ft.TextField):
-            if c.label == "Nome da conta":
-                c.value = nome
-            elif c.label == "Valor":
-                c.value = valor
-        seletor = next(o for o in self.pagina.overlay if isinstance(o, ft.DatePicker))
-        from datetime import datetime
-        seletor.value = datetime(2026, 9, 20)
-        seletor.on_change(Evento(self.pagina, seletor))
+        self.nc_preencher(nome, valor)
+
+    def opcao_marcada(self):
+        return [v for v in ("fixo", "variavel")
+                if any(isinstance(c, ft.Icon) and c.semantics_label == "Selecionado"
+                       for c in percorrer(self.nc_controle(f"opcao_{v}")))]
 
     def test_opcao_so_em_mensal_e_anual(self):
-        self.clicar(self.campo("Recorrência").suffix_icon)
-        linha = self.no_dialogo("linha_comportamento_valor")
-        bloco = next(c for c in percorrer(self.dlg().content) if isinstance(c, ft.Column) and linha in c.controls)
-        self.assertEqual([b.content for b in linha.controls], ["Valor fixo", "Valor variável"])
         for tipo, visivel in (("unica", False), ("parcelada", False), ("mensal", True), ("anual", True)):
             with self.subTest(tipo=tipo):
-                self.clicar(self.no_dialogo(f"tipo_recorrencia_{tipo}"))
-                self.assertEqual(bloco.visible, visivel)
-        ajuda = next(c for c in bloco.controls if isinstance(c, ft.Text))
-        self.assertFalse(ajuda.visible)                                   # Fixo é o padrão
-        self.clicar(self.no_dialogo("comportamento_variavel"))
-        self.assertTrue(ajuda.visible)
-        self.assertEqual(ajuda.value, main.TEXTO_AJUDA_VARIAVEL)
+                self.nc_tipo(tipo)
+                self.assertEqual(self.nc_existe("linha_comportamento_valor"), visivel)
+        linha = self.nc_controle("linha_comportamento_valor")
+        textos = [t.value for t in percorrer(linha) if isinstance(t, ft.Text)]
+        self.assertIn("Valor fixo", textos)
+        self.assertIn("Valor variável", textos)
+        self.assertEqual(self.opcao_marcada(), ["fixo"])                    # Fixo é o padrão
+        for valor in ("fixo", "variavel"):                                  # a ajuda de cada opção (anual)
+            info = self.nc_controle(f"info_comportamento_{valor}")
+            self.assertEqual(info.tooltip, main.TEXTOS_TIPO_DE_VALOR["anual"][valor])
+        self.clicar(self.nc_controle("comportamento_variavel"))
+        self.assertEqual(self.opcao_marcada(), ["variavel"])
+        self.nc_tipo("mensal")
+        self.assertEqual(self.opcao_marcada(), ["variavel"])                # a escolha acompanha o tipo
+        self.assertEqual(self.nc_controle("info_comportamento_variavel").tooltip,
+                         main.TEXTOS_TIPO_DE_VALOR["mensal"]["variavel"])
 
     def test_cria_mensal_variavel(self):
         self.preencher("Luz", "150,00")
-        self.clicar(self.campo("Recorrência").suffix_icon)
-        self.clicar(self.no_dialogo("tipo_recorrencia_mensal"))
-        self.clicar(self.no_dialogo("comportamento_variavel"))
-        chave = self.no_dialogo("sem_termino_recorrencia")
-        chave.value = True
-        chave.on_change(Evento(self.pagina, chave))
-        self.clicar(self.acao("Confirmar"))
-        self.assertEqual(self.campo("Recorrência").value, "Mensal, sem término, valor variável")
+        self.nc_tipo("mensal")
+        self.clicar(self.nc_controle("comportamento_variavel"))
+        self.nc_definir_termino(True)
+        self.assertEqual(self.nc_controle("termino_nova_conta").value, "Sem data de término")
+        self.assertEqual(self.opcao_marcada(), ["variavel"])
         self.clicar(next(b for b in self.controles(ft.Button) if b.content == "Salvar conta"))
         serie_id = self.consultar("SELECT id FROM series_recorrencia")[0][0]
         self.assertTrue(db.serie_variavel(serie_id))
@@ -116,10 +117,8 @@ class TestNovaContaVariavel(BaseVariavelTelas):
 
     def test_mensal_fixa_continua_padrao(self):
         self.preencher("Aluguel", "900,00")
-        self.clicar(self.campo("Recorrência").suffix_icon)
-        self.clicar(self.no_dialogo("tipo_recorrencia_mensal"))
-        self.clicar(self.acao("Confirmar"))
-        self.assertEqual(self.campo("Recorrência").value.endswith("valor variável"), False)
+        self.nc_tipo("mensal")
+        self.assertEqual(self.opcao_marcada(), ["fixo"])
         self.clicar(next(b for b in self.controles(ft.Button) if b.content == "Salvar conta"))
         serie_id = self.consultar("SELECT id FROM series_recorrencia")[0][0]
         self.assertFalse(db.serie_variavel(serie_id))

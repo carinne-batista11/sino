@@ -19,6 +19,7 @@ from apoio_banco import db
 import limites  # noqa: E402  (depois de apoio_banco, que põe database/ no caminho)
 from test_612_ajustes_validacao import BaseAjustes
 from test_612_variavel_telas import CLARO
+from test_descricao_250 import contador_de
 from test_tela_principal import Evento
 
 import flet as ft  # noqa: E402
@@ -135,22 +136,18 @@ class TestLimite250NaTela(BaseAjustes):
         campo = self.descricao()
         with som_simulado() as tocar:
             self.digitar("Descrição (opcional)", ACIMA)                         # colagem num campo vazio
-        self.assertEqual((campo.value, campo.counter, campo.helper), ("", "0/250", "Limite atingido"))
+        # Sino 6.13.1: contador interno da Nova conta (6.13), lido por `contador_de`.
+        self.assertEqual((campo.value, contador_de(campo), campo.helper), ("", "0/250", "Limite atingido"))
         tocar.assert_called_once_with()
         self.digitar("Descrição (opcional)", "a" * 200)
         with som_simulado():
             self.digitar("Descrição (opcional)", "a" * 200 + "b" * 60)           # colagem que passaria de 250
-        self.assertEqual((campo.value, campo.counter), ("a" * 200, "200/250"))  # nada cortado nem perdido
+        self.assertEqual((campo.value, contador_de(campo)), ("a" * 200, "200/250"))  # nada cortado nem perdido
         self.digitar("Descrição (opcional)", "a" * 200 + "b" * 50)
-        self.assertEqual((campo.counter, campo.helper), ("250/250", None))
+        self.assertEqual((contador_de(campo), campo.helper), ("250/250", None))
 
     def preencher(self, nome, valor):
-        from datetime import datetime
-        self.campo("Nome da conta").value = nome                                # como em test_612_variavel_telas
-        self.campo("Valor").value = valor
-        seletor = next(o for o in self.pagina.overlay if isinstance(o, ft.DatePicker))
-        seletor.value = datetime(2026, 9, 20)
-        seletor.on_change(Evento(self.pagina, seletor))
+        self.nc_preencher(nome, valor, (2026, 9, 20))                          # Sino 6.13.1: rótulo do valor por tipo
         self.digitar("Descrição (opcional)", NO_LIMITE)
 
     def salvar_conta(self):
@@ -161,12 +158,10 @@ class TestLimite250NaTela(BaseAjustes):
             with self.subTest(nome=nome):
                 self.abrir_nova_conta()
                 self.preencher(nome, "90,00")
-                if tipo:
-                    self.clicar(self.campo("Recorrência").suffix_icon)
-                    self.clicar(self.no_dialogo(f"tipo_recorrencia_{tipo}"))
+                if tipo:                                                        # Sino 6.13.1: cartões de tipo
+                    self.nc_tipo(tipo)
                     if variavel:
-                        self.clicar(self.no_dialogo("comportamento_variavel"))
-                    self.clicar(self.acao("Confirmar"))
+                        self.clicar(self.nc_controle("comportamento_variavel"))
                 self.salvar_conta()
                 descricoes = {d for (d,) in self.consultar("SELECT descricao FROM contas WHERE nome = ?", (nome,))}
                 self.assertEqual(descricoes, {NO_LIMITE})

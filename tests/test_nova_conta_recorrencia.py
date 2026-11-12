@@ -1,4 +1,7 @@
 """
+Sino 6.13.1: atualizado para a estrutura da 6.13 (cartões de tipo e diálogo "Término da
+recorrência"); os comportamentos verificados continuam os mesmos. Texto original:
+
 Sino 6.11 — Nova conta: diálogo "Configurar recorrência", no padrão de
 "Transformar em recorrente" de Editar conta (aprovado no protótipo v3 de
 02/11/2026). Abertura e fechamento, Única/Mensal/Anual, "Sem data de término",
@@ -53,6 +56,13 @@ class Base(TesteComBancoTemporario):
 
 
 class TestDialogoRecorrencia(Base):
+    """
+    Sino 6.13.1: os comportamentos do antigo diálogo "Configurar recorrência" (6.11) na estrutura
+    da 6.13 -- o tipo é escolhido nos cartões do formulário (Única | Parcelada | Recorrente mensal |
+    Recorrente anual) e o término, no campo "Término da recorrência" e no diálogo central de mesmo
+    nome. Os nomes dos testes foram mantidos para a rastreabilidade com a 6.11/6.12.
+    """
+
     def setUp(self):
         super().setUp()
         self.entrar()
@@ -62,13 +72,23 @@ class TestDialogoRecorrencia(Base):
     def campo(self, rotulo, raizes=None):
         return next(c for c in self.controles((ft.TextField, ft.Dropdown), raizes) if c.label == rotulo)
 
+    def com_data(self, data, raizes=None):
+        return next(c for c in self.controles(None, raizes) if getattr(c, "data", None) == data)
+
+    def existe(self, data):
+        return any(getattr(c, "data", None) == data for c in self.controles())
+
+    def termino(self):
+        return self.com_data("termino_nova_conta")
+
     def abertos(self):
         return [d for d in self.pagina.dialogos if d.open]
 
     def abrir(self, pelo_campo=False):
-        c = self.campo("Recorrência")
+        c = self.termino()
         self.clicar(c if pelo_campo else c.suffix_icon)
         self.assertEqual(len(self.abertos()), 1)
+        self.assertEqual(self.abertos()[0].data, "dialogo_termino")
         return self.abertos()[0]
 
     def dlg(self):
@@ -78,7 +98,7 @@ class TestDialogoRecorrencia(Base):
         return next(c for c in percorrer(self.dlg().content) if getattr(c, "data", None) == data)
 
     def tipo(self, valor):
-        self.clicar(self.no_dialogo(f"tipo_recorrencia_{valor}"))
+        self.clicar(self.com_data(f"tipo_conta_{valor}"))
 
     def ligar_sem_termino(self, valor):
         chave = self.no_dialogo("sem_termino_recorrencia")
@@ -89,6 +109,13 @@ class TestDialogoRecorrencia(Base):
         lista = self.campo(rotulo, [self.dlg().content])
         lista.value = valor
         lista.on_select(Evento(self.pagina, lista))
+
+    def definir_termino(self, mes, ano):
+        self.abrir()
+        self.ligar_sem_termino(False)
+        self.escolher("Mês", mes)
+        self.escolher("Ano", ano)
+        self.confirmar()
 
     def acao(self, texto):
         return next(b for b in self.dlg().actions if b.content == texto)
@@ -104,212 +131,210 @@ class TestDialogoRecorrencia(Base):
         self.assertFalse(d.open)
 
     def selecionado(self):
-        return [v for v in ("unica", "mensal", "anual")
-                if self.no_dialogo(f"tipo_recorrencia_{v}").style.bgcolor == CLARO["chip_ativo_fundo"]]
+        """Tipos marcados: o "Selecionado" (nome acessível) e o fundo ativo têm de concordar."""
+        marcados = []
+        for v in ("unica", "parcelada", "mensal", "anual"):
+            cartao = self.com_data(f"tipo_conta_{v}")
+            marca = any(isinstance(c, ft.Icon) and c.semantics_label == "Selecionado" for c in percorrer(cartao))
+            self.assertEqual(marca, cartao.style.bgcolor == CLARO["chip_ativo_fundo"], v)
+            if marca:
+                marcados.append(v)
+        return marcados
 
-    def visivel_no_dialogo(self, alvo):
-        """alvo e todos os seus ancestrais dentro do conteúdo do diálogo estão visíveis."""
-        def busca(c, pilha):
-            if c is alvo:
-                return pilha + [c]
-            for atributo in ("controls", "content"):
-                filho = getattr(c, atributo, None)
-                for f in (filho if isinstance(filho, list) else [filho] if isinstance(filho, ft.Control) else []):
-                    r = busca(f, pilha + [c])
-                    if r:
-                        return r
-            return None
-        caminho = busca(self.dlg().content, [])
-        self.assertIsNotNone(caminho)
-        return all(c.visible is not False for c in caminho)
+    def mes_ano(self):
+        return (self.campo("Mês", [self.dlg().content]).value, self.campo("Ano", [self.dlg().content]).value)
 
-    def chave_visivel(self):
-        return self.visivel_no_dialogo(self.no_dialogo("sem_termino_recorrencia"))
+    def mes_ano_habilitados(self):
+        mes, ano = self.campo("Mês", [self.dlg().content]), self.campo("Ano", [self.dlg().content])
+        self.assertEqual(mes.disabled, ano.disabled)
+        return not mes.disabled
 
-    def mes_ano_visiveis(self):
-        return (self.visivel_no_dialogo(self.campo("Mês", [self.dlg().content]))
-                and self.visivel_no_dialogo(self.campo("Ano", [self.dlg().content])))
+    def textos(self):
+        return [t.value for t in self.controles(ft.Text)]
 
     def preencher(self, nome="Curso", valor="200", data=(2026, 10, 5)):
-        for rotulo, v in (("Nome da conta", nome), ("Valor", valor)):
-            c = self.campo(rotulo)
-            c.value = v
+        for c in (self.campo("Nome da conta"), self.com_data("valor_nova_conta")):
+            c.value = nome if c.label == "Nome da conta" else valor
             if c.on_change:
                 c.on_change(Evento(self.pagina, c))
-        seletor = next(o for o in self.pagina.overlay if isinstance(o, ft.DatePicker))
+        seletor = next(o for o in self.pagina.overlay if isinstance(o, ft.DatePicker))   # o da conta comum
         seletor.value = datetime(*data)
         seletor.on_change(Evento(self.pagina, seletor))
 
     def salvar(self):
         self.clicar(next(b for b in self.controles(ft.Button) if b.content == "Salvar conta"))
 
-    # 1. abertura e fechamento
+    # 1. estado inicial e abertura/fechamento do diálogo do término
     def test_estado_inicial_com_orientacao_e_sem_dialogo(self):
-        campo = self.campo("Recorrência")
-        self.assertEqual(campo.value, "Escolha o tipo da conta")
-        self.assertEqual(campo.color, CLARO["texto_secundario"])
+        self.assertEqual(self.selecionado(), ["unica"])                       # Única por padrão
+        self.assertIn(main.FAIXAS_NOVA_CONTA["unica"][0], self.textos())       # orientação do tipo
+        self.assertIn(main.FAIXAS_NOVA_CONTA["unica"][1], self.textos())
+        self.assertFalse(self.existe("termino_nova_conta"))
         self.assertEqual(self.pagina.dialogos, [])
 
     def test_abre_pelo_campo_e_pela_seta_e_fecha(self):
+        self.tipo("mensal")
         for pelo_campo in (True, False):
             d = self.abrir(pelo_campo)
             self.assertIsInstance(d, ft.AlertDialog)
             self.assertTrue(d.modal)
-            self.assertEqual(d.title.value, "Configurar recorrência")
+            self.assertEqual(d.title.value, "Término da recorrência")
             textos = [c.value for c in percorrer(d.content) if isinstance(c, ft.Text)]
-            self.assertIn("Escolha como esta conta deverá se repetir.", textos)
+            self.assertIn("Sem data de término", textos)
             self.assertEqual([b.content for b in d.actions], ["Cancelar", "Confirmar"])
             self.cancelar()
             self.assertEqual(self.abertos(), [])
 
     def test_formulario_nao_muda_ao_abrir(self):
+        self.tipo("mensal")
         antes = [id(c) for c in self.controles()]
         self.abrir()
-        self.assertEqual([id(c) for c in self.controles()], antes)      # nada entra no cartão
+        self.assertEqual([id(c) for c in self.controles()], antes)      # nada entra no formulário
         self.cancelar()
         self.assertEqual([id(c) for c in self.controles()], antes)
 
     # 2-4. tipos, sem término, Mês e Ano
     def test_unica_por_padrao_sem_termino_oculto(self):
-        self.abrir()
         self.assertEqual(self.selecionado(), ["unica"])
-        self.assertFalse(self.chave_visivel())
-        self.assertFalse(self.mes_ano_visiveis())
+        self.assertFalse(self.existe("termino_nova_conta"))
+        self.assertFalse(self.existe("linha_comportamento_valor"))
+        self.assertEqual(self.com_data("valor_nova_conta").label, "Valor da conta")
 
     def test_alternancia_e_sem_data_de_termino(self):
-        self.abrir()
-        for valor in ("mensal", "anual", "unica", "mensal"):
+        for valor in ("mensal", "anual", "unica", "parcelada", "mensal"):
             self.tipo(valor)
             self.assertEqual(self.selecionado(), [valor])
-            self.assertEqual(self.chave_visivel(), valor != "unica")
-            self.assertEqual(self.mes_ano_visiveis(), valor != "unica")
-        self.assertEqual((self.campo("Mês", [self.dlg().content]).value,
-                          self.campo("Ano", [self.dlg().content]).value), ("9", "2026"))   # mês e ano atuais
-        self.ligar_sem_termino(True)
-        self.assertFalse(self.mes_ano_visiveis())
+            self.assertEqual(self.existe("termino_nova_conta"), valor in ("mensal", "anual"))
+        self.assertEqual(self.termino().value, "Sem data de término")          # 6.13: começa sem término
+        self.abrir()
+        self.assertTrue(self.no_dialogo("sem_termino_recorrencia").value)
+        self.assertEqual(self.mes_ano(), ("9", "2026"))                        # mês e ano atuais
+        self.assertFalse(self.mes_ano_habilitados())                           # visíveis, mas desabilitados
         self.ligar_sem_termino(False)
-        self.assertTrue(self.mes_ano_visiveis())
+        self.assertTrue(self.mes_ano_habilitados())
         self.ligar_sem_termino(True)
+        self.assertFalse(self.mes_ano_habilitados())
+        self.ligar_sem_termino(False)
+        self.escolher("Mês", "5")
+        self.escolher("Ano", "2027")
+        self.confirmar()
+        self.assertEqual(self.termino().value, "Até maio de 2027")
         self.tipo("unica")
-        self.assertFalse(self.chave_visivel())
+        self.assertFalse(self.existe("termino_nova_conta"))
         self.tipo("anual")
-        self.assertTrue(self.chave_visivel())
-        self.assertFalse(self.mes_ano_visiveis())                          # chave ligada continua ligada
+        self.assertEqual(self.termino().value, "Até maio de 2027")             # o confirmado continua
 
     # 5. Cancelar
     def test_cancelar_nao_aplica(self):
-        self.abrir()
         self.tipo("mensal")
+        self.abrir()
+        self.ligar_sem_termino(False)
         self.escolher("Mês", "5")
         self.escolher("Ano", "2027")
         self.cancelar()
-        self.assertEqual(self.campo("Recorrência").value, "Escolha o tipo da conta")  # nada confirmado
+        self.assertEqual(self.termino().value, "Sem data de término")          # nada confirmado
         self.abrir()
-        self.assertEqual(self.selecionado(), ["unica"])
-        self.tipo("mensal")
-        self.assertEqual((self.campo("Mês", [self.dlg().content]).value,
-                          self.campo("Ano", [self.dlg().content]).value), ("9", "2026"))
+        self.assertTrue(self.no_dialogo("sem_termino_recorrencia").value)
+        self.assertEqual(self.mes_ano(), ("9", "2026"))
 
     def test_cancelar_depois_de_confirmado_volta_ao_confirmado(self):
-        self.abrir()
         self.tipo("mensal")
-        self.escolher("Mês", "5")
-        self.escolher("Ano", "2027")
-        self.confirmar()
+        self.definir_termino("5", "2027")
         self.abrir()
-        self.tipo("anual")
         self.ligar_sem_termino(True)
         self.cancelar()
-        self.assertEqual(self.campo("Recorrência").value, "Mensal até maio de 2027")
+        self.assertEqual(self.termino().value, "Até maio de 2027")
         self.abrir()
-        self.assertEqual(self.selecionado(), ["mensal"])
         self.assertFalse(self.no_dialogo("sem_termino_recorrencia").value)
-        self.assertTrue(self.mes_ano_visiveis())
+        self.assertTrue(self.mes_ano_habilitados())
+        self.assertEqual(self.mes_ano(), ("5", "2027"))
 
     # 6-7. Confirmar e reabrir
     def test_confirmar_atualiza_o_resumo_e_reabre_com_o_confirmado(self):
-        self.abrir()
         self.tipo("anual")
-        self.ligar_sem_termino(True)
-        self.confirmar()
-        campo = self.campo("Recorrência")
-        self.assertEqual(campo.value, "Anual, sem término")
+        self.definir_termino("12", "2028")
+        campo = self.termino()
+        self.assertEqual(campo.value, "Até dezembro de 2028")
         self.assertEqual(campo.color, CLARO["texto_principal"])
         self.abrir()
-        self.assertEqual(self.selecionado(), ["anual"])
+        self.assertFalse(self.no_dialogo("sem_termino_recorrencia").value)
+        self.assertEqual(self.mes_ano(), ("12", "2028"))
+        self.ligar_sem_termino(True)
+        self.confirmar()
+        self.assertEqual(campo.value, "Sem data de término")
+        self.abrir()
         self.assertTrue(self.no_dialogo("sem_termino_recorrencia").value)
-        self.assertFalse(self.mes_ano_visiveis())
+        self.assertFalse(self.mes_ano_habilitados())
 
     def test_confirmar_unica_mostra_unica(self):
-        self.abrir()
-        self.confirmar()
-        self.assertEqual(self.campo("Recorrência").value, "Única")
+        self.tipo("mensal")
+        self.tipo("unica")
+        self.assertEqual(self.selecionado(), ["unica"])
+        self.assertIn(main.FAIXAS_NOVA_CONTA["unica"][0], self.textos())
+        self.assertNotIn(main.FAIXAS_NOVA_CONTA["mensal"][0], self.textos())
+        self.assertFalse(self.existe("termino_nova_conta"))
+        self.assertEqual((self.com_data("valor_nova_conta").label, self.com_data("data_nova_conta").label),
+                         ("Valor da conta", "Data de vencimento"))
 
     def test_resumos_curtos(self):
-        casos = [("unica", None, None, "Única"), ("mensal", True, None, "Mensal, sem término"),
-                 ("mensal", False, ("3", "2027"), "Mensal até março de 2027"),
-                 ("anual", True, None, "Anual, sem término"),
-                 ("anual", False, ("12", "2028"), "Anual até dezembro de 2028")]
-        for tipo, sem, termino, texto in casos:
-            with self.subTest(texto):
-                self.abrir()
+        # Rótulo do caso = resumo da 6.11/6.12; o esperado é o texto da 6.13 (faixa do tipo e término).
+        casos = [("Única", "unica", None, None, None),
+                 ("Mensal, sem término", "mensal", True, None, "Sem data de término"),
+                 ("Mensal até março de 2027", "mensal", False, ("3", "2027"), "Até março de 2027"),
+                 ("Anual, sem término", "anual", True, None, "Sem data de término"),
+                 ("Anual até dezembro de 2028", "anual", False, ("12", "2028"), "Até dezembro de 2028")]
+        for rotulo, tipo, sem, termino, texto in casos:
+            with self.subTest(rotulo):
                 self.tipo(tipo)
-                if sem is not None:
-                    self.ligar_sem_termino(sem)
+                self.assertIn(main.FAIXAS_NOVA_CONTA[tipo][0], self.textos())
+                if tipo == "unica":
+                    self.assertFalse(self.existe("termino_nova_conta"))
+                    continue
+                self.abrir()
+                self.ligar_sem_termino(sem)
                 if termino:
                     self.escolher("Mês", termino[0])
                     self.escolher("Ano", termino[1])
                 self.confirmar()
-                self.assertEqual(self.campo("Recorrência").value, texto)
+                self.assertEqual(self.termino().value, texto)
 
     # 8. término guardado ao passar por Única
     def test_termino_guardado_ao_passar_por_unica(self):
-        self.abrir()
+        self.preencher()
         self.tipo("mensal")
-        self.escolher("Mês", "5")
-        self.escolher("Ano", "2027")
+        self.definir_termino("5", "2027")
         self.tipo("unica")
-        self.tipo("anual")                                                   # na mesma abertura
-        self.assertEqual((self.campo("Mês", [self.dlg().content]).value,
-                          self.campo("Ano", [self.dlg().content]).value), ("5", "2027"))
-        self.tipo("unica")
-        self.confirmar()
-        self.assertEqual(self.campo("Recorrência").value, "Única")
-        self.abrir()                                                         # em outra abertura
         self.tipo("anual")
-        self.assertEqual((self.campo("Mês", [self.dlg().content]).value,
-                          self.campo("Ano", [self.dlg().content]).value), ("5", "2027"))
-        self.confirmar()
-        self.assertEqual(self.campo("Recorrência").value, "Anual até maio de 2027")
+        self.assertEqual(self.termino().value, "Até maio de 2027")
+        self.abrir()                                                         # em outra abertura
+        self.assertEqual(self.mes_ano(), ("5", "2027"))
+        self.assertFalse(self.no_dialogo("sem_termino_recorrencia").value)
+        self.cancelar()
+        self.salvar()
+        self.assertEqual(self.consultar("SELECT frequencia, data_termino FROM series_recorrencia"),
+                         [("anual", "2027-05")])
 
     # 9. nada gravado antes do Salvar; Salvar grava o confirmado
     def test_confirmar_nao_grava_no_banco(self):
         self.preencher()
-        self.abrir()
         self.tipo("mensal")
-        self.confirmar()
+        self.definir_termino("12", "2026")
         self.assertEqual(self.consultar("SELECT COUNT(*) FROM contas")[0][0], 0)
         self.assertEqual(self.consultar("SELECT COUNT(*) FROM series_recorrencia")[0][0], 0)
 
     def test_salvar_mensal_com_termino(self):
         self.preencher()
-        self.abrir()
         self.tipo("mensal")
-        self.escolher("Mês", "12")
-        self.escolher("Ano", "2026")
-        self.confirmar()
+        self.definir_termino("12", "2026")
         self.salvar()
         self.assertEqual(self.consultar("SELECT frequencia, data_termino FROM series_recorrencia"),
                          [("mensal", "2026-12")])
 
     def test_salvar_unica_depois_de_mensal_nao_aplica_termino(self):
         self.preencher()
-        self.abrir()
         self.tipo("mensal")
-        self.escolher("Mês", "12")
-        self.escolher("Ano", "2026")
+        self.definir_termino("12", "2026")
         self.tipo("unica")
-        self.confirmar()
         self.salvar()
         self.assertEqual(self.consultar("SELECT COUNT(*) FROM series_recorrencia")[0][0], 0)
         self.assertEqual(self.consultar("SELECT nome, serie_id FROM contas"), [("Curso", None)])
@@ -321,20 +346,20 @@ class TestDialogoRecorrencia(Base):
 
     def test_salvar_ignora_o_que_foi_cancelado(self):
         self.preencher()
-        self.abrir()
         self.tipo("anual")
-        self.ligar_sem_termino(True)
+        self.abrir()
+        self.ligar_sem_termino(False)
+        self.escolher("Mês", "12")
+        self.escolher("Ano", "2027")
         self.cancelar()
         self.salvar()
-        self.assertEqual(self.consultar("SELECT COUNT(*) FROM series_recorrencia")[0][0], 0)
+        self.assertEqual(self.consultar("SELECT frequencia, data_termino FROM series_recorrencia"),
+                         [("anual", None)])                                  # o término cancelado não vale
 
     def test_termino_anterior_continua_conferido_so_no_salvar(self):
         self.preencher(data=(2026, 10, 5))
-        self.abrir()
         self.tipo("mensal")
-        self.escolher("Mês", "9")
-        self.escolher("Ano", "2026")
-        self.confirmar()                                                     # o diálogo não valida
+        self.definir_termino("9", "2026")                                    # o diálogo não valida
         self.assertEqual(self.abertos(), [])
         self.salvar()
         erros = [t.value for t in self.controles(ft.Text) if t.color == CLARO["texto_erro"] and t.value]
@@ -343,51 +368,65 @@ class TestDialogoRecorrencia(Base):
 
     # 10. teclado e nomes acessíveis
     def test_nomes_acessiveis_e_foco(self):
-        campo = self.campo("Recorrência")
+        rotulos = {"unica": "Única", "parcelada": "Parcelada", "mensal": "Recorrente mensal",
+                   "anual": "Recorrente anual"}
+        for v, rotulo in rotulos.items():
+            cartao = self.com_data(f"tipo_conta_{v}")
+            self.assertIsInstance(cartao, ft.Button)                         # focável (Tab; Enter/Espaço)
+            self.assertIn(rotulo, [t.value for t in percorrer(cartao) if isinstance(t, ft.Text)])
+        self.tipo("mensal")
+        campo = self.termino()
         seta = campo.suffix_icon
-        self.assertIsInstance(seta, ft.IconButton)                           # focável (Tab; Enter/Espaço)
-        self.assertEqual(seta.icon.semantics_label, "Escolher recorrência")
+        self.assertIsInstance(seta, ft.IconButton)
+        self.assertEqual(seta.icon.semantics_label, "Escolher término da recorrência")
         self.assertFalse(campo.can_request_focus)                            # o foco vai para a seta
         self.pagina.run_task.reset_mock()
         self.abrir()
-        foco_ao_abrir = self.pagina.run_task.call_args[0][1]
-        self.assertEqual(foco_ao_abrir.data, "tipo_recorrencia_unica")         # foco na opção confirmada
-        for v in ("unica", "mensal", "anual"):
-            self.assertIsInstance(self.no_dialogo(f"tipo_recorrencia_{v}"), ft.Button)
-        self.assertEqual([self.no_dialogo(f"tipo_recorrencia_{v}").content for v in ("unica", "mensal", "anual")],
-                         ["Única", "Mensal", "Anual"])
+        funcao, foco_ao_abrir = self.pagina.run_task.call_args[0][:2]
+        self.assertEqual(funcao.__name__, "focar_depois")
+        self.assertIs(foco_ao_abrir, self.no_dialogo("sem_termino_recorrencia"))   # 1º controle do diálogo
+        self.assertIsInstance(foco_ao_abrir, ft.Switch)
         for acao in ("Cancelar", "Confirmar"):
             with self.subTest(acao):
                 self.clicar(self.acao(acao))
+                self.assertEqual(self.abertos(), [])
                 self.assertIs(self.pagina.run_task.call_args[0][1], seta)    # o foco volta para a seta
                 self.abrir()
 
-    # janelas estreitas: o resumo quebra por palavra, como a Recorrência de Editar
+    # janelas estreitas: o término quebra por palavra, como a Recorrência de Editar
     def test_resumo_quebra_linha_em_vez_de_ser_cortado(self):
-        campo = self.campo("Recorrência")
+        self.tipo("mensal")
+        campo = self.termino()
         self.assertEqual((campo.multiline, campo.min_lines, campo.max_lines), (True, 1, 3))
         self.assertTrue(campo.read_only)
         self.assertFalse(campo.can_request_focus)                            # o foco continua na seta
 
 
 class TestMesmoPadraoDeEditar(Base):
-    """A estrutura do diálogo novo é a de "Transformar em recorrente" (Editar)."""
+    """
+    O diálogo do término da Nova conta segue o padrão da parte de término de "Transformar em
+    recorrente" (Editar). Sino 6.13.1: a escolha do tipo e o "Valor fixo | Valor variável" saíram
+    do diálogo da Nova conta para o formulário (cartões aprovados na 6.13), então a comparação
+    passa a ser só da parte comum: título, coluna, chave "Sem data de término", Mês e Ano
+    (inclusive desabilitados com a chave ligada), mensagem de erro reservada e botões.
+    """
 
-    def assinatura(self, d):
+    @staticmethod
+    def assinatura(d, i_chave, i_termino, i_erro):
         col = d.content
-        partes = col.controls
-        texto, linha_tipo, linha_chave, linha_termino = partes[:4]
+        linha_chave, linha_termino, erro = col.controls[i_chave], col.controls[i_termino], col.controls[i_erro]
         acao_cancelar, acao_confirmar = d.actions
         return {
             "modal": d.modal, "fundo": d.bgcolor, "titulo": (type(d.title), d.title.color, d.title.size),
-            "coluna": (type(col), col.tight, col.spacing), "texto": (type(texto), texto.color, texto.size),
-            "linha_tipo": (type(linha_tipo), linha_tipo.spacing,
-                           [c.expand for c in linha_tipo.controls]),
+            "coluna": (type(col), col.tight, col.spacing),
             "linha_chave": (linha_chave.alignment, [type(c) for c in linha_chave.controls],
-                            linha_chave.controls[0].size, linha_chave.controls[0].color,
-                            linha_chave.controls[1].active_color),
-            "linha_termino": (linha_termino.spacing,
-                              [(type(c), c.label, c.expand, c.color, c.value) for c in linha_termino.controls]),
+                            linha_chave.controls[0].value, linha_chave.controls[0].size,
+                            linha_chave.controls[0].color, linha_chave.controls[1].active_color,
+                            linha_chave.controls[1].value),
+            "linha_termino": (type(linha_termino), linha_termino.spacing, linha_termino.opacity,
+                              [(type(c), c.label, c.expand, c.color, c.value, c.disabled,
+                                [o.key for o in c.options]) for c in linha_termino.controls]),
+            "erro": (type(erro), erro.size, erro.value, erro.color),
             "cancelar": (type(acao_cancelar), acao_cancelar.content, acao_cancelar.style.color),
             "confirmar": (type(acao_confirmar), acao_confirmar.bgcolor, acao_confirmar.color),
         }
@@ -408,46 +447,84 @@ class TestMesmoPadraoDeEditar(Base):
 
         self.entrar()
         self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
-        campo = next(c for c in self.controles(ft.TextField) if c.label == "Recorrência")
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "tipo_conta_mensal"))
+        campo = next(c for c in self.controles(ft.TextField) if getattr(c, "data", None) == "termino_nova_conta")
         self.clicar(campo.suffix_icon)
         novo = self.pagina.dialogos[-1]
-        # Para comparar a linha do término, as duas abertas em Mensal.
-        next(c for c in percorrer(novo.content) if getattr(c, "data", None) == "tipo_recorrencia_mensal") \
-            .on_click(Evento(self.pagina, None))
+        self.assertEqual(novo.data, "dialogo_termino")
 
-        a, b = self.assinatura(editar), self.assinatura(novo)
-        # Diferenças intencionais: 4 opções (Única|Parcelada|Mensal|Anual -- Parcelada desde
-        # a Sino 6.12) em vez de 2, botões focáveis em vez de contêineres, rótulo "Confirmar"
-        # e nenhuma mensagem de erro no diálogo (o término é conferido no Salvar).
-        self.assertEqual(a["linha_tipo"][:2], b["linha_tipo"][:2])
-        self.assertEqual(len(b["linha_tipo"][2]), 4)
-        self.assertTrue(all(b["linha_tipo"][2]) and all(a["linha_tipo"][2]))
-        for chave in ("modal", "fundo", "titulo", "coluna", "texto", "linha_chave", "linha_termino"):
+        # Editar: texto, frequência, chave, Mês/Ano, valor, ajuda, erro; Nova conta: chave, Mês/Ano, erro.
+        self.assertEqual(len(editar.content.controls), 7)
+        self.assertEqual(editar.content.controls[4].data, "comportamento_transformar")
+        self.assertEqual(len(novo.content.controls), 3)
+        a, b = self.assinatura(editar, 2, 3, 6), self.assinatura(novo, 0, 1, 2)
+        for chave in ("modal", "fundo", "titulo", "coluna", "linha_chave", "linha_termino", "erro", "cancelar"):
             with self.subTest(chave):
                 self.assertEqual(a[chave], b[chave])
-        self.assertEqual(a["cancelar"], b["cancelar"])
-        self.assertEqual((a["confirmar"][0], a["confirmar"][1:]), (b["confirmar"][0], b["confirmar"][1:]))
+        # Diferença intencional: o rótulo da ação ("Transformar" em Editar, "Confirmar" na Nova conta).
+        self.assertEqual(a["confirmar"], b["confirmar"])
         self.assertEqual(b["confirmar"], (ft.Button, CLARO["acao_primaria"], CLARO["texto_sobre_acao"]))
-        # Sino 6.12 (Etapa 8, ajuste deliberado): depois do término, "Valor fixo | Valor variável"
-        # nos dois diálogos (em Transformar, a linha e a ajuda; em Nova conta, um bloco só).
-        self.assertEqual(len(editar.content.controls), 7)                    # 7ª: mensagem de erro
-        self.assertEqual(editar.content.controls[4].data, "comportamento_transformar")
-        # Sino 6.12: depois do bloco do valor, a quantidade de parcelas (só visível na Parcelada);
-        # a linha reservada, sempre vazia, continua sendo a última.
-        self.assertEqual(len(novo.content.controls), 7)
-        self.assertEqual(novo.content.controls[4].controls[0].data, "linha_comportamento_valor")
-        self.assertEqual(novo.content.controls[5].data, "quantidade_parcelas_nova_conta")
-        reserva_editar, reserva_novo = editar.content.controls[6], novo.content.controls[6]
-        self.assertEqual((type(reserva_editar), reserva_editar.size, reserva_editar.value, reserva_editar.color),
-                         (type(reserva_novo), reserva_novo.size, reserva_novo.value, reserva_novo.color))
-        self.assertEqual(novo.content.width, 548)
-        # Chips de Editar: texto 13 negrito, raio 10, 12 px em cima e embaixo.
-        chip = editar.content.controls[1].controls[0]
-        estilo = next(c for c in percorrer(novo.content) if getattr(c, "data", None) == "tipo_recorrencia_mensal").style
-        self.assertEqual((chip.content.size, chip.content.weight, chip.border_radius, chip.padding.top),
-                         (estilo.text_style.size, estilo.text_style.weight, estilo.shape.radius, estilo.padding.top))
-        self.assertEqual((chip.bgcolor, chip.content.color),
-                         (estilo.bgcolor, estilo.color))                     # Mensal ativo nos dois
+        self.assertEqual([x.content for x in novo.actions], ["Cancelar", "Confirmar"])
+        self.assertEqual(novo.content.width, 420)
+
+
+
+class TestCorDosCartoesDeTipo(Base):
+    """
+    Sino 6.13.1 (alternativa A, RNF09): os quatro cartões de tipo da Nova conta têm cor de texto
+    explícita no próprio botão, como os cartões Conta comum | Superconta -- a mesma do nome e da
+    marca do cartão --, nos dois temas e em cada tipo escolhido. Fundo, borda e conteúdo continuam
+    os da 6.13.
+    """
+
+    def cartoes(self):
+        return {v: next(c for c in self.controles() if getattr(c, "data", None) == f"tipo_conta_{v}")
+                for v in ("unica", "parcelada", "mensal", "anual")}
+
+    def test_cor_explicita_nos_quatro_cartoes_nos_dois_temas(self):
+        for tema in ("claro", "escuro"):
+            paleta = cores.PALETAS[tema]
+            db.definir_tema(self.usuario_id, tema)
+            self.entrar()
+            self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
+            modo = next(c for c in self.controles() if getattr(c, "data", None) == "modo_comum")
+            self.assertEqual(modo.color, paleta["texto_principal"])               # o padrão seguido
+            for escolhido in ("unica", "parcelada", "mensal", "anual"):
+                self.clicar(self.cartoes()[escolhido])
+                for valor, cartao in self.cartoes().items():
+                    with self.subTest(tema=tema, escolhido=escolhido, cartao=valor):
+                        ativo = valor == escolhido
+                        esperado = paleta["chip_ativo_texto"] if ativo else paleta["texto_principal"]
+                        self.assertEqual(cartao.color, esperado)
+                        nome = [t for t in percorrer(cartao) if isinstance(t, ft.Text)][0]
+                        self.assertEqual(nome.color, cartao.color)                   # igual ao nome visível
+                        self.assertEqual(cartao.style.bgcolor,
+                                         paleta["chip_ativo_fundo"] if ativo else paleta["fundo_card"])
+                        self.assertIsNone(cartao.style.color)                       # só o `color` do botão
+
+
+
+class TestCorDoValorPorParcela(Base):
+    """
+    Sino 6.13.1 (B1, RNF09): o campo "Valor por parcela (estimado)" da Parcelada tem cor explícita
+    no próprio campo, a mesma do estilo do texto (texto_sucesso) -- sem mudança visual --, nos dois
+    temas, e continua legível sobre o próprio fundo (4,5:1).
+    """
+
+    def test_cor_explicita_igual_a_do_estilo_nos_dois_temas(self):
+        from test_cores import MINIMO_TEXTO, contraste
+        for tema in ("claro", "escuro"):
+            with self.subTest(tema=tema):
+                paleta = cores.PALETAS[tema]
+                db.definir_tema(self.usuario_id, tema)
+                self.entrar()
+                self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
+                self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "tipo_conta_parcelada"))
+                campo = next(c for c in self.controles() if getattr(c, "data", None) == "valor_por_parcela_estimado")
+                self.assertEqual(campo.color, paleta["texto_sucesso"])
+                self.assertEqual(campo.text_style.color, campo.color)
+                self.assertEqual((campo.filled, campo.fill_color), (True, paleta["grafico_total_fundo"]))
+                self.assertGreaterEqual(contraste(campo.color, campo.fill_color), MINIMO_TEXTO)
 
 
 if __name__ == "__main__":

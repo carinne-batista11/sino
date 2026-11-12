@@ -15,6 +15,7 @@ from unittest import mock
 
 from apoio_banco import db
 from test_cadastro_senha import EMOJI_COMPOSTO, TesteDeCadastro
+from test_descricao_250 import contador_de
 from test_sessao_tema import ft, main
 from test_tela_ajustes import TesteDeAjustes
 from test_tela_principal import Evento
@@ -98,10 +99,11 @@ class TestDemaisContadoresVisiveis(TesteDeAjustes):
         fab = next(c for c in self.controles(pagina) if getattr(c, "data", None) == "nova_conta")
         self.clicar(pagina, fab)
         campos = self.campos_da_pagina(pagina)
-        self.assertEqual(campos["Nome da conta"].counter, "0/30")
-        self.assertEqual(campos["Descrição (opcional)"].counter, "0/250")    # v7.0 5.45 (E6); 250 desde a 6.12
+        # Sino 6.13.1: na Nova conta da 6.13 o contador é visível dentro do campo (suffix_icon).
+        self.assertEqual(contador_de(campos["Nome da conta"]), "0/30")
+        self.assertEqual(contador_de(campos["Descrição (opcional)"]), "0/250")  # v7.0 5.45 (E6); 250 desde a 6.12
         self.digitar(pagina, campos["Nome da conta"], "Aluguel")
-        self.assertEqual(campos["Nome da conta"].counter, "7/30")
+        self.assertEqual(contador_de(campos["Nome da conta"]), "7/30")
 
     def test_categoria_mantem_o_contador(self):
         db.criar_categoria(self.bia, "Casa")                 # banco temporário

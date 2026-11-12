@@ -50,6 +50,44 @@ class BaseTelas(Base):
     def contas(self):
         return self.consultar("SELECT nome, valor, data_vencimento, serie_id FROM contas ORDER BY id")
 
+    # Sino 6.13.1: Nova conta da 6.13 -- tipo nos cartões do formulário (tipo_conta_*), valor em
+    # "valor_nova_conta" (rótulo conforme o tipo) e término em campo e diálogo próprios.
+    def nc_controle(self, data, raizes=None):
+        return next(c for c in self.controles(None, raizes) if getattr(c, "data", None) == data)
+
+    def nc_existe(self, data):
+        return any(getattr(c, "data", None) == data for c in self.controles())
+
+    def nc_tipo(self, valor):
+        self.clicar(self.nc_controle(f"tipo_conta_{valor}"))
+
+    def nc_rotulos_dos_tipos(self):
+        return [[t.value for t in percorrer(self.nc_controle(f"tipo_conta_{v}")) if isinstance(t, ft.Text)][0]
+                for v in ("unica", "parcelada", "mensal", "anual")]
+
+    def nc_definir_termino(self, sem_termino, mes=None, ano=None):
+        self.clicar(self.nc_controle("termino_nova_conta").suffix_icon)
+        self.assertEqual(self.dlg().data, "dialogo_termino")
+        chave = self.no_dialogo("sem_termino_recorrencia")
+        chave.value = sem_termino
+        chave.on_change(Evento(self.pagina, chave))
+        if mes is not None:
+            self.escolher(self.campo("Mês", [self.dlg().content]), mes)
+            self.escolher(self.campo("Ano", [self.dlg().content]), ano)
+        self.clicar(self.acao("Confirmar"))
+        self.assertEqual([d for d in self.abertos() if d.data == "dialogo_termino"], [])
+
+    def nc_preencher(self, nome, valor, data=(2026, 9, 20)):
+        """Nome, valor (qualquer rótulo do tipo) e a data pelo calendário da conta comum (1º do overlay)."""
+        self.campo("Nome da conta").value = nome
+        campo_valor = self.nc_controle("valor_nova_conta")
+        campo_valor.value = valor
+        if campo_valor.on_change:
+            campo_valor.on_change(Evento(self.pagina, campo_valor))
+        seletor = next(o for o in self.pagina.overlay if isinstance(o, ft.DatePicker))
+        seletor.value = datetime(*data)
+        seletor.on_change(Evento(self.pagina, seletor))
+
 
 class TestNovaContaParcelada(BaseTelas):
     def setUp(self):
@@ -57,46 +95,38 @@ class TestNovaContaParcelada(BaseTelas):
         self.entrar()
         self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
 
+    # Sino 6.13.1: tipo no cartão "Parcelada" e quantidade digitada no formulário (6.13).
     def configurar_parcelada(self, quantidade):
-        self.clicar(self.campo("Recorrência").suffix_icon)
-        self.clicar(self.no_dialogo("tipo_recorrencia_parcelada"))
-        self.escolher(self.no_dialogo("quantidade_parcelas_nova_conta"), quantidade)
-        self.clicar(self.acao("Confirmar"))
+        self.nc_tipo("parcelada")
+        self.escolher(self.nc_controle("quantidade_parcelas_nova_conta"), quantidade)
 
     def preencher(self, nome, valor, data):
-        for c in self.controles(ft.TextField):
-            if c.label == "Nome da conta":
-                c.value = nome
-            elif c.label in ("Valor", "Valor total"):
-                c.value = valor
-        seletor = next(o for o in self.pagina.overlay if isinstance(o, ft.DatePicker))
-        seletor.value = datetime(*data)
-        seletor.on_change(Evento(self.pagina, seletor))
+        self.nc_preencher(nome, valor, data)
 
     def salvar(self):
         self.clicar(next(b for b in self.controles(ft.Button) if b.content == "Salvar conta"))
 
     def test_quatro_tipos_e_campos_da_parcelada(self):
-        self.clicar(self.campo("Recorrência").suffix_icon)
-        botoes = [c for c in percorrer(self.dlg().content) if str(getattr(c, "data", "")).startswith("tipo_recorrencia_")]
-        self.assertEqual([b.content for b in botoes], ["Única", "Parcelada", "Mensal", "Anual"])
-        quantidade = self.no_dialogo("quantidade_parcelas_nova_conta")
-        self.assertFalse(quantidade.visible)
-        self.clicar(self.no_dialogo("tipo_recorrencia_parcelada"))
-        self.assertTrue(quantidade.visible)
-        chave = self.no_dialogo("sem_termino_recorrencia")
-        linha_da_chave = next(c for c in percorrer(self.dlg().content)
-                              if isinstance(c, ft.Row) and chave in c.controls)
-        self.assertFalse(linha_da_chave.visible)                  # sem término/término só em Mensal e Anual
-        self.clicar(self.no_dialogo("tipo_recorrencia_mensal"))
-        self.assertTrue(linha_da_chave.visible)
-        self.assertFalse(quantidade.visible)
-        self.clicar(self.no_dialogo("tipo_recorrencia_parcelada"))
-        self.assertEqual([o.key for o in quantidade.options], [str(n) for n in range(2, 37)])
+        self.assertEqual(self.nc_rotulos_dos_tipos(), ["Única", "Parcelada", "Recorrente mensal", "Recorrente anual"])
+        self.assertFalse(self.nc_existe("quantidade_parcelas_nova_conta"))
+        self.nc_tipo("parcelada")
+        self.assertTrue(self.nc_existe("quantidade_parcelas_nova_conta"))
+        self.assertFalse(self.nc_existe("termino_nova_conta"))         # sem término/término só em Mensal e Anual
+        self.nc_tipo("mensal")
+        self.assertTrue(self.nc_existe("termino_nova_conta"))
+        self.assertFalse(self.nc_existe("quantidade_parcelas_nova_conta"))
+        self.nc_tipo("parcelada")
+        quantidade = self.nc_controle("quantidade_parcelas_nova_conta")
+        estimado = self.nc_controle("valor_por_parcela_estimado")
+        self.nc_controle("valor_nova_conta").value = "1.000,00"
+        for digitado, valido in (("1", False), ("2", True), ("36", True), ("37", False)):   # 2 a 36 (D4)
+            with self.subTest(quantidade=digitado):
+                self.escolher(quantidade, digitado)
+                self.assertEqual(main.quantidade_de_parcelas(quantidade.value) is not None, valido)
+                self.assertEqual(estimado.value != "—", valido)
         self.escolher(quantidade, "12")
-        self.clicar(self.acao("Confirmar"))
-        self.assertEqual(self.campo("Recorrência").value, "Parcelada em 12 parcelas")
-        self.assertIn("Valor total", [c.label for c in self.controles(ft.TextField)])
+        self.assertEqual(estimado.value, "R$ 83,33 (1ª: R$ 83,37)")    # 12 parcelas de R$ 1.000,00
+        self.assertEqual(self.nc_controle("valor_nova_conta").label, "Valor total da conta")
 
     def test_previa_antes_de_salvar_e_gravacao(self):
         self.configurar_parcelada("12")
@@ -129,12 +159,12 @@ class TestNovaContaParcelada(BaseTelas):
         self.assertEqual(self.contas(), [])
 
     def test_mensal_continua_igual(self):
-        self.clicar(self.campo("Recorrência").suffix_icon)
-        self.clicar(self.no_dialogo("tipo_recorrencia_mensal"))
-        self.assertFalse(self.no_dialogo("quantidade_parcelas_nova_conta").visible)
-        self.clicar(self.acao("Confirmar"))
-        self.assertIn("Valor", [c.label for c in self.controles(ft.TextField)])
-        self.assertNotIn("Valor total", [c.label for c in self.controles(ft.TextField)])
+        self.nc_tipo("mensal")
+        self.assertFalse(self.nc_existe("quantidade_parcelas_nova_conta"))
+        self.assertFalse(self.nc_existe("valor_por_parcela_estimado"))
+        rotulos = [c.label for c in self.controles(ft.TextField)]
+        self.assertIn(main.ROTULO_VALOR_RECORRENTE["mensal"], rotulos)     # "Valor do primeiro mês"
+        self.assertNotIn("Valor total da conta", rotulos)
 
 
 class TestDetalhesEEditar(BaseTelas):

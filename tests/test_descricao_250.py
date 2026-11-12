@@ -45,6 +45,12 @@ def contador_de(campo):
         for c in s.controls:
             if isinstance(c, ft.Text) and str(c.data or "").startswith("contador_") and str(c.data).endswith("_edicao"):
                 return c.value
+    # Sino 6.13.1: na Nova conta (6.13), o contador fica dentro do campo, num Container à direita
+    # (suffix_icon); o contador de baixo (`counter`) fica desligado -- os dois juntos seriam duplicados.
+    if isinstance(s, ft.Container) and isinstance(s.content, ft.Text) \
+            and str(s.content.data or "").startswith("contador_") and str(s.content.data).endswith("_nova_conta"):
+        assert campo.counter is None, "contador interno e contador de baixo ao mesmo tempo"
+        return s.content.value
     return campo.counter
 
 ROTULO = "Descrição (opcional)"

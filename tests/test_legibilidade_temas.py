@@ -247,22 +247,50 @@ class TesteDeLegibilidade(TesteDeSessao):
             self.registrar(pagina, f"Editar/{nome}/após salvar", paleta)   # escopo ou "Alteração salva"
             self.ir_para_inicio(pagina)
 
-        fab = next(c for c in self.todos(pagina) if isinstance(c, ft.Container) and c.on_click is not None
-                   and isinstance(c.content, ft.Icon) and c.content.icon == ft.Icons.ADD)
-        self.clicar(pagina, fab)
+        # Sino 6.13.1: o "+" de Início é um IconButton com nome (6.13, E2); o mesmo destino.
+        # As vistas guardam a tela VIVA (verificada no fim do percurso), então cada estado da Nova
+        # conta da 6.13 é registrado numa abertura própria da tela, e cada estado do diálogo do
+        # término, numa abertura própria do diálogo -- senão só o último estado seria verificado.
+        def abrir_nova_conta():
+            fab = next(c for c in self.todos(pagina) if isinstance(c, ft.IconButton) and c.data == "nova_conta")
+            self.assertEqual(fab.icon.semantics_label, "Nova conta")
+            self.clicar(pagina, fab)
+
+        dado = lambda data: next(c for c in self.todos(pagina) if getattr(c, "data", None) == data)
+
+        abrir_nova_conta()                                                # Conta comum e Única (padrão)
         self.registrar(pagina, "Nova conta", paleta)
-        # Sino 6.11: diálogo "Configurar recorrência", com Mensal escolhida
-        # (opção ativa e inativas, "Sem data de término", Mês e Ano visíveis).
-        recorrencia = next(c for c in self.todos(pagina) if isinstance(c, ft.TextField) and c.label == "Recorrência")
-        self.clicar(pagina, recorrencia.suffix_icon)
-        dialogo = next(d for d in pagina.dialogos if d.open)
-        self.assertEqual(dialogo.data, "dialogo_recorrencia")
-        self.clicar(pagina, next(c for c, _ in percorrer_com_fundo(dialogo, "#000000")
-                                 if getattr(c, "data", None) == "tipo_recorrencia_mensal"))
-        self.registrar(pagina, "Nova conta/Recorrência", paleta)
-        self.fechar_dialogos(pagina)
         self.clicar(pagina, self.botao(pagina, "Salvar conta"))           # mensagem de erro de validação
         self.registrar(pagina, "Nova conta/erro", paleta)
+        self.ir_para_inicio(pagina)
+
+        # Recorrente mensal (cartão ativo e inativos, Tipo de valor e Término) e o diálogo do
+        # término com "Sem data de término" ligado (Mês e Ano desabilitados) e desligado.
+        abrir_nova_conta()
+        self.clicar(pagina, dado("tipo_conta_mensal"))
+        self.registrar(pagina, "Nova conta/Mensal", paleta)
+        for sem_termino in (True, False):
+            self.clicar(pagina, dado("termino_nova_conta").suffix_icon)
+            dialogo = next(d for d in pagina.dialogos if d.open)
+            self.assertEqual(dialogo.data, "dialogo_termino")
+            chave = next(c for c, _ in percorrer_com_fundo(dialogo, "#000000")
+                         if getattr(c, "data", None) == "sem_termino_recorrencia")
+            self.assertTrue(chave.value)                                  # 6.13: começa sem término
+            if not sem_termino:
+                chave.value = False
+                chave.on_change(Evento(pagina, chave))
+            self.registrar(pagina, "Nova conta/Término" + ("" if sem_termino else " com data"), paleta)
+            self.fechar_dialogos(pagina)
+        self.ir_para_inicio(pagina)
+
+        abrir_nova_conta()
+        self.clicar(pagina, dado("tipo_conta_parcelada"))                 # valor por parcela estimado
+        self.registrar(pagina, "Nova conta/Parcelada", paleta)
+        self.ir_para_inicio(pagina)
+
+        abrir_nova_conta()
+        self.clicar(pagina, dado("modo_superconta"))                      # só visual
+        self.registrar(pagina, "Nova conta/Superconta", paleta)
         self.ir_para_inicio(pagina)
 
         self.clicar(pagina, self.clicavel_com_texto(pagina, "Categorias"))

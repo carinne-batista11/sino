@@ -134,10 +134,18 @@ class TestCalendariosNaInterface(TesteComBancoTemporario):
     def test_nova_conta(self):  # CT135
         self.entrar()
         self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
-        (seletor,) = self.seletores()
-        self.assert_textos_em_portugues(seletor)
+        # Sino 6.13.1: a Nova conta da 6.13 cria dois calendários -- o da conta comum e o da
+        # Superconta (só visual) --, os dois em português e cada um ligado ao seu campo.
+        seletor, seletor_superconta = self.seletores()
+        for s in (seletor, seletor_superconta):
+            self.assert_textos_em_portugues(s)
         self.escolher(seletor, datetime(2026, 10, 20))
         self.assertEqual(self.campo("Data de vencimento").value, "20/10/2026")
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "modo_superconta"))
+        self.escolher(seletor_superconta, datetime(2026, 11, 5))
+        self.assertEqual(self.campo("Vencimento da fatura").value, "05/11/2026")
+        self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "modo_comum"))
+        self.assertEqual(self.campo("Data de vencimento").value, "20/10/2026")   # a da conta comum não muda
 
     def test_editar_conta_grava_iso(self):  # CT135; armazenamento inalterado
         conta_id = db.criar_conta_unica(self.usuario_id, "Luz", 10.0, "2026-10-05")

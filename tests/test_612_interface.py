@@ -129,31 +129,30 @@ class TestAjustesDaEtapa11(BaseInterface):
 
 class TestNovaContaPorTipo(BaseVariavelTelas):
     def test_campos_e_resumo_de_cada_tipo(self):
+        # Sino 6.13.1: tipo nos cartões; quantidade, Tipo de valor e Término são campos do formulário.
         self.entrar()
         self.clicar(next(c for c in self.controles() if getattr(c, "data", None) == "nova_conta"))
-        casos = (("unica", False, False, False, "Valor", "Única"),
-                 ("parcelada", True, False, False, "Valor total", "Parcelada em 2 parcelas"),
-                 ("mensal", False, True, True, "Valor", "Mensal até setembro de 2026"),
-                 ("anual", False, True, True, "Valor", "Anual até setembro de 2026, valor variável"))
-        for tipo, quantidade, comportamento, termino, rotulo_valor, resumo in casos:
+        casos = (("unica", False, False, False, "Valor da conta", None, None),
+                 ("parcelada", True, False, False, "Valor total da conta", None, None),
+                 ("mensal", False, True, True, "Valor do primeiro mês", "fixo", "Até setembro de 2026"),
+                 ("anual", False, True, True, "Valor do primeiro ano", "variavel", "Até setembro de 2026"))
+        for tipo, quantidade, comportamento, termino, rotulo_valor, valor, resumo in casos:
             with self.subTest(tipo=tipo):
-                self.clicar(self.campo("Recorrência").suffix_icon)
-                self.clicar(self.no_dialogo(f"tipo_recorrencia_{tipo}"))
-                if tipo == "anual":
-                    self.clicar(self.no_dialogo("comportamento_variavel"))
-                elif tipo == "mensal":
-                    self.clicar(self.no_dialogo("comportamento_fixo"))
-                self.assertEqual(self.no_dialogo("quantidade_parcelas_nova_conta").visible, quantidade)
-                linha = self.no_dialogo("linha_comportamento_valor")
-                bloco = next(c for c in percorrer(self.dlg().content) if isinstance(c, ft.Column)
-                             and linha in c.controls)
-                self.assertEqual(bloco.visible, comportamento)
-                chave = self.no_dialogo("sem_termino_recorrencia")
-                linha_chave = next(c for c in percorrer(self.dlg().content)
-                                   if isinstance(c, ft.Row) and chave in c.controls)
-                self.assertEqual(linha_chave.visible, termino)
-                self.clicar(self.acao("Confirmar"))
-                self.assertEqual(self.campo("Recorrência").value, resumo)
+                self.nc_tipo(tipo)
+                self.assertIn(main.FAIXAS_NOVA_CONTA[tipo][0], self.textos())
+                self.assertEqual(self.nc_existe("quantidade_parcelas_nova_conta"), quantidade)
+                self.assertEqual(self.nc_existe("valor_por_parcela_estimado"), quantidade)
+                self.assertEqual(self.nc_existe("linha_comportamento_valor"), comportamento)
+                self.assertEqual(self.nc_existe("termino_nova_conta"), termino)
+                if valor:
+                    self.clicar(self.nc_controle(f"comportamento_{valor}"))
+                    marcada = self.nc_controle(f"opcao_{valor}")
+                    self.assertTrue(any(isinstance(c, ft.Icon) and c.semantics_label == "Selecionado"
+                                        for c in percorrer(marcada)))
+                if tipo == "mensal":
+                    self.nc_definir_termino(False, "9", "2026")
+                if resumo:
+                    self.assertEqual(self.nc_controle("termino_nova_conta").value, resumo)
                 self.assertIsNotNone(next(c for c in self.controles(ft.TextField) if c.label == rotulo_valor))
 
 

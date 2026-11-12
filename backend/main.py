@@ -9026,6 +9026,8 @@ def main(page: ft.Page):
             multiline=True, min_lines=1, max_lines=2, data="valor_por_parcela_estimado",
             filled=True, fill_color=cores.grafico_total_fundo, suffix_icon=info_parcelas,
             prefix_icon=ft.Icon(ft.Icons.CALCULATE_OUTLINED, size=20, color=cores.grafico_total_icone),
+            # 6.13.1 (RNF09): cor explícita no próprio campo, a mesma do text_style (sem mudança visual).
+            color=cores.texto_sucesso,
             text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD, color=cores.texto_sucesso),
             **estilo_estimado,
         )
@@ -9377,6 +9379,9 @@ def main(page: ft.Page):
             for cartao, (valor, rotulo, icone) in zip(cartoes_tipo, TIPOS):
                 ativo = valor == tipo
                 cor = cores.chip_ativo_texto if ativo else cores.texto_principal
+                # 6.13.1 (RNF09): cor de texto explícita no próprio botão, como nos cartões Conta comum |
+                # Superconta; a mesma do nome e da marca (o conteúdo já tinha cor própria).
+                cartao.color = cor
                 cartao.height = 72 if empilhado else 56
                 cartao.style = ft.ButtonStyle(
                     bgcolor=cores.chip_ativo_fundo if ativo else cores.fundo_card,
